@@ -69,6 +69,7 @@ import guiclasses
 import tkFileDialog as Fd
 import organizedata
 import os
+import os.path
 
 
 global TabsForGraphs
@@ -80,6 +81,8 @@ Filenames = []
 TabsForGraphs = []
 vars = {}
 TabsForText = []
+
+userSettingPath = os.path.join(os.environ['HOME'], '.gpgpu_sim', 'aerialvision')
 
 def checkEmpty(list):
     bool = 0
@@ -150,7 +153,7 @@ def fileInput(cl_files=None):
     
     #Loading the most recent directory visited as the first directory
     try:
-        loadfile = open( os.environ['HOME'] + '/.gpgpu_sim/aerialvision/recentfiles.txt', 'r')
+        loadfile = open(os.path.join(userSettingPath, 'recentfiles.txt'), 'r')
         tmprecentfile = loadfile.readlines()
         recentfile = ''  
         tmprecentfile = tmprecentfile[len(tmprecentfile) -1]
@@ -296,7 +299,7 @@ def fileInput(cl_files=None):
     cFilesAddedTEStat.pack(side = Tk.LEFT, padx = 15)
     
     
-    bSUBMIT = Tk.Button(root, text = "Submit", font = ("Gill Sans MT", 12, "bold"), width = 10, command = lambda: tmp(instance, num.get(), skipCFLogVar.get(), cflog2cuda.get(), [cFilesAddedTE, cFilesAddedTEPTX, cFilesAddedTEStat]))
+    bSUBMIT = Tk.Button(root, text = "Submit", font = ("Gill Sans MT", 12, "bold"), width = 10, command = lambda: submitClicked(instance, num.get(), skipCFLogVar.get(), cflog2cuda.get(), [cFilesAddedTE, cFilesAddedTEPTX, cFilesAddedTEStat]))
     bSUBMIT.pack(pady = 5)
     
     
@@ -308,7 +311,7 @@ def loadRecentFile(entry):
     instance.title("Recent Files")
    
     try: 
-        loadfile = open( os.environ['HOME'] + '/.gpgpu_sim/aerialvision/recentfiles.txt', 'r')
+        loadfile = open(os.path.join(userSettingPath, 'recentfiles.txt'), 'r')
         recentfiles = loadfile.readlines()
     except IOError,e:
         if e.errno == 2:
@@ -403,7 +406,7 @@ def errorMsg(string):
     bError = Tk.Button(error, text = "OK", font = ("Times New Roman", 14), command = (lambda: error.destroy()))
     bError.pack(pady = 10)
    
-def tmp(instance, num, skipcflog, cflog2cuda, listboxes):
+def submitClicked(instance, num, skipcflog, cflog2cuda, listboxes):
     
     for iter in range(0, len(listboxes)):
         if iter == 0:
@@ -414,28 +417,26 @@ def tmp(instance, num, skipcflog, cflog2cuda, listboxes):
             TEStatFiles = listboxes[iter].get(0, Tk.END)
    
     organizedata.skipCFLog = skipcflog
+    lexyacc.skipCFLOGParsing = skipcflog
     organizedata.convertCFLog2CUDAsrc = cflog2cuda
 
     start = 0
-    loadfile = open( os.environ['HOME'] + '/.gpgpu_sim/aerialvision/recentfiles.txt', 'a')
+    if (not os.path.exists(userSettingPath)):
+        os.makedirs(userSettingPath)
+    f_recentFiles = open(os.path.join(userSettingPath, 'recentfiles.txt'), 'a')
     for files in Filenames:
-        loadfile.write(files)
-        loadfile.write('\n')
+        f_recentFiles.write(files + '\n')
 
     for files in TEFiles:
-        loadfile.write(files)
-        loadfile.write('\n')
+        f_recentFiles.write(files + '\n')
     
     for files in TEPTXFiles:
-        loadfile.write(files)
-        loadfile.write('\n')
+        f_recentFiles.write(files + '\n')
     
     for files in TEStatFiles:
-        loadfile.write(files)
-        loadfile.write('\n')
+        f_recentFiles.write(files + '\n')
 
-
-    loadfile.close()
+    f_recentFiles.close()
     if num == '1':
         res = 'small'  
     elif num == '2':
@@ -444,6 +445,7 @@ def tmp(instance, num, skipcflog, cflog2cuda, listboxes):
         res = 'big'
     instance.destroy()
     startup(res, [TEFiles, TEPTXFiles, TEStatFiles])
+
 def graphAddTab(vars, graphTabs,res, entry):
     
     TabsForGraphs.append(guiclasses.formEntry(graphTabs, str(len(TabsForGraphs) + 1), vars, res, entry))
@@ -572,6 +574,8 @@ def startup(res, TEFILES):
         for variables in vars[files]:
             if variables == 'CFLOG':
                 continue
+            if variables == 'EXTVARS':
+                continue
             if checkEmpty(vars[files][variables].data) == 0:
                 markForDel[files].append(variables)
 
@@ -579,22 +583,14 @@ def startup(res, TEFILES):
         for variables in markForDel[files]:
             del vars[files][variables]
 
-
+    organizedata.setCFLOGInfoFiles(TEFILES)
     for files in Filenames:
         vars[files] = organizedata.organizedata(vars[files])
-
-
-
 
     graphAddTab(vars, graphTabs, res, eAddTab)
 
 
-
-
-
-
     # INITIALIZING THE TEXT EDITOR
-    
     
     if res == 'small':
         textControlPanel = Tk.Frame(textEditor, width = 1250, height = 50, bg = 'beige', borderwidth =  5, relief = Tk.GROOVE)
@@ -836,7 +832,7 @@ def manageFilesSubmit(window, listbox):
             
             markForDel = []
             for variables in vars[entries[10:]]:
-                if checkEmpty(vars[entries[10:]][variables].data) == 0:
+                if (variables != 'CFLOG' and checkEmpty(vars[entries[10:]][variables].data) == 0):
                     markForDel.append(variables)
     
             for variables in markForDel:

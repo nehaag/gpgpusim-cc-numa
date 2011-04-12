@@ -91,23 +91,16 @@ enum mem_space {  //used for cudasim
 //good for a single shader configuration
 #define DEBUGL1MISS 0
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+unsigned int LOGB2( unsigned int v );
 
-   unsigned int LOGB2( unsigned int v );
+unsigned int MAX2NUM( unsigned int a, unsigned int b );
 
-   unsigned int MAX2NUM( unsigned int a, unsigned int b );
+unsigned int MIN2NUM( unsigned int a, unsigned int b );
 
-   unsigned int MIN2NUM( unsigned int a, unsigned int b );
 
-#ifdef __cplusplus
-}
-#endif
-
-#define max(a,b) (((a)>(b))?(a):(b))
-#define min(a,b) (((a)<(b))?(a):(b))
-#define min3(x,y,z) (((x)<(y) && (x)<(z))?(x):(min((y),(z))))
+#define gs_max2(a,b) (((a)>(b))?(a):(b))
+#define gs_min2(a,b) (((a)<(b))?(a):(b))
+#define min3(x,y,z) (((x)<(y) && (x)<(z))?(x):(gs_min2((y),(z))))
 
 #endif
 

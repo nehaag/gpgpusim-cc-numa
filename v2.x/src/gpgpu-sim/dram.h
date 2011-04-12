@@ -70,7 +70,6 @@
 #include <stdlib.h>
 
 #include "delayqueue.h"
-#include "gpu-cache.h"
 #include "../cuda-sim/dram_callback.h"
 
 #ifndef DRAM_H
@@ -189,15 +188,7 @@ typedef struct {
 
    void *m_fast_ideal_scheduler;
 
-
-   shd_cache_t *L2cache;
-   delay_queue *cbtoL2queue; //latency 10
-   delay_queue *cbtoL2writequeue;
-   delay_queue *dramtoL2queue; //latency 10
-   delay_queue *dramtoL2writequeue;
-   delay_queue *L2todramqueue; //latency 0
-   delay_queue *L2todram_wbqueue; 
-   delay_queue *L2tocbqueue; //latency 0
+   void *m_L2cache;
 
    unsigned int n_cmd_partial;
    unsigned int n_activity_partial;
@@ -212,44 +203,35 @@ typedef struct {
 } dram_t;
 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-   dram_t* dram_create( unsigned int id, unsigned int nbk, 
-                        unsigned int tCCD, unsigned int tRRD,
-                        unsigned int tRCD, unsigned int tRAS,
-                        unsigned int tRP, unsigned int tRC,
-                        unsigned int CL, unsigned int WL, 
-                        unsigned int BL, unsigned int tWTR,
-                        unsigned int busW, unsigned int queue_limit,
-                        unsigned char scheduler_type );
-   void dram_free( dram_t *dm );
-   int dram_full( dram_t *dm );
-   void dram_push( dram_t *dm, unsigned int bank,
-                   unsigned int row, unsigned int col,
-                   unsigned int nbytes, unsigned int write,
-                   unsigned int wid, unsigned int sid, int cache_hits_waiting, unsigned long long addr,
-                   void *data );
-   void scheduler_fifo(dram_t* dm);
-   void dram_issueCMD (dram_t* dm);
-   void* dram_pop( dram_t *dm );
-   void* dram_top( dram_t *dm );
-   unsigned dram_busy( dram_t *dm);
-   void dram_print( dram_t* dm, FILE* simFile );
-   void dram_visualize( dram_t* dm );
-   void dram_print_stat( dram_t* dm, FILE* simFile );
-   void fast_scheduler_ideal(dram_t* dm);
-   void* alloc_fast_ideal_scheduler(dram_t *dm);
-   void dump_fast_ideal_scheduler(dram_t *dm);
-   unsigned fast_scheduler_queue_length(dram_t *dm);
+dram_t* dram_create( unsigned int id, unsigned int nbk, 
+		unsigned int tCCD, unsigned int tRRD,
+		unsigned int tRCD, unsigned int tRAS,
+		unsigned int tRP, unsigned int tRC,
+		unsigned int CL, unsigned int WL, 
+		unsigned int BL, unsigned int tWTR,
+		unsigned int busW, unsigned int queue_limit,
+		unsigned char scheduler_type );
+void dram_free( dram_t *dm );
+int dram_full( dram_t *dm );
+void dram_push( dram_t *dm, unsigned int bank,
+	   unsigned int row, unsigned int col,
+	   unsigned int nbytes, unsigned int write,
+	   unsigned int wid, unsigned int sid, int cache_hits_waiting, unsigned long long addr,
+	   void *data );
+void scheduler_fifo(dram_t* dm);
+void dram_issueCMD (dram_t* dm);
+void* dram_pop( dram_t *dm );
+void* dram_top( dram_t *dm );
+unsigned dram_busy( dram_t *dm);
+void dram_print( dram_t* dm, FILE* simFile );
+void dram_visualize( dram_t* dm );
+void dram_print_stat( dram_t* dm, FILE* simFile );
+void fast_scheduler_ideal(dram_t* dm);
+void* alloc_fast_ideal_scheduler(dram_t *dm);
+void dump_fast_ideal_scheduler(dram_t *dm);
+unsigned fast_scheduler_queue_length(dram_t *dm);
 
 //supposed to return the current queue length for all memory scheduler types.
-   unsigned int dram_que_length( dram_t *dm ); 
-
-#ifdef __cplusplus
-}
-#endif
-
+unsigned int dram_que_length( dram_t *dm ); 
 
 #endif /*DRAM_H*/

@@ -69,6 +69,8 @@
 
 #include "dram_callback.h"
 #include "../util.h"
+#include "../abstract_hardware_model.h"
+#include "../tr1_hash_map.h" 
 
 typedef address_type addr_t;
 
@@ -95,24 +97,22 @@ struct gpgpu_ptx_sim_kernel_info {
 #include <assert.h>
 #include "opcodes.h"
 
-struct param_t {
-   union {
-      float float_value;
-      int int_value;
-      double double_value;
-      unsigned long long ptr_value;
-   } data;
-   int type;
-};
-
 #ifdef __cplusplus
 
    #include <string>
    #include <map>
    #include <set>
    #include <list>
+   // #include <unordered_map>
 
 #include "memory.h"
+
+struct param_t {
+   const void *pdata;
+   int type;
+   size_t size;
+   size_t offset;
+};
 
 union ptx_reg_t {
    ptx_reg_t() {
@@ -277,9 +277,15 @@ public:
       return r;
    }
    unsigned get_hw_tid() const { return m_hw_tid;}
+   unsigned get_hw_ctaid() const { return m_hw_ctaid;}
+   unsigned get_hw_wid() const { return m_hw_wid;}
    unsigned get_hw_sid() const { return m_hw_sid;}
    void set_hw_tid(unsigned tid) { m_hw_tid=tid;}
+   void set_hw_wid(unsigned wid) { m_hw_wid=wid;}
    void set_hw_sid(unsigned sid) { m_hw_sid=sid;}
+   void set_hw_ctaid(unsigned cta_id) { m_hw_ctaid=cta_id;}
+   void set_core(core_t *core) { m_core = core; }
+   core_t *get_core() { return m_core; }
 
    unsigned get_icount() const { return m_icount;}
    void set_valid() { m_valid = true;}
@@ -316,7 +322,6 @@ public:
       m_nctaid[0] = 1;
       m_nctaid[1] = 1;
       m_nctaid[2] = 1;
-      m_clock_tick = 0;
       m_gridid = 0;
       m_valid = true;
    }
@@ -345,31 +350,7 @@ public:
       m_nctaid[2] = z;
    }
 
-   unsigned get_builtin( int builtin_id, unsigned dim_mod ) 
-   {
-      assert( m_valid );
-      switch (builtin_id) {
-      case NTID_ID:
-         assert( dim_mod < 3 );
-         return m_ntid[dim_mod];
-      case CLOCK_ID:
-         return m_clock_tick++;
-      case CTA_ID:
-         assert( dim_mod < 3 );
-         return m_ctaid[dim_mod];
-      case GRIDID_ID:
-         return m_gridid;
-      case NCTAID_ID:
-         assert( dim_mod < 3 );
-         return m_nctaid[dim_mod];
-      case TID_ID:
-         assert( dim_mod < 3 );
-         return m_tid[dim_mod];
-      default:
-         assert(0);
-      }
-      return 0;
-   }
+   unsigned get_builtin( int builtin_id, unsigned dim_mod ); 
 
    void set_done();
    bool is_done() { return m_thread_done;}
@@ -418,8 +399,10 @@ public:
    }
    void dump_regs();
    void dump_modifiedregs();
-   void clear_modifiedregs() { m_debug_trace_regs_modified.back().clear();}
+   void clear_modifiedregs() { m_debug_trace_regs_modified.clear();}
    function_info *get_finfo() { return m_func_info;   }
+
+   void enable_debug_trace() { m_enable_debug_trace = true; }
 
 public:
    addr_t         m_last_effective_address;
@@ -433,8 +416,8 @@ public:
 
 private:
    unsigned m_uid;
+   core_t *m_core;
    bool   m_valid;
-   unsigned m_clock_tick; // fake clock
    unsigned m_ntid[3];
    unsigned m_tid[3];
    unsigned m_nctaid[3];
@@ -443,6 +426,8 @@ private:
    bool m_thread_done;
    unsigned m_hw_sid;
    unsigned m_hw_tid;
+   unsigned m_hw_wid;
+   unsigned m_hw_ctaid;
 
    unsigned m_icount;
    unsigned m_PC;
@@ -460,13 +445,17 @@ private:
 
    std::list<stack_entry> m_callstack;
 
-   std::list<std::map<std::string,ptx_reg_t> > m_regs;
-   std::list<std::map<std::string,ptx_reg_t> > m_debug_trace_regs_modified;
+   typedef tr1_hash_map<const symbol*,ptx_reg_t> reg_map_t;
+   std::list<reg_map_t> m_regs;
+
+   bool m_enable_debug_trace;
+   reg_map_t m_debug_trace_regs_modified; // track the modified register for each executed insn
 };
 
 unsigned type_decode( unsigned type, size_t &size, int &t );
 
 #endif
 
+#define MAX_REG_OPERANDS 8
 
 #endif

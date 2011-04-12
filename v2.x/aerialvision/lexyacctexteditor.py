@@ -73,9 +73,9 @@ def textEditorParseMe(filename):
     tokens = ['FILENAME', 'NUMBERSEQUENCE']
     
     def t_FILENAME(t):
-        r'[a-zA-Z_/.][a-zA-Z0-9_/.]*'
+        r'[a-zA-Z_/.][a-zA-Z0-9_/.]*\.ptx'
         return t
-    
+
     def t_NUMBERSEQUENCE(t):
         r'[0-9 :]+'
         return t
@@ -95,7 +95,7 @@ def textEditorParseMe(filename):
     count = []
     latency = []
     organized = {}
-    
+
     def p_sentence(p):
       '''sentence : FILENAME NUMBERSEQUENCE'''
       tmp1 = []
@@ -105,14 +105,11 @@ def textEditorParseMe(filename):
         tmp1.append(x)
       organized[int(tmp1[0])] = tmp1[1].split(' ')
           
-          
-        
-        
-        
 
     def p_error(p):
       if p:
           print("Syntax error at '%s'" % p.value)
+          print p
       else:
           print("Syntax error at EOF")
 
@@ -123,7 +120,12 @@ def textEditorParseMe(filename):
     while file:
         line = file.readline()
         if not line : break
-        yacc.parse(line[0:-1])
+        if (line.startswith('kernel line :')) :
+            line = line.strip()
+            ptxLineStatName = line.split(' ')
+            ptxLineStatName = ptxLineStatName[3:]
+        else: 
+            yacc.parse(line[0:-1])
         
         
     return organized
@@ -156,7 +158,14 @@ def ptxToCudaMapping(filename):
   x = map.keys()
   return map
     
-  
+
+#Unit test / playground
+def main():
+    data = textEditorParseMe(sys.argv[1])
+    print data[100]
+   
+if __name__ == "__main__":
+    main()
   
   
   

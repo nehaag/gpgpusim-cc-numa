@@ -82,7 +82,7 @@
 #define NUM_SHADERS 8
 #define STREAMS_PER_FILE 128
 
-unsigned int run_gpu_sim(int grid_num);
+//unsigned int run_gpu_sim(int grid_num);
 
 unsigned int get_converge_point(unsigned int pc, void *thd);
 
@@ -105,16 +105,12 @@ unsigned int get_converge_point(unsigned int pc, void *thd);
 #define GPU_MEMLATSTAT_MC 0x2
 #define GPU_MEMLATSTAT_QUEUELOGS 0x4
 
-void gpu_reg_options(option_parser_t opp);
-void init_gpu();
+//void gpu_reg_options(option_parser_t opp);
+//void init_gpu();
 void gpu_print_stat();
 
-#ifdef __cplusplus
-extern "C" 
-#endif
 int mem_ctrl_full( int mc_id );
 
-void L2c_latency_log_dump();
 void dramqueue_latency_log_dump();
 
 #endif

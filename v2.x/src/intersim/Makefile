@@ -1,6 +1,6 @@
 CREATESHAREDLIB  ?=0
-CPP = g++
-CC = gcc
+CPP = g++ $(SNOW)
+CC = gcc $(SNOW)
 
 ifeq ($(INTEL),1)
 	CPP = icpc
@@ -19,6 +19,8 @@ DEBUG = 0
 CPPFLAGS = -g -Wall 
 ifneq ($(DEBUG),1)
 CPPFLAGS = -O3 -g 
+else
+CPPFLAGS += -D_GLIBCXX_DEBUG -DGLIBCXX_DEBUG_PEDANTIC
 endif
 
 TEST = -DUNIT_TEST 
@@ -110,3 +112,8 @@ clean:
 	rm -f $(PROG)
 	rm -f lib$(PROG).a 
 	rm -f lib$(PROG).so 
+
+interconnect_interface.o: ../cuda-sim/ptx.tab.h
+
+../cuda-sim/ptx.tab.h:
+	        make -C ../cuda-sim/ ptx.tab.c

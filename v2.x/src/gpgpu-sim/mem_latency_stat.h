@@ -117,9 +117,9 @@ EXTERN_DEF unsigned *acc_mrq_length;
 EXTERN_DEF unsigned ***mem_access_type_stats; // dram access type classification
 
 
-inline void memlatstat_init( )
+void memlatstat_init( )
 {
-   int i,j;
+   unsigned i,j;
 
    max_mrq_latency = 0;
    max_dq_latency = 0;
@@ -177,20 +177,20 @@ inline void memlatstat_init( )
    for (i = 0; i < NUM_MEM_ACCESS_TYPE; i++) {
       int j;
       mem_access_type_stats[i] = (unsigned **) calloc(gpu_n_mem, sizeof(unsigned*));
-      for (j=0; j< gpu_n_mem; j++) {
+      for (j=0; (unsigned) j< gpu_n_mem; j++) {
          mem_access_type_stats[i][j] = (unsigned *) calloc((gpu_mem_n_bk+1), sizeof(unsigned*));
       }
    }
 }
 
-inline void memlatstat_start(mem_fetch_t *mf)
+void memlatstat_start(mem_fetch_t *mf)
 {
    mf->timestamp = gpu_sim_cycle + gpu_tot_sim_cycle;
    mf->timestamp2 = 0;
 }
 
 // recorder the total latency
-inline unsigned memlatstat_done(mem_fetch_t *mf)
+unsigned memlatstat_done(mem_fetch_t *mf)
 {
    unsigned mf_latency;
    unsigned wid = mf->sid*gpu_n_warp_per_shader + mf->wid;
@@ -199,7 +199,7 @@ inline unsigned memlatstat_done(mem_fetch_t *mf)
    mf_num_lat_pw_perwarp[wid]++;
    mf_tot_lat_pw_perwarp[wid] += mf_latency;
    mf_tot_lat_pw += mf_latency;
-   check_time_vector_update(mf->mshr->inst_uid,MR_2SH_FQ_POP,mf_latency, mf->type ) ;
+   check_time_vector_update(mf->mshr->insts[0].uid,MR_2SH_FQ_POP,mf_latency, mf->type ) ;
    mf_lat_table[LOGB2(mf_latency)]++;
    shader_mem_lat_log(mf->sid, mf_latency);
    mf_total_lat_table[mf->chip][mf->bank] += mf_latency;
@@ -208,12 +208,12 @@ inline unsigned memlatstat_done(mem_fetch_t *mf)
    return mf_latency;
 }
 
-inline void memlatstat_icnt2sh_push(mem_fetch_t *mf)
+void memlatstat_icnt2sh_push(mem_fetch_t *mf)
 {
    mf->timestamp2 = gpu_sim_cycle+gpu_tot_sim_cycle;
 }
 
-inline void memlatstat_read_done(mem_fetch_t *mf)
+void memlatstat_read_done(mem_fetch_t *mf)
 {
    if (gpgpu_memlatency_stat) {
       unsigned mf_latency = memlatstat_done(mf);
@@ -230,13 +230,13 @@ inline void memlatstat_read_done(mem_fetch_t *mf)
    }
 }
 
-inline void memlatstat_dram_access(mem_fetch_t *mf, int dram_id, int bank)
+void memlatstat_dram_access(mem_fetch_t *mf, unsigned dram_id, unsigned bank)
 {
    assert(dram_id < gpu_n_mem);
    assert(bank < gpu_mem_n_bk);
    if (gpgpu_memlatency_stat) { 
       if (mf->write) {
-         if ( mf->sid  <  gpu_n_shader  ) {   //do not count L2_writebacks here 
+         if ( (unsigned) mf->sid  <  gpu_n_shader  ) {   //do not count L2_writebacks here 
             bankwrites[mf->sid][dram_id][bank]++;
             shader_mem_acc_log( mf->sid, dram_id, bank, 'w');
          }
@@ -247,7 +247,7 @@ inline void memlatstat_dram_access(mem_fetch_t *mf, int dram_id, int bank)
          totalbankreads[dram_id][bank]++;
       }
 
-      if (mf->pc != -1) {
+      if (mf->pc != (unsigned) -1) {
          ptx_file_line_stats_add_dram_traffic(mf->pc, 1);
       }
       
@@ -255,7 +255,7 @@ inline void memlatstat_dram_access(mem_fetch_t *mf, int dram_id, int bank)
    }
 }
 
-inline void memlatstat_icnt2mem_pop(mem_fetch_t *mf)
+void memlatstat_icnt2mem_pop(mem_fetch_t *mf)
 {
    if (gpgpu_memlatency_stat) {
       unsigned icnt2mem_latency;
@@ -266,9 +266,9 @@ inline void memlatstat_icnt2mem_pop(mem_fetch_t *mf)
    }
 }
 
-inline void memlatstat_lat_pw( )
+void memlatstat_lat_pw( )
 {
-   int i;
+   unsigned i;
    if (mf_num_lat_pw && gpgpu_memlatency_stat) {
       assert(mf_tot_lat_pw);
       mf_total_lat = mf_tot_lat_pw;
@@ -290,9 +290,9 @@ inline void memlatstat_lat_pw( )
 }
 
 
-inline void memlatstat_print( )
+void memlatstat_print( )
 {
-   int i,j,k,l,m;
+   unsigned i,j,k,l,m;
    unsigned max_bank_accesses, min_bank_accesses, max_chip_accesses, min_chip_accesses;
 
    if (gpgpu_memlatency_stat) {

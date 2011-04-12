@@ -99,7 +99,7 @@ void option_parser_register(option_parser_t opp,
 
 // parse command line
 void option_parser_cmdline(option_parser_t opp,
-                           int argc, char *argv[]);
+                           int argc, const char *argv[]);
 
 // parse config file
 void option_parser_cfgfile(option_parser_t opp,

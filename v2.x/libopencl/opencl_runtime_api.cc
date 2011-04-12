@@ -83,7 +83,6 @@ struct gpgpu_ptx_sim_arg {
    size_t m_offset;
    struct gpgpu_ptx_sim_arg *m_next;
 };
-extern "C" {
 extern void   gpgpu_ptx_sim_init_memory();
 extern void*  gpgpu_ptx_sim_malloc( size_t count );
 extern void   gpgpu_ptx_sim_memcpy_to_gpu( size_t dst_start_addr, const void *src, size_t count );
@@ -98,9 +97,8 @@ extern void   gpgpu_ptx_sim_main_perf( const char *kernel_key,
                                        struct dim3 gridDim, 
                                        struct dim3 blockDIm, 
                                        struct gpgpu_ptx_sim_arg *grid_params );
-extern void   gpgpu_ptx_sim_memcpy_symbol(const void *hostVar, const void *src, size_t count, size_t offset, int to);
+extern void   gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t count, size_t offset, int to );
 extern int g_ptx_sim_mode;
-}
 
 struct cudaDeviceProp the_cuda_device;
 struct cudaDeviceProp **gpgpu_cuda_devices;

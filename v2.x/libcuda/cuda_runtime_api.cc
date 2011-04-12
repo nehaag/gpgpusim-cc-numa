@@ -108,7 +108,11 @@
 #include <stdarg.h>
 #ifdef OPENGL_SUPPORT
 #define GL_GLEXT_PROTOTYPES
-#include <GL/gl.h>
+ #ifdef __APPLE__
+ #include <GLUT/glut.h> // Apple's version of GLUT is here
+ #else
+ #include <GL/gl.h>
+ #endif
 #endif
 
 #define __CUDA_RUNTIME_API_H__
@@ -162,7 +166,6 @@ struct gpgpu_ptx_sim_arg {
 struct gpgpu_ptx_sim_arg *g_ptx_sim_params;
 cudaError_t g_last_cudaError;
 
-extern "C" {
 extern void   gpgpu_ptx_sim_init_perf();
 extern void   gpgpu_ptx_sim_main_func( const char *kernel_key, dim3 gridDim, dim3 blockDim, struct gpgpu_ptx_sim_arg *);
 extern void   gpgpu_ptx_sim_main_perf( const char *kernel_key, 
@@ -179,7 +182,7 @@ extern void   gpgpu_ptx_sim_load_gpu_kernels();
 extern void   gpgpu_ptx_sim_register_kernel(const char *hostFun, const char *deviceFun);
 extern void   gpgpu_ptx_sim_register_const_variable(void*, const char *deviceName, size_t size );
 extern void   gpgpu_ptx_sim_register_global_variable(void *hostVar, const char *deviceName, size_t size );
-extern void   gpgpu_ptx_sim_memcpy_symbol(const void *hostVar, const void *src, size_t count, size_t offset, int to);
+extern void   gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t count, size_t offset, int to );
 extern void   gpgpu_ptx_sim_bindTextureToArray(const struct textureReference* texref, const struct cudaArray* array);
 extern struct cudaArray* gpgpu_ptx_sim_accessArrayofTexture(struct textureReference* texref);
 extern void gpgpu_ptx_sim_bindNameToTexture(const char* name, const struct textureReference* texref);
@@ -188,8 +191,10 @@ extern char* gpgpu_ptx_sim_findNamefromTexture(const struct textureReference* te
 extern void   gpgpu_ptx_sim_add_ptxstring( const char * );
 
 extern int g_ptx_sim_mode;
-}
 
+#if defined __APPLE__
+#   define __my_func__    __PRETTY_FUNCTION__
+#else
 # if defined __cplusplus ? __GNUC_PREREQ (2, 6) : __GNUC_PREREQ (2, 4)
 #   define __my_func__    __PRETTY_FUNCTION__
 # else
@@ -199,6 +204,7 @@ extern int g_ptx_sim_mode;
 #   define __my_func__    ((__const char *) 0)
 #  endif
 # endif
+#endif
 
 int g_gpgpusim_init = 0;
 extern const char *g_gpgpusim_version_string;
@@ -283,6 +289,8 @@ struct cudaDeviceProp **gpgpu_cuda_devices;
 // global kernel parameters...  
 static dim3 g_cudaGridDim;
 static dim3 g_cudaBlockDim;
+
+static cudaStream_t g_stream_id = 0;
 
 /*******************************************************************************
 *                                                                              *
@@ -852,26 +860,33 @@ __host__ cudaError_t CUDARTAPI cudaLaunch(const char *symbol )
 
 __host__ cudaError_t CUDARTAPI cudaStreamCreate(cudaStream_t *stream)
 {
-   cuda_not_implemented(__my_func__,__LINE__);
-   return g_last_cudaError = cudaErrorUnknown;
+   printf("GPGPU-Sim PTX: WARNING: This stub implementation of %s can only support a single stream! \n", __my_func__);
+   assert(stream != NULL);
+   *stream = g_stream_id;
+   assert(g_stream_id == 0);
+   g_stream_id += 1;
+   return g_last_cudaError = cudaSuccess;
 }
 
 __host__ cudaError_t CUDARTAPI cudaStreamDestroy(cudaStream_t stream)
 {
-   cuda_not_implemented(__my_func__,__LINE__);
-   return g_last_cudaError = cudaErrorUnknown;
+   printf("GPGPU-Sim PTX: WARNING: This stub implementation of %s can only support a single stream! \n", __my_func__);
+   assert(stream == 0);
+   g_stream_id -= 1;
+   assert(g_stream_id == 0);
+   return g_last_cudaError = cudaSuccess;
 }
 
 __host__ cudaError_t CUDARTAPI cudaStreamSynchronize(cudaStream_t stream)
 {
-   cuda_not_implemented(__my_func__,__LINE__);
-   return g_last_cudaError = cudaErrorUnknown;
+   printf("GPGPU-Sim PTX: WARNING: This implementation of %s can only a stub! \n", __my_func__);
+   return g_last_cudaError = cudaSuccess; // it is stub because all cuda calls are synchronous
 }
 
 __host__ cudaError_t CUDARTAPI cudaStreamQuery(cudaStream_t stream)
 {
-   cuda_not_implemented(__my_func__,__LINE__);
-   return g_last_cudaError = cudaErrorUnknown;
+   printf("GPGPU-Sim PTX: WARNING: This implementation of %s can only a stub! \n", __my_func__);
+   return g_last_cudaError = cudaSuccess; // it is always success because all cuda calls are synchronous
 }
 
 /*******************************************************************************

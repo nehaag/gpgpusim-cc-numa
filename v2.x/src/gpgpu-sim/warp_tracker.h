@@ -82,27 +82,19 @@
 #include "../util.h"
 #include "shader.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+void init_warp_tracker( ); 
 
-   void init_warp_tracker( ); 
+void wpt_register_warp( int *tid_in, shader_core_ctx_t *shd ); 
 
-   void wpt_register_warp( int *tid_in, shader_core_ctx_t *shd ); 
+int wpt_signal_avail( int tid, shader_core_ctx_t *shd ); 
 
-   int wpt_signal_avail( int tid, shader_core_ctx_t *shd ); 
+int wpt_signal_complete( int tid, shader_core_ctx_t *shd ); 
 
-   int wpt_signal_complete( int tid, shader_core_ctx_t *shd ); 
+void print_thread_pc_histogram( FILE *fout );
+void print_thread_pc( FILE *fout );
+void track_thread_pc( int shader_id, int *tid, address_type pc );
 
-   void print_thread_pc_histogram( FILE *fout );
-   void print_thread_pc( FILE *fout );
-   void track_thread_pc( int shader_id, int *tid, address_type pc );
-
-   int* alloc_commit_warp( );
-   void free_commit_warp( int *commit_warp );
-
-#ifdef __cplusplus
-};
-#endif
+int* alloc_commit_warp( );
+void free_commit_warp( int *commit_warp );
 
 #endif

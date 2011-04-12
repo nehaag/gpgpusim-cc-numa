@@ -82,45 +82,37 @@
 
 extern unsigned *acc_dyn_pcs;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+void create_dwf_schedulers( int n_shaders, 
+		       int lut_size, int lut_assoc, 
+		       int simd_width, int regf_width,
+		       int n_threads, int insn_size, 
+		       int heuristic,
+		       char *policy_opt );
 
-   void create_dwf_schedulers( int n_shaders, 
-                               int lut_size, int lut_assoc, 
-                               int simd_width, int regf_width,
-                               int n_threads, int insn_size, 
-                               int heuristic,
-                               char *policy_opt );
+int dwf_update_warp( int shd_id, int* tid, address_type pc );
 
-   int dwf_update_warp( int shd_id, int* tid, address_type pc );
+void dwf_issue_warp( int shd_id, int *tid, address_type *pc );
 
-   void dwf_issue_warp( int shd_id, int *tid, address_type *pc );
+void dwf_clear_accessed( int shd_id );
 
-   void dwf_clear_accessed( int shd_id );
+void dwf_clear_policy_access( int shd_id );
+void dwf_reset_policy_access( int shd_id );
 
-   void dwf_clear_policy_access( int shd_id );
-   void dwf_reset_policy_access( int shd_id );
+int dwf_update_warp_at_barrier( int shd_id, int* tid, address_type pc, int cta_id );
+void dwf_hit_barrier( int shd_id, int cta_id );
+void dwf_release_barrier( int shd_id, int cta_id );
 
-   int dwf_update_warp_at_barrier( int shd_id, int* tid, address_type pc, int cta_id );
-   void dwf_hit_barrier( int shd_id, int cta_id );
-   void dwf_release_barrier( int shd_id, int cta_id );
+void dwf_init_CTA(int shd_id, int start_thread, int cta_size, address_type start_pc);
 
-   void dwf_init_CTA(int shd_id, int start_thread, int cta_size, address_type start_pc);
+void dwf_print_stat( FILE* fout );
 
-   void dwf_print_stat( FILE* fout );
+void dwf_reset_reconv_pt();
+void dwf_insert_reconv_pt(address_type pc); 
 
-   void dwf_reset_reconv_pt();
-   void dwf_insert_reconv_pt(address_type pc); 
+void dwf_reinit_schedulers( int n_shaders );
 
-   void dwf_reinit_schedulers( int n_shaders );
+void dwf_set_accPC( int n_shaders, unsigned *acc_pc_count );
 
-   void dwf_set_accPC( int n_shaders, unsigned *acc_pc_count );
-
-   void dwf_update_statistics( int shader_id );
-
-#ifdef __cplusplus
-};
-#endif
+void dwf_update_statistics( int shader_id );
 
 #endif

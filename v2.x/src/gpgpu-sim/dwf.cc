@@ -1751,7 +1751,7 @@ void fill_all (vector<char>& container, const char& value)
    fill(container.begin(), container.end(), value);
 }
 
-extern "C" int regfile_hash(signed istream_number, unsigned simd_size, unsigned n_banks);
+int regfile_hash(signed istream_number, unsigned simd_size, unsigned n_banks);
 int dwf_hw_sche_class::update_warp( int *tid, address_type pc )
 {
    int i;
@@ -2163,7 +2163,7 @@ int dwf_hw_n_sche = 0;
 dwf_hw_sche_class **dwf_hw_sche;
 unsigned *acc_dyn_pcs = NULL;
 
-extern "C" void create_dwf_schedulers( int n_shaders, 
+void create_dwf_schedulers( int n_shaders, 
                                        int lut_size, int lut_assoc, 
                                        int simd_width, int regf_width,
                                        int n_threads, int insn_size, 
@@ -2189,54 +2189,54 @@ extern "C" void create_dwf_schedulers( int n_shaders,
    }   
 }
 
-extern "C" int dwf_update_warp( int shd_id, int* tid, address_type pc )
+int dwf_update_warp( int shd_id, int* tid, address_type pc )
 {
    return dwf_hw_sche[shd_id]->update_warp( tid, pc );
 }
 
-extern "C" int dwf_update_warp_at_barrier( int shd_id, int* tid, address_type pc, int cta_id )
+int dwf_update_warp_at_barrier( int shd_id, int* tid, address_type pc, int cta_id )
 {
    return dwf_hw_sche[shd_id]->update_warp_at_barrier( tid, pc, cta_id);
 }
 
-extern "C" void dwf_hit_barrier( int shd_id, int cta_id )
+void dwf_hit_barrier( int shd_id, int cta_id )
 {
    dwf_hw_sche[shd_id]->hit_barrier( cta_id );
 }
 
-extern "C" void dwf_release_barrier( int shd_id, int cta_id )
+void dwf_release_barrier( int shd_id, int cta_id )
 {
    dwf_hw_sche[shd_id]->release_barrier( cta_id );
 }
 
-extern "C" void dwf_issue_warp( int shd_id, int *tid, address_type *pc )
+void dwf_issue_warp( int shd_id, int *tid, address_type *pc )
 {
    dwf_hw_sche[shd_id]->issue_warp( tid, pc );
 }
 
-extern "C" void dwf_clear_accessed( int shd_id )
+void dwf_clear_accessed( int shd_id )
 {
    dwf_hw_sche[shd_id]->clear_accessed( );
 }
 
-extern "C" void dwf_clear_policy_access( int shd_id )
+void dwf_clear_policy_access( int shd_id )
 {
    dwf_hw_sche[shd_id]->clear_policy_access( );
 }
 
-extern "C" void dwf_reset_policy_access( int shd_id )
+void dwf_reset_policy_access( int shd_id )
 {
    dwf_hw_sche[shd_id]->reset_policy_access( );
 }
 
-extern "C" void dwf_init_CTA(int shd_id, int start_thread, int cta_size, address_type start_pc)
+void dwf_init_CTA(int shd_id, int start_thread, int cta_size, address_type start_pc)
 {
    dwf_hw_sche[shd_id]->init_cta(start_thread, cta_size, start_pc);
    dwf_hw_sche[shd_id]->clear_accessed( );
    dwf_hw_sche[shd_id]->clear_policy_access( );
 }
 
-extern "C" void dwf_print_stat( FILE* fout )
+void dwf_print_stat( FILE* fout )
 {
    dwf_hw_sche_class::print_stats( fout );
    npc_tracker_class::histo_print( fout );
@@ -2275,24 +2275,24 @@ extern "C" void dwf_print_stat( FILE* fout )
    }
 }
 
-extern "C" void dwf_reset_reconv_pt() 
+void dwf_reset_reconv_pt() 
 {
    issue_warp_pdom_prio::reconvgence_pt.clear();
 }
 
-extern "C" void dwf_insert_reconv_pt(address_type pc) 
+void dwf_insert_reconv_pt(address_type pc) 
 {
    issue_warp_pdom_prio::reconvgence_pt.insert(pc);
 }
 
-extern "C" void dwf_reinit_schedulers( int n_shaders )
+void dwf_reinit_schedulers( int n_shaders )
 {
    for (int i=0; i<n_shaders; i++) {
       dwf_hw_sche[i]->issue_warp_pdom.reinit();
    }
 }
 
-extern "C" void dwf_update_statistics( int shader_id )
+void dwf_update_statistics( int shader_id )
 {
    dwf_hw_sche[shader_id]->npc_tracker.update_acc_count();
 }

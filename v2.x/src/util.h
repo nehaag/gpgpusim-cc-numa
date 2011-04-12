@@ -72,6 +72,7 @@ typedef unsigned address_type;
 #define LOAD_OP 2
 #define STORE_OP 3
 #define BRANCH_OP 4
+#define BARRIER_OP 5
 #define TRUE 1
 #define FALSE 0
 

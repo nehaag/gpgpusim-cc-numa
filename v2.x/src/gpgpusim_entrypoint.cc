@@ -1,11 +1,9 @@
-/* 
- * mem_fetch.h
+/*
+ * gpgpusim_entrypoint.c
  *
- * Copyright (c) 2009 by Tor M. Aamodt, Wilson W. L. Fung, Ali Bakhoda, 
- * George L. Yuan and the 
- * University of British Columbia
- * Vancouver, BC  V6T 1Z4
- * All Rights Reserved.
+ * Copyright © 2009 by Tor M. Aamodt, Wilson W. L. Fung, Ali Bakhoda, 
+ * George L. Yuan and the University of British Columbia, Vancouver, 
+ * BC V6T 1Z4, All Rights Reserved.
  * 
  * THIS IS A LEGAL DOCUMENT BY DOWNLOADING GPGPU-SIM, YOU ARE AGREEING TO THESE
  * TERMS AND CONDITIONS.
@@ -64,47 +62,83 @@
  * Vancouver, BC V6T 1Z4
  */
 
-#ifndef MEM_FETCH_H
-#define MEM_FETCH_H
+#include <stdio.h>
+#include <time.h>
 
-#include "shader.h"
-#include "addrdec.h"
+#include "option_parser.h"
+//#include "gpgpu-sim/gpu-sim.h"
 
-enum mf_type {
-   RD_REQ = 0,
-   WT_REQ,
-   REPLY_DATA, // send to shader
-   L2_WTBK_DATA,
-   DUMMY_READ, //used in write mask    
-   N_MF_TYPE
+#define MAX(a,b) (((a)>(b))?(a):(b))
+
+struct dim3 {
+   unsigned int x, y, z;
 };
 
-typedef struct {
-   unsigned request_uid;
-   unsigned long long int addr;
-   int nbytes_L1;
-   int txbytes_L1;
-   int rxbytes_L1;
-   int nbytes_L2;
-   int txbytes_L2;
-   int rxbytes_L2;
-   int sid; //shader core id
-   int wid; //warp id
-   int cache_hits_waiting;
-   mshr_entry* mshr;
-   address_type pc;
-   unsigned char write;
-   enum mem_access_type mem_acc;
-   unsigned int timestamp; //set to gpu_sim_cycle at struct creation
-   unsigned int timestamp2; //set to gpu_sim_cycle when pushed onto icnt to shader; only used for reads
-   unsigned int icnt_receive_time; //set to gpu_sim_cycle + interconnect_latency when fixed icnt latency mode is enabled
-   unsigned char bank;
-   unsigned char chip;
-   addrdec_t tlx;
-   enum mf_type type;
-   partial_write_mask_t write_mask;
-   int source_node; //memory node id when sending from mem to shader
-                    //same as sid when sending from shader 2 mem 
-} mem_fetch_t;
+struct gpgpu_ptx_sim_arg *grid_params;
+int g_grid_num=0;
+int g_argc = 3;
+const char *g_argv[] = {"", "-config","gpgpusim.config"};
 
-#endif
+unsigned int run_gpu_sim(int grid_num);
+void gpgpu_ptx_sim_init_grid(const char *kernel_key,struct gpgpu_ptx_sim_arg *args, struct dim3 gridDim, struct dim3 blockDim );
+
+int   g_network_mode = 0;
+char* g_network_config_filename;
+option_parser_t opp;
+extern void read_environment_variables();
+extern void print_splash();
+
+extern void gpu_reg_options(option_parser_t opp);
+extern void init_gpu();
+
+time_t simulation_starttime;
+
+void gpgpu_ptx_sim_init_perf()
+{
+   print_splash();
+   read_environment_variables();
+   opp = option_parser_create();
+   option_parser_register(opp, "-network_mode", OPT_INT32, &g_network_mode, "Interconnection network mode", "1");
+   option_parser_register(opp, "-inter_config_file", OPT_CSTR, &g_network_config_filename, "Interconnection network config file", "mesh");
+   gpu_reg_options(opp); // register GPU microrachitecture options
+   option_parser_cmdline(opp, g_argc, g_argv); // parse configuration options
+
+   srand(1); 
+
+   fprintf(stdout, "GPGPU-Sim: Configuration options:\n\n");
+   option_parser_print(opp, stdout);
+   init_gpu(); // initialize the GPU microarchitecture model
+   fprintf(stdout, "GPU performance model initialization complete.\n");
+
+   simulation_starttime = time((time_t *)NULL);
+}
+
+extern unsigned long long  gpu_tot_sim_insn;
+extern unsigned long long  gpu_tot_sim_cycle;
+
+int gpgpu_ptx_sim_main_perf( const char *kernel_key, struct dim3 gridDim, struct dim3 blockDim, struct gpgpu_ptx_sim_arg *grid_params )
+{
+   time_t current_time, difference, d, h, m, s;
+   gpgpu_ptx_sim_init_grid(kernel_key,grid_params,gridDim,blockDim);
+
+   run_gpu_sim(g_grid_num); // run a CUDA grid on the GPU microarchitecture simulator
+
+   g_grid_num++;
+
+   current_time = time((time_t *)NULL);
+   difference = MAX(current_time - simulation_starttime, 1);
+
+   d = difference/(3600*24);
+   h = difference/3600 - 24*d;
+   m = difference/60 - 60*(h + 24*d);
+   s = difference - 60*(m + 60*(h + 24*d));
+
+   fflush(stderr);
+   printf("\n\ngpgpu_simulation_time = %u days, %u hrs, %u min, %u sec (%u sec)\n",
+          (unsigned)d, (unsigned)h, (unsigned)m, (unsigned)s, (unsigned)difference );
+   printf("gpgpu_simulation_rate = %u (inst/sec)\n", (unsigned)(gpu_tot_sim_insn / difference) );
+   printf("gpgpu_simulation_rate = %u (cycle/sec)\n", (unsigned)(gpu_tot_sim_cycle / difference) );
+   fflush(stdout);
+
+   return 0;
+}

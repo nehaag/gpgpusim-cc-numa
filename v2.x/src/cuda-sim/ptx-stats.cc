@@ -65,6 +65,7 @@
 #include "../option_parser.h"
 #include <stdio.h>
 #include <map>
+#include "../tr1_hash_map.h"
 
 // external dependencies
 extern function_info *g_func_info;
@@ -73,7 +74,7 @@ extern function_info *g_func_info;
 int enable_ptx_file_line_stats;
 char * ptx_line_stats_filename = NULL;
 
-extern "C" void ptx_file_line_stats_options(option_parser_t opp)
+void ptx_file_line_stats_options(option_parser_t opp)
 {
     option_parser_register(opp, "-enable_ptx_file_line_stats", OPT_BOOL, 
                            &enable_ptx_file_line_stats, 
@@ -89,7 +90,7 @@ extern "C" void ptx_file_line_stats_options(option_parser_t opp)
 class ptx_file_line 
 {
 public:
-    ptx_file_line(const char* s, int l){
+    ptx_file_line(const char* s, int l) {
         if( s == NULL ) 
             st = "NULL_NAME";
         else 
@@ -109,11 +110,19 @@ public:
     }
 
     bool operator==(const ptx_file_line &other) const {
-        return (st==other.st) and (line==other.line);
+        return (line==other.line) && (st==other.st);
     }
 
     std::string st;
     unsigned line;
+};
+
+struct hash_ptx_file_line
+{
+    std::size_t operator()(const ptx_file_line & pfline) const {
+        std::hash<unsigned> hash_line;
+        return hash_line(pfline.line);
+    }
 };
 
 // holds all statistics collected for a singe PTX source line
@@ -138,15 +147,21 @@ public:
     unsigned long long warp_divergence; // number of warp divergence occured at this instruction
 };
 
-static std::map<ptx_file_line, ptx_file_line_stats> ptx_file_line_stats_tracker;
+#if (tr1_hash_map_ismap == 1)
+typedef tr1_hash_map<ptx_file_line, ptx_file_line_stats> ptx_file_line_stats_map_t;
+#else
+typedef tr1_hash_map<ptx_file_line, ptx_file_line_stats, hash_ptx_file_line> ptx_file_line_stats_map_t;
+#endif
+
+static ptx_file_line_stats_map_t ptx_file_line_stats_tracker;
 
 // output statistics to a file
-extern "C" void ptx_file_line_stats_write_file()
+void ptx_file_line_stats_write_file()
 {
     // check if stat collection is turned on
     if (enable_ptx_file_line_stats == 0) return;
 
-    std::map<ptx_file_line, ptx_file_line_stats>::iterator it;
+    ptx_file_line_stats_map_t::iterator it;
     FILE * pfile;
 
     pfile = fopen(ptx_line_stats_filename, "w");
@@ -170,14 +185,14 @@ extern "C" void ptx_file_line_stats_write_file()
 
 // attribute one more execution count to this ptx instruction
 // counting the number of threads (not warps) executing this instruction
-extern "C" void ptx_file_line_stats_add_exec_count(const ptx_instruction *pInsn)
+void ptx_file_line_stats_add_exec_count(const ptx_instruction *pInsn)
 {
     ptx_file_line_stats_tracker[ptx_file_line(pInsn->source_file(), pInsn->source_line())].exec_count += 1;
 }
 
 // attribute pipeline latency to this ptx instruction (specified by the pc)
 // pipeline latency is the number of cycles a warp with this instruction spent in the pipeline
-extern "C" void ptx_file_line_stats_add_latency(void * ptx_thd, unsigned pc, unsigned latency)
+void ptx_file_line_stats_add_latency(void * ptx_thd, unsigned pc, unsigned latency)
 {
     const ptx_instruction *pInsn = function_info::pc_to_instruction(pc);
     
@@ -186,7 +201,7 @@ extern "C" void ptx_file_line_stats_add_latency(void * ptx_thd, unsigned pc, uns
 
 // attribute dram traffic to this ptx instruction (specified by the pc)
 // dram traffic is counted in number of requests 
-extern "C" void ptx_file_line_stats_add_dram_traffic(unsigned pc, unsigned dram_traffic)
+void ptx_file_line_stats_add_dram_traffic(unsigned pc, unsigned dram_traffic)
 {
     const ptx_instruction *pInsn = function_info::pc_to_instruction(pc);
     
@@ -195,7 +210,7 @@ extern "C" void ptx_file_line_stats_add_dram_traffic(unsigned pc, unsigned dram_
 
 // attribute the number of shared memory access cycles to a ptx instruction
 // counts both the number of warps doing shared memory access and the number of cycles involved
-extern "C" void ptx_file_line_stats_add_smem_bank_conflict(void * ptx_thd, unsigned pc, unsigned n_way_bkconflict)
+void ptx_file_line_stats_add_smem_bank_conflict(void * ptx_thd, unsigned pc, unsigned n_way_bkconflict)
 {
     const ptx_instruction *pInsn = function_info::pc_to_instruction(pc);
     
@@ -206,7 +221,7 @@ extern "C" void ptx_file_line_stats_add_smem_bank_conflict(void * ptx_thd, unsig
 
 // attribute a non-coalesced mem access to a ptx instruction 
 // counts both the number of warps causing this and the number of memory requests generated
-extern "C" void ptx_file_line_stats_add_uncoalesced_gmem(void * ptx_thd, unsigned pc, unsigned n_access)
+void ptx_file_line_stats_add_uncoalesced_gmem(void * ptx_thd, unsigned pc, unsigned n_access)
 {
     const ptx_instruction *pInsn = function_info::pc_to_instruction(pc);
     
@@ -259,13 +274,13 @@ public:
 
 static ptx_inflight_memory_insn_tracker *inflight_mem_tracker = NULL;
 
-extern "C" void ptx_file_line_stats_create_exposed_latency_tracker(int n_shader_cores)
+void ptx_file_line_stats_create_exposed_latency_tracker(int n_shader_cores)
 {
     inflight_mem_tracker = new ptx_inflight_memory_insn_tracker[n_shader_cores];
 }
 
 // add an inflight memory instruction
-extern "C" void ptx_file_line_stats_add_inflight_memory_insn(int sc_id, unsigned pc)
+void ptx_file_line_stats_add_inflight_memory_insn(int sc_id, unsigned pc)
 {
     const ptx_instruction *pInsn = function_info::pc_to_instruction(pc);
 
@@ -273,7 +288,7 @@ extern "C" void ptx_file_line_stats_add_inflight_memory_insn(int sc_id, unsigned
 }
 
 // remove an inflight memory instruction
-extern "C" void ptx_file_line_stats_sub_inflight_memory_insn(int sc_id, unsigned pc)
+void ptx_file_line_stats_sub_inflight_memory_insn(int sc_id, unsigned pc)
 {
     const ptx_instruction *pInsn = function_info::pc_to_instruction(pc);
 
@@ -281,14 +296,14 @@ extern "C" void ptx_file_line_stats_sub_inflight_memory_insn(int sc_id, unsigned
 }
 
 // attribute an empty cycle in the pipeline (exposed latency) to the ptx memory instructions in flight
-extern "C" void ptx_file_line_stats_commit_exposed_latency(int sc_id, int exposed_latency)
+void ptx_file_line_stats_commit_exposed_latency(int sc_id, int exposed_latency)
 {
     assert(exposed_latency > 0);
     inflight_mem_tracker[sc_id].attribute_exposed_latency(exposed_latency);
 }
 
 // attribute the number of warp divergence to a ptx instruction
-extern "C" void ptx_file_line_stats_add_warp_divergence(unsigned pc, unsigned n_way_divergence)
+void ptx_file_line_stats_add_warp_divergence(unsigned pc, unsigned n_way_divergence)
 {
     const ptx_instruction *pInsn = function_info::pc_to_instruction(pc);
     

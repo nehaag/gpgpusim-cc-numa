@@ -62,12 +62,56 @@
 
 
 class variable:
-    
-    def __init__(self, type, bool):
+   
+    # normal constructor used by internal types
+    def __init__(self, lookup_tag, type, bool, organize = 'custom', datatype = int):
         self.data = []
-        self.type = type
-        self.bool = bool
-        
+        self.lookup_tag = lookup_tag  # the stat name in the log file (can be different from the GUI)
+        self.type = type          # plot type 
+        self.bool = bool          # wheither to expect reset at the end of a kernel
+        self.organize = organize  # how is the data organize in the log, see organizedata.py for options
+        self.datatype = datatype  # int or float or other custom type?
+        self.initialized = 0
+        self.sampleNum = 0
+
+    # import the stat variable setting from a string in variables.txt or a custom header
+    def importFromString(self, string_spec):
+        data_type_str = {'int':int, 'float':float}
+        plot_type_str = {'scalar': 1, 'vector': 2, 'stackedbar': 3, 'vector2d': 4, 'sparse': 5}
+        organize_str = {'scalar': 'scalar', 'implicit': 'impVec', 'index': 'idxVec', 'index2d': 'idx2DVec', 'sparse': 'sparse'} #skip custom
+
+        try:
+            # initialize new stat variable with info from input string
+            self.data = []
+            self.lookup_tag = ''
+            spec = [token.strip().lower() for token in string_spec.split(",")]
+            self.lookup_tag = spec[0]
+            self.type = plot_type_str[spec[1]]
+            self.bool = int(spec[2])
+            self.organize = organize_str[spec[3]]
+            self.datatype = data_type_str[spec[4]]
+           
+            # guard against bogus entries
+            if (self.type == 1):
+                assert(self.organize == 'scalar')
+            elif (self.type == 2):
+                assert(self.organize in ['impVec', 'idxVec'])
+            elif (self.type == 3):
+                assert(self.organize == 'stackbar')
+            elif (self.type == 4):
+                assert(self.organize == 'idx2DVec')
+            elif (self.type == 5):
+                assert(self.organize == 'sparse')
+        except Exception, (e):
+            print "Error in creating new stat variable from string: %s" % string_spec
+            raise e
+
+    def initSparseMatrix(self):
+        if (self.initialized == 0):
+            if (self.type != 5): raise Exception("initSparseMatrix called from wrong variable type")
+            self.data = [[], [], []]
+            self.initialized = 1
+            self.sampleNum = 1
 
 class bookmark:
 
@@ -79,10 +123,26 @@ class bookmark:
         self.graphChosen = []
         self.dydx = []
         self.description = ""
-        
+
+global lineStatName
 lineStatName = ['count', 'latency', 'dram_traffic', 'smem_bk_conflicts', 'smem_warp', 
-                'gmem_access_generated', 'gmem_warp', 'exposed_latency', 'warp_divergence']
-    
+                'gmem_access_generated', 'gmem_warp', 'exposed_latency', 'warp_divergence', 
+                'warp_issued']
+
+def loadLineStatName(filename):
+    global lineStatName
+    file = open(filename, 'r')
+    while file:
+        line = file.readline()
+        if not line : break
+        if (line.startswith('kernel line :')) :
+            line = line.strip()
+            ptxLineStatName = line.split(' ')
+            ptxLineStatName = ptxLineStatName[3:]
+            lineStatName = ptxLineStatName
+            break
+
+
 class cudaLineNo:
 
     debug = 0

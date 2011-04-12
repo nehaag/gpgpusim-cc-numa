@@ -1,5 +1,5 @@
 /* 
- * mem_fetch.h
+ * gpu-misc.c
  *
  * Copyright (c) 2009 by Tor M. Aamodt, Wilson W. L. Fung, Ali Bakhoda, 
  * George L. Yuan and the 
@@ -64,47 +64,33 @@
  * Vancouver, BC V6T 1Z4
  */
 
-#ifndef MEM_FETCH_H
-#define MEM_FETCH_H
+#include "gpu-misc.h"
 
-#include "shader.h"
-#include "addrdec.h"
+unsigned int LOGB2( unsigned int v ) {
+   unsigned int shift;
+   unsigned int r;
 
-enum mf_type {
-   RD_REQ = 0,
-   WT_REQ,
-   REPLY_DATA, // send to shader
-   L2_WTBK_DATA,
-   DUMMY_READ, //used in write mask    
-   N_MF_TYPE
-};
+   r = 0;
 
-typedef struct {
-   unsigned request_uid;
-   unsigned long long int addr;
-   int nbytes_L1;
-   int txbytes_L1;
-   int rxbytes_L1;
-   int nbytes_L2;
-   int txbytes_L2;
-   int rxbytes_L2;
-   int sid; //shader core id
-   int wid; //warp id
-   int cache_hits_waiting;
-   mshr_entry* mshr;
-   address_type pc;
-   unsigned char write;
-   enum mem_access_type mem_acc;
-   unsigned int timestamp; //set to gpu_sim_cycle at struct creation
-   unsigned int timestamp2; //set to gpu_sim_cycle when pushed onto icnt to shader; only used for reads
-   unsigned int icnt_receive_time; //set to gpu_sim_cycle + interconnect_latency when fixed icnt latency mode is enabled
-   unsigned char bank;
-   unsigned char chip;
-   addrdec_t tlx;
-   enum mf_type type;
-   partial_write_mask_t write_mask;
-   int source_node; //memory node id when sending from mem to shader
-                    //same as sid when sending from shader 2 mem 
-} mem_fetch_t;
+   shift = (( v & 0xFFFF0000) != 0 ) << 4; v >>= shift; r |= shift;
+   shift = (( v & 0xFF00    ) != 0 ) << 3; v >>= shift; r |= shift;
+   shift = (( v & 0xF0      ) != 0 ) << 2; v >>= shift; r |= shift;
+   shift = (( v & 0xC       ) != 0 ) << 1; v >>= shift; r |= shift;
+   shift = (( v & 0x2       ) != 0 ) << 0; v >>= shift; r |= shift;
 
-#endif
+   return r;
+}
+
+unsigned int MAX2NUM( unsigned int a, unsigned int b ) {
+   if (a > b) {
+      return a;
+   } else
+      return b;
+}
+
+unsigned int MIN2NUM( unsigned int a, unsigned int b ) {
+   if (a < b) {
+      return a;
+   } else
+      return b;
+}

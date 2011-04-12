@@ -66,8 +66,8 @@ ifeq ($(OPENGL_SUPPORT),1)
 	GL = -DOPENGL_SUPPORT
 endif
 
-CPP = g++
-CC = gcc
+CPP = g++ $(SNOW)
+CC = gcc &(SNOW)
 CREATELIBRARY    =  1
 DEBUG ?= 0
 CCFLAGS = -O3 -g -Wall -fPIC $(GL)

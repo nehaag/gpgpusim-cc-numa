@@ -62,8 +62,8 @@
 # Ali Bakhoda, George L. Yuan, at the University of British Columbia, 
 # Vancouver, BC V6T 1Z4
 
-CPP = g++
-CC = gcc
+CPP = g++ $(SNOW)
+CC = gcc $(SNOW)
 
 NVCC_VERSION:=$(shell nvcc --version | awk '/release/ {print $$5;}' | sed 's/,//')
 INCFLAGEXTRA ?=
@@ -78,13 +78,20 @@ ROOTBINDIR ?= bin
 BINDIR     ?= $(ROOTBINDIR)
 ROOTOBJDIR ?= obj
 ifneq ($(NVCC_VERSION),2.3)
-LIBDIR     := $(NVIDIA_CUDA_SDK_LOCATION)/lib
-COMMONDIR  := $(NVIDIA_CUDA_SDK_LOCATION)/common
-SDKINCDIR  := $(NVIDIA_CUDA_SDK_LOCATION)/common/inc/
+LIBDIR     := "$(NVIDIA_CUDA_SDK_LOCATION)/lib"
+COMMONDIR  := "$(NVIDIA_CUDA_SDK_LOCATION)/common"
+SDKINCDIR  := "$(NVIDIA_CUDA_SDK_LOCATION)/common/inc/"
 else
-LIBDIR     := $(NVIDIA_CUDA_SDK_LOCATION)/C/lib
-COMMONDIR  := $(NVIDIA_CUDA_SDK_LOCATION)/C/common
-SDKINCDIR  := $(NVIDIA_CUDA_SDK_LOCATION)/C/common/inc/
+LIBDIR     := "$(NVIDIA_CUDA_SDK_LOCATION)/C/lib"
+COMMONDIR  := "$(NVIDIA_CUDA_SDK_LOCATION)/C/common"
+SDKINCDIR  := "$(NVIDIA_CUDA_SDK_LOCATION)/C/common/inc/"
+endif
+LIB += -lm -lz
+ifeq ($(shell uname),Linux)
+	CUTIL:=cutil
+	LIB += -lGL
+else
+	CUTIL:=cutil_i386
 endif
 GPGPUSIM_ROOT ?= ../..
 INTERMED_FILES := *.cpp*.i *.cpp*.ii *.cu.c *.cudafe*.* *.fatbin.c *.cu.cpp *.linkinfo *.cpp_o core
@@ -98,11 +105,11 @@ SIM_OBJS +=  $(patsubst %.cu,$(SIM_OBJDIR)%.cu_o,$(CUFILES))
 
 gpgpu_ptx_sim__$(EXECUTABLE): $(SIM_OBJS) $(GPGPUSIM_ROOT)/src/cuda-sim/libgpgpu_ptx_sim.a $(GPGPUSIM_ROOT)/src/libgpgpusim.a $(GPGPUSIM_ROOT)/src/intersim/libintersim.a 
 	$(CPP) $(CFLAGS) -g $(notdir $(SIM_OBJS)) -L$(GPGPUSIM_ROOT)/libcuda/ -lcuda \
-		-L$(LIBDIR) -lcutil \
+		-L$(LIBDIR) -l$(CUTIL) \
 		-L$(GPGPUSIM_ROOT)/src/ -lgpgpusim \
 		-L$(GPGPUSIM_ROOT)/src/intersim -lintersim \
 		-L$(GPGPUSIM_ROOT)/src/cuda-sim/ -lgpgpu_ptx_sim \
-		-lm -lz -lGL $(NEWLIBDIR) $(LIB) -o gpgpu_ptx_sim__$(EXECUTABLE)
+		$(NEWLIBDIR) $(LIB) -o gpgpu_ptx_sim__$(EXECUTABLE)
 	rm -rf $(INTERMED_FILES) *.cubin cubin.bin *_o *.hash $(EXECUTABLE)
 
 %.cpp_o: %.cpp

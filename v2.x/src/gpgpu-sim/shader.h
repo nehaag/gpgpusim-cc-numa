@@ -69,6 +69,7 @@
 #include <math.h>
 #include <limits.h>
 #include <assert.h>
+#include <map>
 
 #include "../cuda-sim/ptx.tab.h"
 #include "../cuda-sim/dram_callback.h"
@@ -77,14 +78,26 @@
 #include "delayqueue.h"
 #include "stack.h"
 #include "dram.h"
+#include "../abstract_hardware_model.h"
 
 #ifndef SHADER_H
 #define SHADER_H
 
 #define NO_OP_FLAG            0xFF
 
+//READ_PACKET_SIZE: bytes: 6 address (flit can specify chanel so this gives up to ~2GB/channel, so good for now), 2 bytes [shaderid + mshrid](14 bits) + req_size(0-2 bits (if req_size variable) - so up to 2^14 = 16384 mshr total
 #define READ_PACKET_SIZE 8
+//WRITE_PACKET_SIZE: bytes: 6 address, 2 miscelaneous. 
 #define WRITE_PACKET_SIZE 8
+
+#include <bitset>
+const unsigned partial_write_mask_bits = 128; //must be at least size of largest memory access.
+typedef std::bitset<partial_write_mask_bits> partial_write_mask_t;
+
+#define WRITE_MASK_SIZE 8
+#define NO_PARTIAL_WRITE (partial_write_mask_t())
+
+//this is used a lot of places where it maybe should be more variable?
 #define WORD_SIZE 4
 
 //Set a hard limit of 32 CTAs per shader [cuda only has 8]
@@ -120,7 +133,11 @@ typedef struct {
    unsigned in[4];
    unsigned char is_vectorin;
    unsigned char is_vectorout;
+   int arch_reg[8]; // register number for bank conflict evaluation
    unsigned data_size; // what is the size of the word being operated on?
+
+   int reg_bank_access_pending;
+   int reg_bank_conflict_stall_checked; // flag to turn off register bank conflict checker to avoid double stalling
 
    unsigned char inst_type;
 
@@ -148,9 +165,9 @@ typedef struct {
 
    int id;
 
-   unsigned n_completed;         // number of threads in warp completed -- set for first thread in each warp
-   unsigned n_avail4fetch;       // number of threads in warp available to fetch -- set for first thread in each warp
-   int n_waiting_at_barrier;  // number of threads in warp that have reached the barrier
+   //unsigned n_completed;         // number of threads in warp completed -- set for first thread in each warp
+   //unsigned n_avail4fetch;       // number of threads in warp available to fetch -- set for first thread in each warp
+   //int n_waiting_at_barrier;  // number of threads in warp that have reached the barrier
    unsigned in_scheduler;     // used by dynamic warp formation for error check
 
    int         m_waiting_at_barrier;
@@ -162,7 +179,26 @@ typedef struct {
    n_l1_mrghit_ac,
    n_l1_access_ac; //used to collect "per thread" l1 miss statistics 
                    // ac stands for accumulative.
+   unsigned cta_id; // which hardware CTA does this thread belong to?
 } thread_ctx_t;
+
+struct shd_warp_t
+{
+    shd_warp_t(unsigned warp_size){reset(warp_size); assert(warp_size <= bitset_size);}
+    void reset(unsigned warp_size){n_completed = warp_size; n_avail4fetch = n_waiting_at_barrier = 0; threads_completed.reset(); threads_functionally_executed.reset();}
+
+    unsigned wid;
+    unsigned n_completed; // number of threads in warp completed
+    unsigned n_avail4fetch; // number of threads in warp available to fetch 
+    int n_waiting_at_barrier; // number of threads in warp that have reached the barrier
+
+    const static unsigned bitset_size = 32;
+    std::bitset<bitset_size> threads_completed;
+    std::bitset<bitset_size> threads_functionally_executed;
+};
+
+inline unsigned hw_tid_from_wid(unsigned wid, unsigned warp_size, unsigned i){return wid * warp_size + i;};
+inline unsigned wid_from_hw_tid(unsigned tid, unsigned warp_size){return tid/warp_size;};
 
 typedef struct {
 
@@ -176,6 +212,7 @@ typedef struct {
    unsigned long long  *m_branch_div_cycle;
 
 } pdom_warp_ctx_t; // bounded stack that implements pdom reconvergence (see MICRO'07 paper)
+
 
 enum mshr_status {
    INITIALIZED = 0,
@@ -211,47 +248,45 @@ enum mem_req_stat {
    MR_WRITEBACK, //done
    NUM_MEM_REQ_STAT
 };
-
+#include <vector>
 typedef struct mshr_entry_t {
+#ifdef _GLIBCXX_DEBUG
+    //satisfy cxx debug conditions on iterators, needs to be nonsingular to copy, which messes completely with structures containing them.
+    mshr_entry_t(){
+        static std::vector<mshr_entry_t> dummy_vector;
+        this_mshr = dummy_vector.begin(); //initialize it to something nonsingular so it can be copied. 
+    }
+#endif
+private:
+   friend class mshr_shader_unit;
+   std::vector<mshr_entry_t>::iterator this_mshr; //to ease tracking and update.
+public:
    unsigned request_uid;
-   unsigned inst_uid;
-
-   /* register(s) to be written by this load */
-   int reg, reg2, reg3, reg4;
-
-   unsigned char isvector; //if vector, need to also consider reg2, reg3, reg4
+    
    /* memory address of the data */
    unsigned long long int addr;
 
-   /* Keeps track of which thread this memory access belongs to */
-   int hw_thread_id; 
+   // instructions are stored here.
+   std::vector<inst_t> insts;
 
    /* Current stage of the load: fetched or not? */
-   unsigned char fetched;
+   bool fetched(){return status == FETCHED;};
 
-   /* Stores value of when this entry entered mshr...
-    * difference between priority and mshr_fetch_counter gives priority
-    * Lower value = higher priority. */
-   unsigned int priority;
+   bool iswrite;
 
-   /* Record the load instruction corresponding to this entry
-    * - No need to reconstruct an arbitrary insn for writeback/retire */
-   inst_t inst;
-
-   unsigned char iswrite;
-
-   struct mshr_entry_t *merged_requests;
-
-   unsigned char merged;
+   bool merged_on_other_reqest; //true if waiting for another mshr - this mshr doesn't send a memory request
+   struct mshr_entry_t *merged_requests; //mshrs waiting on this mshr
 
    enum mshr_status status; 
 
    void *mf; // link to corresponding memory fetch structure
 
-   unsigned char istexture; //if it's a request from the texture cache
-   unsigned char isconst; //if it's a request from the constant cache
-   unsigned char islocal; //if it's a request to the local memory of a thread
+   //unsigned space; //does below.
+   bool istexture; //if it's a request from the texture cache
+   bool isconst; //if it's a request from the constant cache
+   bool islocal; //if it's a request to the local memory of a thread
 
+   bool wt_no_w2cache; //in write_through, sometimes need to prevent writing back returning data into cache, because its been written in the meantime. 
 } mshr_entry;
 
 enum mem_access_type { 
@@ -261,28 +296,86 @@ enum mem_access_type {
    TEXTURE_ACC_R = 3, 
    GLOBAL_ACC_W = 4, 
    LOCAL_ACC_W = 5,
-   NUM_MEM_ACCESS_TYPE = 6
+   L2_WRBK_ACC = 6, 
+   NUM_MEM_ACCESS_TYPE = 7
 };
 
-#define NO_PARTIAL_WRITE 0
-#define WRITE_MASK_SIZE 8
+
 /* A pointer to the function that glues the shader with the memory hiearchy */
 typedef unsigned char (*fq_push_t)(unsigned long long int addr, int bsize, unsigned char readwrite,
-                                   unsigned long long int partial_write_mask, 
-                                   int sid, int mshr_idx, mshr_entry* mshr, int cache_hits_waiting,  
+                                   partial_write_mask_t, 
+                                   int sid, int wid, mshr_entry* mshr, int cache_hits_waiting,  
                                    enum mem_access_type mem_acc, address_type pc);
 
-typedef unsigned char (*fq_has_buffer_t)(unsigned long long int *addr, int *bsize,
-                                         int n_addr, int sid);
+typedef unsigned char (*fq_has_buffer_t)(unsigned long long int addr, int bsize, bool write, int sid);
 
-typedef struct shader_core_ctx {
-   char *name;
+const unsigned WARP_PER_CTA_MAX = 32;
+typedef std::bitset<WARP_PER_CTA_MAX> warp_set_t;
+
+class barrier_set_t {
+public:
+   barrier_set_t( unsigned max_warps_per_core, unsigned max_cta_per_core );
+
+   // during cta allocation
+   void allocate_barrier( unsigned cta_id, warp_set_t warps );
+
+   // during cta deallocation
+   void deallocate_barrier( unsigned cta_id );
+
+   typedef std::map<unsigned, warp_set_t >  cta_to_warp_t;
+
+   // individual warp hits barrier
+   void warp_reaches_barrier( unsigned cta_id, unsigned warp_id );
+
+   // fetching a warp
+   bool available_for_fetch( unsigned warp_id ) const;
+
+   // warp reaches exit 
+   void warp_exit( unsigned warp_id );
+
+   // assertions
+   bool warp_waiting_at_barrier( unsigned warp_id );
+
+   // debug
+   void dump() const;
+
+private:
+   unsigned m_max_cta_per_core;
+   unsigned m_max_warps_per_core;
+
+   cta_to_warp_t m_cta_to_warps; 
+   warp_set_t m_warp_active;
+   warp_set_t m_warp_at_barrier;
+};
+
+class mshr_shader_unit;
+  
+extern unsigned int warp_size; 
+
+typedef struct shader_core_ctx : public core_t 
+{
+   shader_core_ctx( unsigned max_warps_per_cta, unsigned max_cta_per_core );
+
+	virtual void set_at_barrier( unsigned cta_id, unsigned warp_id );
+   virtual void warp_exit( unsigned warp_id );
+   virtual bool warp_waiting_at_barrier( unsigned warp_id );
+   void allocate_barrier( unsigned cta_id, warp_set_t warps );
+   void deallocate_barrier( unsigned cta_id );
+
+////
+   
+   const char *name;
    int sid;
 
    // array of the threads running on this shader core 
    thread_ctx_t *thread;
    unsigned int n_threads;
    unsigned int last_issued_thread;
+
+   //per warp information array
+   std::vector<shd_warp_t> warp;
+
+   barrier_set_t m_barriers;
 
    //Keeps track of which warp of instructions to fetch/execute
    int next_warp; 
@@ -303,22 +396,6 @@ typedef struct shader_core_ctx {
    shd_cache_t *L1cache;
    shd_cache_t *L1texcache;
    shd_cache_t *L1constcache;
-
-   //Each shader has N_THREADS number of MSHR, one per thread
-   delay_queue **mshr;
-   delay_queue *return_queue;
-   //When we add an entry to the MSHR, we increment mshr_up_counter and set 
-   //the mshr priority # to this value. When we want to fetch, actual priority of task
-   //to compare between the MSHR will be the difference between mshr_up_counter and mshr_fetch_counter
-   unsigned int mshr_up_counter;
-   unsigned int mshr_fetch_counter;
-   //keep track of number of mshrs used by this shader 
-   // All merged mshrs are counted as 1 
-   int n_mshr_used;
-   int max_n_mshr_used; //tracks peak usage
-   int* mshr_merge_counter_array;
-   int  mshr_merge_counter_next_empty;
-   int  mshr_merge_counter_array_size;
 
    // pointer to memory access wrapping function 
    fq_push_t fq_push;
@@ -355,7 +432,8 @@ typedef struct shader_core_ctx {
 
    int pending_shmem_bkacc; // 0 = check conflict for new insn
    int pending_cache_bkacc; // 0 = check conflict for new insn
-   int mem_stage_done_uncoalesced_stall;
+
+   bool shader_memory_new_instruction_processed;
 
    int pending_mem_access; // number of memory access to be serviced (use for W0 classification)
 
@@ -368,11 +446,13 @@ typedef struct shader_core_ctx {
    unsigned int n_registers;   //registers available in the shader core 
    unsigned int n_cta;      //Limit on number of concurrent CTAs in shader core
 
-   void *req_hist;
+   //void *req_hist; //not used anywhere
+
+   mshr_shader_unit *mshr_unit;
 } shader_core_ctx_t;
 
 
-shader_core_ctx_t* shader_create( char *name, int sid, unsigned int n_threads, 
+shader_core_ctx_t* shader_create( const char *name, int sid, unsigned int n_threads, 
                                   unsigned int n_mshr, fq_push_t fq_push, fq_has_buffer_t fq_has_buffer, unsigned int model);
 unsigned shader_reinit(shader_core_ctx_t *sc, int start_thread, int end_thread);
 void shader_init_CTA(shader_core_ctx_t *shader, int start_thread, int end_thread);
@@ -407,10 +487,7 @@ void shader_cycle( shader_core_ctx_t *shader,
 
 void mshr_print(FILE *fp, shader_core_ctx_t *shader);
 
-#ifdef __cplusplus
-extern "C"
-#endif
-void mshr_update_status(mshr_entry *mshr, enum mshr_status new_status);
+void mshr_update_status(mshr_entry* mshr, enum mshr_status new_status);
 
 mshr_entry* fetchMSHR(delay_queue** mshr, shader_core_ctx_t* sc);
 mshr_entry* shader_check_mshr4tag(shader_core_ctx_t* sc, unsigned long long int addr,int mem_type);

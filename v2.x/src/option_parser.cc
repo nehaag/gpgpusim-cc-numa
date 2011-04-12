@@ -202,6 +202,7 @@ bool OptionRegistry<bool>::fromString(const string str)
    } catch (stringstream::failure &ep) {
       parsed = false;
    }
+   assert(value == 0 or value == 1); // sanity check for boolean options (it can only be 1 or 0)
    m_variable = (value != 0);
    return parsed;
 }
@@ -232,7 +233,7 @@ public:
         p_option->assignDefault(optionDefault);
    }
 
-   void ParseCommandLine(int argc, char *argv[]) 
+   void ParseCommandLine(int argc, const char * const argv[]) 
    {
       for (int i = 1; i < argc; i++) {
          OptionMap::iterator i_option;
@@ -319,8 +320,11 @@ public:
       }
 
       // pass the string token into normal commandline parser
-      ParseCommandLine(argv.size(), argv.data());
-
+      char **targv = (char**)calloc(argv.size(), sizeof(char*));
+      for( unsigned k=0; k < argv.size(); k++ ) 
+         targv[k] = argv[k];
+      ParseCommandLine(argv.size(), targv);
+      free(targv);
       for (size_t i = 0; i < argv.size(); i++) {
          delete[] argv[i];
       }
@@ -385,7 +389,7 @@ void option_parser_register(option_parser_t opp,
 }
 
 void option_parser_cmdline(option_parser_t opp,
-                           int argc, char *argv[]) 
+                           int argc, const char *argv[]) 
 {
     OptionParser *p_opr = reinterpret_cast<OptionParser *>(opp);
     p_opr->ParseCommandLine(argc,argv);

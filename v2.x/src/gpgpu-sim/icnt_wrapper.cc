@@ -1,5 +1,5 @@
 /* 
- * mem_fetch.h
+ * icnt_wrapper.c
  *
  * Copyright (c) 2009 by Tor M. Aamodt, Wilson W. L. Fung, Ali Bakhoda, 
  * George L. Yuan and the 
@@ -64,47 +64,34 @@
  * Vancouver, BC V6T 1Z4
  */
 
-#ifndef MEM_FETCH_H
-#define MEM_FETCH_H
+#include "icnt_wrapper.h"
+#include <assert.h>
+#include "../intersim/interconnect_interface.h"
 
-#include "shader.h"
-#include "addrdec.h"
+icnt_has_buffer_p icnt_has_buffer;
+icnt_push_p       icnt_push;
+icnt_pop_p        icnt_pop;
+icnt_transfer_p   icnt_transfer;
+icnt_busy_p       icnt_busy;
 
-enum mf_type {
-   RD_REQ = 0,
-   WT_REQ,
-   REPLY_DATA, // send to shader
-   L2_WTBK_DATA,
-   DUMMY_READ, //used in write mask    
-   N_MF_TYPE
-};
+extern int   g_network_mode;
+extern char* g_network_config_filename;
 
-typedef struct {
-   unsigned request_uid;
-   unsigned long long int addr;
-   int nbytes_L1;
-   int txbytes_L1;
-   int rxbytes_L1;
-   int nbytes_L2;
-   int txbytes_L2;
-   int rxbytes_L2;
-   int sid; //shader core id
-   int wid; //warp id
-   int cache_hits_waiting;
-   mshr_entry* mshr;
-   address_type pc;
-   unsigned char write;
-   enum mem_access_type mem_acc;
-   unsigned int timestamp; //set to gpu_sim_cycle at struct creation
-   unsigned int timestamp2; //set to gpu_sim_cycle when pushed onto icnt to shader; only used for reads
-   unsigned int icnt_receive_time; //set to gpu_sim_cycle + interconnect_latency when fixed icnt latency mode is enabled
-   unsigned char bank;
-   unsigned char chip;
-   addrdec_t tlx;
-   enum mf_type type;
-   partial_write_mask_t write_mask;
-   int source_node; //memory node id when sending from mem to shader
-                    //same as sid when sending from shader 2 mem 
-} mem_fetch_t;
+void icnt_init( unsigned int n_shader, unsigned int n_mem )
+{
+   switch (g_network_mode) {
+   
+   case INTERSIM:
+      init_interconnect(g_network_config_filename  ,n_shader, n_mem);
+      icnt_has_buffer = interconnect_has_buffer;
+      icnt_push       = interconnect_push;
+      icnt_pop        = interconnect_pop;
+      icnt_transfer   = advance_interconnect;
+      icnt_busy       = interconnect_busy;
+     break;
 
-#endif
+   default:
+      assert(0);
+      break;
+   }
+}

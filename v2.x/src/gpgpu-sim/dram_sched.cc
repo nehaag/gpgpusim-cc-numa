@@ -72,7 +72,7 @@
 extern unsigned long long  gpu_sim_cycle;
 extern signed long long gpu_tot_sim_cycle;
 extern unsigned max_mrq_latency;
-extern unsigned mrq_lat_table[24];
+extern unsigned mrq_lat_table[32];
 extern int gpgpu_memlatency_stat;
 extern int gpgpu_dram_sched_queue_size;
 extern unsigned int **concurrent_row_access; //concurrent_row_access[dram chip id][bank id]
@@ -181,12 +181,12 @@ void ideal_dram_scheduler::print( FILE *fp )
    }
 }
 
-extern "C" void* alloc_fast_ideal_scheduler(dram_t *dm)
+void* alloc_fast_ideal_scheduler(dram_t *dm)
 {
    return new ideal_dram_scheduler(dm);
 }
 
-extern "C" void fast_scheduler_ideal(dram_t* dm)
+void fast_scheduler_ideal(dram_t* dm)
 {
 
 
@@ -233,7 +233,7 @@ void dump_fast_ideal_scheduler( dram_t *dm )
    sched->print(stdout);
 }
 
-extern "C" unsigned fast_scheduler_queue_length(dram_t *dm)
+unsigned fast_scheduler_queue_length(dram_t *dm)
 {
    if (dm->m_fast_ideal_scheduler ) {
       ideal_dram_scheduler *sched = reinterpret_cast<ideal_dram_scheduler*>( dm->m_fast_ideal_scheduler );

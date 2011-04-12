@@ -69,7 +69,8 @@
 #include <string>
 
 // detect gcc 4.3 and use unordered map (part of c++0x)
-#ifdef __GNUC__
+// unordered map doesn't play nice with _GLIBCXX_DEBUG, just use a map if its enabled.
+#if  defined( __GNUC__ ) and not defined( _GLIBCXX_DEBUG )
 #if __GNUC__ >= 4 && __GNUC_MINOR__ >= 3
    #include <unordered_map>
    #define my_hash_map std::unordered_map
@@ -83,12 +84,13 @@
 #else
    #include <map>
    #define my_hash_map std::map
+   #define USE_MAP
 #endif
 
 #include "histogram.h"
 
 binned_histogram::binned_histogram (std::string name, int nbins, int* bins) 
-   : m_name(name), m_nbins(nbins), m_bins(NULL), m_bin_cnts(new int[m_nbins]), m_maximum(0)
+   : m_name(name), m_nbins(nbins), m_bins(NULL), m_bin_cnts(new int[m_nbins]), m_maximum(0), m_sum(0) 
 {
    if (bins) {
       m_bins = new int[m_nbins];
@@ -102,7 +104,7 @@ binned_histogram::binned_histogram (std::string name, int nbins, int* bins)
 
 binned_histogram::binned_histogram (const binned_histogram& other)
    : m_name(other.m_name), m_nbins(other.m_nbins), m_bins(NULL), 
-     m_bin_cnts(new int[m_nbins]), m_maximum(0)
+     m_bin_cnts(new int[m_nbins]), m_maximum(0), m_sum(0)
 {
    for (int i = 0; i < m_nbins; i++) {
       m_bin_cnts[i] = other.m_bin_cnts[i];
@@ -122,10 +124,17 @@ void binned_histogram::add2bin (int sample) {
 
 void binned_histogram::fprint (FILE *fout) {
    if (m_name.c_str() != NULL) fprintf(fout, "%s = ", m_name.c_str());
+   int total_sample = 0;
    for (int i = 0; i < m_nbins; i++) {
       fprintf(fout, "%d ", m_bin_cnts[i]);
+      total_sample += m_bin_cnts[i];
    }
    fprintf(fout, "max=%d ", m_maximum);
+   float avg = 0.0f;
+   if (total_sample > 0) {
+      avg = (float)m_sum / total_sample;
+   }
+   fprintf(fout, "avg=%0.2f ", avg);
 }
 
 binned_histogram::~binned_histogram () {
@@ -153,6 +162,7 @@ void pow2_histogram::add2bin (int sample) {
    m_bin_cnts[bin] += 1;
    
    m_maximum = (sample > m_maximum)? sample : m_maximum;
+   m_sum += sample;
 }
 
 linear_histogram::linear_histogram (int stride, const char *name, int nbins, int* bins) 
@@ -164,10 +174,12 @@ void linear_histogram::add2bin (int sample) {
    assert(sample >= 0);
 
    int bin = sample / m_stride;      
+   if (bin >= m_nbins) bin = m_nbins - 1;
    
    m_bin_cnts[bin] += 1;
    
    m_maximum = (sample > m_maximum)? sample : m_maximum;
+   m_sum += sample;
 }
 
 
@@ -287,7 +299,7 @@ void spill_log_to_file (FILE *fout, int final, unsigned long long  current_cycle
 /////////////////////////////////////////////////////////////////////////////////////
 // thread control-flow locality logger
 /////////////////////////////////////////////////////////////////////////////////////
-extern "C" unsigned translate_pc_to_ptxlineno(unsigned pc);
+unsigned translate_pc_to_ptxlineno(unsigned pc);
 class thread_insn_span {
 private: 
    
@@ -300,7 +312,11 @@ public:
    
    thread_insn_span(unsigned long long  cycle, int n_insn)
       : m_cycle(cycle), m_n_insn(n_insn), 
+#ifdef USE_MAP
+        m_insn_span_count() 
+#else 
         m_insn_span_count(n_insn * 2) 
+#endif
    { }
 
    ~thread_insn_span() { }
@@ -497,8 +513,6 @@ public:
 static int n_thread_CFloggers = 0;
 static thread_CFlocality** thread_CFlogger = NULL;
 
-extern "C" {
-
 void create_thread_CFlogger( int n_loggers, int n_threads, int n_insn, address_type start_pc, unsigned long long  logging_interval) 
 {
    destroy_thread_CFlogger();
@@ -563,8 +577,6 @@ void cflog_visualizer_gzprint(gzFile fout)
    }
 }
 
-}
-
 /////////////////////////////////////////////////////////////////////////////////////
 // per-insn active thread distribution (warp occ) logger
 /////////////////////////////////////////////////////////////////////////////////////
@@ -615,8 +627,6 @@ int insn_warp_occ_logger::s_ids = 0;
 
 static std::vector<insn_warp_occ_logger> iwo_logger;
 
-extern "C" {
-
 void insn_warp_occ_create( int n_loggers, int simd_width, int n_insn)
 {
    iwo_logger.clear();
@@ -638,10 +648,6 @@ void insn_warp_occ_print( FILE *fout )
       iwo_logger[i].print(fout);
    }
 }
-
-
-}
-
 
 /////////////////////////////////////////////////////////////////////////////////////
 // generic linear histogram logger
@@ -833,8 +839,6 @@ int linear_histogram_logger::s_ids = 0;
 
 static std::vector<linear_histogram_logger> s_warp_occ_logger;
 
-extern "C" {
-
 void shader_warp_occ_create( int n_loggers, int simd_width, unsigned long long  logging_interval)
 {
    // simd_width + 1 to include the case with full warp
@@ -865,9 +869,6 @@ void shader_warp_occ_print( FILE *fout )
 }
 
 
-}
-
-
 /////////////////////////////////////////////////////////////////////////////////////
 // per-shadercore memory-access logger
 /////////////////////////////////////////////////////////////////////////////////////
@@ -875,8 +876,6 @@ void shader_warp_occ_print( FILE *fout )
 static int s_mem_acc_logger_n_dram = 0;
 static int s_mem_acc_logger_n_bank = 0;
 static std::vector<linear_histogram_logger> s_mem_acc_logger;
-
-extern "C" {
 
 void shader_mem_acc_create( int n_loggers, int n_dram, int n_bank, unsigned long long  logging_interval)
 {
@@ -917,8 +916,6 @@ void shader_mem_acc_print( FILE *fout )
    }
 }
 
-}
-
 
 /////////////////////////////////////////////////////////////////////////////////////
 // per-shadercore memory-latency logger
@@ -927,8 +924,6 @@ void shader_mem_acc_print( FILE *fout )
 static bool s_mem_lat_logger_used = false;
 static int s_mem_lat_logger_nbins = 48;     // up to 2^24 = 16M
 static std::vector<linear_histogram_logger> s_mem_lat_logger;
-
-extern "C" {
 
 void shader_mem_lat_create( int n_loggers, unsigned long long  logging_interval)
 {
@@ -981,8 +976,6 @@ void shader_mem_lat_print( FILE *fout )
    }
 }
 
-}
-
 
 /////////////////////////////////////////////////////////////////////////////////////
 // per-shadercore cache-miss logger
@@ -994,8 +987,6 @@ static std::vector<linear_histogram_logger> s_cache_access_logger;
 enum cache_access_logger_types {
    NORMAL, TEXTURE, CONSTANT
 };
-
-extern "C" {
 
 int get_shader_normal_cache_id() { return NORMAL; }
 int get_shader_texture_cache_id() { return TEXTURE; }
@@ -1042,16 +1033,12 @@ void shader_cache_access_print( FILE *fout )
    }
 }
 
-}
-
 
 /////////////////////////////////////////////////////////////////////////////////////
 // per-shadercore CTA count logger (only make sense with gpgpu_spread_blocks_across_cores)
 /////////////////////////////////////////////////////////////////////////////////////
 
 static linear_histogram_logger *s_CTA_count_logger = NULL;
-
-extern "C" {
 
 void shader_CTA_count_create( int n_shaders, unsigned long long  logging_interval)
 {
@@ -1100,7 +1087,5 @@ void shader_CTA_count_visualizer_gzprint( gzFile fout )
 {
    if (s_CTA_count_logger == NULL) return;
    s_CTA_count_logger->print_visualizer(fout);
-}
-
 }
 

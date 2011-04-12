@@ -137,8 +137,8 @@ public:
                if (this->tid[i] >= 0) {
                   shd->thread[tid[i]].avail4fetch++;
                   assert(shd->thread[tid[i]].avail4fetch <= 1);
-                  assert( shd->thread[tid[i] - (tid[i]%warp_size)].n_avail4fetch < warp_size );
-                  shd->thread[tid[i] - (tid[i]%warp_size)].n_avail4fetch++;
+                  assert( shd->warp[tid[i]/warp_size].n_avail4fetch < warp_size );
+                  shd->warp[tid[i]/warp_size].n_avail4fetch++;
                   thd_unlocked = 1;
                }
             }
@@ -186,7 +186,7 @@ void free_warp_tracker(warp_tracker* wpt)
    free_wpt.push_back(wpt);
 }
 
-extern "C" void init_warp_tracker( ) 
+void init_warp_tracker( ) 
 {
    unsigned int i;
 
@@ -210,7 +210,7 @@ extern "C" void init_warp_tracker( )
 extern signed long long gpu_tot_sim_cycle;
 extern signed long long gpu_sim_cycle;
 
-extern "C" void wpt_register_warp( int *tid_in, shader_core_ctx_t *shd ) 
+void wpt_register_warp( int *tid_in, shader_core_ctx_t *shd ) 
 {
    int sid = shd->sid;
    unsigned i;
@@ -233,7 +233,7 @@ extern "C" void wpt_register_warp( int *tid_in, shader_core_ctx_t *shd )
    }
 }
 
-extern "C" int wpt_signal_avail( int tid, shader_core_ctx_t *shd ) 
+int wpt_signal_avail( int tid, shader_core_ctx_t *shd ) 
 {
    int sid = shd->sid;
    warp_tracker *wpt = warp_tracker_map[sid][tid];
@@ -258,9 +258,9 @@ extern "C" int wpt_signal_avail( int tid, shader_core_ctx_t *shd )
    }
 }
 
-extern "C" void register_cta_thread_exit(shader_core_ctx_t *shader, int cta_num );
+void register_cta_thread_exit(shader_core_ctx_t *shader, int cta_num );
 
-extern "C" int wpt_signal_complete( int tid, shader_core_ctx_t *shd ) 
+int wpt_signal_complete( int tid, shader_core_ctx_t *shd ) 
 {
    int sid = shd->sid;
    warp_tracker *wpt = warp_tracker_map[sid][tid];
@@ -361,12 +361,12 @@ map<unsigned, unsigned> thread_pc_tracker_class::histogram;
 
 thread_pc_tracker_class *thread_pc_tracker = NULL;
 
-extern "C" void print_thread_pc_histogram( FILE *fout )
+void print_thread_pc_histogram( FILE *fout )
 {
    thread_pc_tracker_class::histo_print(fout);
 }
 
-extern "C" void print_thread_pc( FILE *fout )
+void print_thread_pc( FILE *fout )
 {
    fprintf(fout, "SHD_PC_C: ");
    for (unsigned i=0; i<gpu_n_shader; i++) {
@@ -375,7 +375,7 @@ extern "C" void print_thread_pc( FILE *fout )
    fprintf(fout, "\n");
 }
 
-extern "C" void track_thread_pc( int shader_id, int *tid, address_type pc ) 
+void track_thread_pc( int shader_id, int *tid, address_type pc ) 
 {
    if (!thread_pc_tracker) {
       thread_pc_tracker = new thread_pc_tracker_class[gpu_n_shader];
@@ -391,7 +391,7 @@ extern "C" void track_thread_pc( int shader_id, int *tid, address_type pc )
 static int *commit_warp_pool = NULL;
 static queue<int*> free_commit_warp_q;
 
-extern "C" void init_commit_warp( )
+void init_commit_warp( )
 {
    unsigned int num_warp = warp_size * gpu_n_shader * gpu_n_thread_per_shader;
    commit_warp_pool = new int[num_warp];
@@ -400,7 +400,7 @@ extern "C" void init_commit_warp( )
    }
 }
 
-extern "C" int* alloc_commit_warp( )
+int* alloc_commit_warp( )
 {
    if (!commit_warp_pool) {
       init_commit_warp( );
@@ -413,7 +413,7 @@ extern "C" int* alloc_commit_warp( )
    return new_commit_warp;
 }
 
-extern "C" void free_commit_warp( int *commit_warp )
+void free_commit_warp( int *commit_warp )
 {
    free_commit_warp_q.push(commit_warp);
 }
@@ -424,7 +424,7 @@ extern int pipe_simd_width;
 // uncomment to enable checking for warp consistency
 // #define CHECK_WARP_CONSISTENCY
 
-extern "C" void check_stage_pcs( shader_core_ctx_t *shader, unsigned stage )
+void check_stage_pcs( shader_core_ctx_t *shader, unsigned stage )
 {
 #ifdef CHECK_WARP_CONSISTENCY
    address_type inst_pc = (address_type)-1;
@@ -447,7 +447,7 @@ extern "C" void check_stage_pcs( shader_core_ctx_t *shader, unsigned stage )
 #endif
 }
 
-extern "C" void check_pm_stage_pcs( shader_core_ctx_t *shader, unsigned stage )
+void check_pm_stage_pcs( shader_core_ctx_t *shader, unsigned stage )
 {
 #ifdef CHECK_WARP_CONSISTENCY
    address_type inst_pc = (address_type)-1;

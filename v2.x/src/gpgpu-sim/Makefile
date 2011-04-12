@@ -67,15 +67,18 @@
 DEBUG=0
 
 CXXFLAGS = -Wall -DDEBUG
+CXXFLAGS_L2CACHE = -Wall -DDEBUG
 
 GNUC_CPP0X := $(shell gcc --version | perl -ne 'if (/gcc\s+\(.*\)\s+([0-9.]+)/){ if($$1 >= 4.3) {$$n=1} else {$$n=0;} } END { print $$n; }')
 ifeq ($(GNUC_CPP0X), 1)
     CXXFLAGS += -std=c++0x
+    CXXFLAGS_L2CACHE += -std=c++0x
 endif
 
 ifneq ($(DEBUG),1)
 	OPTFLAGS += -O3
 else
+	CXXFLAGS_L2CACHE += -DGLIBCXX_DEBUG_PEDANTIC
 	CXXFLAGS += -D_GLIBCXX_DEBUG -DGLIBCXX_DEBUG_PEDANTIC
 endif
 
@@ -86,15 +89,15 @@ OEXT = o
 
 SRCS = $(shell ls *.cc)
 OBJS = $(SRCS:.cc=.$(OEXT))
-
-libgpgpusim.a:	$(OBJS) gpu_uarch_simlib
-	ar rcs  libgpgpusim.a $(OBJS) gpgpu-sim/*.o
-
-gpu_uarch_simlib:
-	make   -C ./gpgpu-sim
+ 
+libgpu_uarch_sim.a:$(OBJS)
+	ar rcs  libgpu_uarch_sim.a $(OBJS)
 
 depend:
 	makedepend $(SRCS) 2> /dev/null
+
+l2cache.$(OEXT): l2cache.cc
+	$(CPP) $(OPTFLAGS) $(CXXFLAGS_L2CACHE) -o $*.$(OEXT) -c $*.cc
 
 .cc.$(OEXT):
 	$(CPP) $(OPTFLAGS) $(CXXFLAGS) -o $*.$(OEXT) -c $*.cc
@@ -103,6 +106,11 @@ clean:
 	rm -f *.o core *~ *.a 
 
 option_parser.$(OEXT): option_parser.h
+
+dram_sched.$(OEXT): ../cuda-sim/ptx.tab.h
+
+../cuda-sim/ptx.tab.h:
+	make -C ../cuda-sim/ ptx.tab.c
 
 # DO NOT DELETE
 

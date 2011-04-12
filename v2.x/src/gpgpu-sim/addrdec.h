@@ -90,7 +90,7 @@ typedef struct {
 
 void addrdec_tlx(unsigned long long int addr, addrdec_t *tlx);
 void addrdec_setnchip(unsigned int nchips);
-void addrdec_setoption(option_parser_t *opp);
+void addrdec_setoption(option_parser_t opp);
 void addrdec_parseoption(const char *option);
 
 #endif

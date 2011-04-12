@@ -1,10 +1,7 @@
-# Copyright (c) 2009 by Tor M. Aamodt, Ali Bakhoda and the 
-# University of British Columbia
-# Vancouver, BC  V6T 1Z4
-# All Rights Reserved.
-#
-# Copyright © 2009 by Tor M. Aamodt, Wilson W. L. Fung, Ali Bakhoda, 
-# George L. Yuan and the University of British Columbia, Vancouver, 
+#!/usr/bin/env python
+
+# Copyright (C) 2009 by Wilson W. L. Fung
+# and the University of British Columbia, Vancouver, 
 # BC V6T 1Z4, All Rights Reserved.
 # 
 # THIS IS A LEGAL DOCUMENT BY DOWNLOADING GPGPU-SIM, YOU ARE AGREEING TO THESE
@@ -64,105 +61,39 @@
 # Vancouver, BC V6T 1Z4
 
 
+import ConfigParser, os
 
-# comment out next line to disable OpenGL support
-# export OPENGL_SUPPORT=1
+userSettingPath = os.path.join(os.environ['HOME'], '.gpgpu_sim', 'aerialvision')
 
-export DEBUG?=0 
-export SNOW?=
+# Globally available configuration options for AerialVision
+class AerialVisionConfig:
 
-LIBS = cuda-sim gpgpu-sim_uarch intersim gpgpusimlib
+    def __init__(self):
+        self.config = ConfigParser.SafeConfigParser()
+        self.config.read( os.path.join(userSettingPath, 'config.rc') )
 
-TARGETS =
-ifeq ($(shell uname),Linux)
-	TARGETS += lib/libcudart.so
-else
-	TARGETS += lib/libcudart.dylib
-endif
-ifneq  ($(NVOPENCL_LIBDIR),)
-	TARGETS += lib/libOpenCL.so
-endif
+    def print_all(self):
+        for section in self.config.sections():
+            for option in self.config.options(section):
+                value = self.config.get(section, option)
+                print "\t%s.%s = %s" % (section, option, value);
 
-gpgpusim: $(TARGETS)
+    def get_value(self, section, option, default):
+        if (self.config.has_option(section, option)):
+            return self.config.get(section, option)
+        else:
+            return default
 
-lib/libcudart.so: $(LIBS) cudalib
-	if [ ! -d lib ]; then mkdir lib; fi;
-	g++ $(SNOW) -shared -Wl,-soname,libcudart.so \
-			./libcuda/*.o \
-			./src/cuda-sim/*.o \
-			./src/gpgpu-sim/*.o \
-			./src/intersim/*.o \
-			./src/*.o -lm -lz -lGL \
-			-o lib/libcudart.so
-	if [ ! -f lib/libcudart.so.2 ]; then ln -s libcudart.so lib/libcudart.so.2; fi
+# This is the object containing all the options
+avconfig = AerialVisionConfig()
 
-lib/libcudart.dylib: $(LIBS) cudalib
-	if [ ! -d lib ]; then mkdir lib; fi;
-	g++ $(SNOW) -dynamiclib -Wl,-headerpad_max_install_names,-undefined,dynamic_lookup,-compatibility_version,1.1,-current_version,1.1\
-			./libcuda/*.o \
-			./src/cuda-sim/*.o \
-			./src/gpgpu-sim/*.o \
-			./src/intersim/*.o \
-			./src/*.o -lm -lz \
-			-o lib/libcudart.dylib
 
-lib/libOpenCL.so: $(LIBS) opencllib
-	g++ $(SNOW) -shared -Wl,-soname,libOpenCL.so \
-			./libopencl/*.o \
-			./src/cuda-sim/*.o \
-			./src/gpgpu-sim/*.o \
-			./src/intersim/*.o \
-			./src/*.o -lm -lz -lGL \
-			-o lib/libOpenCL.so 
-	if [ ! -f lib/libOpenCL.so.1 ]; then ln -s libOpenCL.so lib/libOpenCL.so.1; fi
-	if [ ! -f lib/libOpenCL.so.1.1 ]; then ln -s libOpenCL.so lib/libOpenCL.so.1.1; fi
+#Unit test / configviewer
+def main():
+    print "AerialVision Options:"
+    avconfig.print_all()
+    print "";
 
-cudalib:
-	make -e -C ./libcuda/
+if __name__ == "__main__":
+    main()
 
-cuda-sim:
-	make -C ./src/cuda-sim/ depend
-	make -C ./src/cuda-sim/
-
-gpgpu-sim_uarch:
-	make -C ./src/gpgpu-sim/ depend
-	make -C ./src/gpgpu-sim/
-
-intersim:
-	make "CREATELIBRARY=1" "DEBUG=$(DEBUG)" -C ./src/intersim	
-
-gpgpusimlib:
-	make -C ./src/ depend
-	make -C ./src/
-
-opencllib:
-	make -e -C ./libopencl/
-
-bench:
-	make -C ./benchmarks/CUDA/BlackScholes
-	make -C ./benchmarks/CUDA/template
-	if [ -f ./benchmarks/Makefile ]; then make -C ./benchmarks/; fi
-	
-all:
-	make gpgpusim
-	make bench
-
-clean: 
-	make cleangpgpusim
-	make cleanbench 
-
-cleangpgpusim:
-	make clean -C ./libcuda/
-ifneq  ($(NVOPENCL_LIBDIR),)
-	make clean -C ./libopencl/
-endif
-	make clean -C ./src/intersim/
-	make clean -C ./src/cuda-sim/
-	make clean -C ./src/gpgpu-sim/
-	make clean -C ./src/
-	rm -rf ./lib/*.so*
-
-cleanbench:
-	make clean -C ./benchmarks/CUDA/BlackScholes
-	make clean -C ./benchmarks/CUDA/template
-	if [ -f ./benchmarks/Makefile ]; then make clean -C ./benchmarks/; fi

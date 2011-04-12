@@ -55,9 +55,9 @@ See file CHANGES for updates in this and earlier versions.
 GPGPU-Sim was developed on Linux SuSe (this release was tested with SuSe
 version 11.1) and has been used on several other Linux platforms.  
 
-Step 1: Ensure you have gcc, make, zlib, bison and flex installed on your
-system.  For CUDA 2.x we used gcc version 4.3.2, for CUDA 1.1 we used gcc 
-version 4.1.3.  We used bison version 2.3, and flex version 2.5.33.  
+Step 1: Ensure you have gcc, g++, make, makedepend, zlib, bison and flex 
+installed on your system.  For CUDA 2.x we used gcc version 4.3.2, for CUDA 1.1 
+we used gcc/g++ version 4.1.3.  We used bison version 2.3, and flex version 2.5.33.  
 
 Step 2: Download and install the CUDA Toolkit and CUDA SDK code samples from
 NVIDIA's website: <http://www.nvidia.com/cuda>.  If you want to run OpenCL on
@@ -105,6 +105,24 @@ Note that for OpenCL applications the NVIDIA driver is required to convert
 OpenCL ".cl" files to PTX.  The resulting PTX can be saved to disk by adding
 -save_embedded_ptx to your gpgpusim.config file (embedded PTX files with be
 saved as _0.ptx, _1.ptx, etc...).
+
+2.1 MACOS SPECIFIC NOTES
+This version of the simulator works with NVIDIA Toolkit version 2.3. 
+Note that you can keep the latest version of Drivers (e.g. 3.2) on your system  
+but you need to use the 2.3 toolkit which can be downloaded here:
+http://developer.nvidia.com/cuda-toolkit-32-downloads.
+
+The following changes are also necessary in a Mac installation:
+Step 4 (e) should change like this: 
+     Add $GPGPUSIM_ROOT/lib/ to both your LD_LIBRARY_PATH and
+     DYLD_LIBRARY_PATH also remove $CUDAHOME/lib from 
+     LD_LIBRARY_PATH and DYLD_LIBRARY_PATH
+Step 5 changes like this:
+Run the make command with the this flag SNOW=-m32 
+i.e. type "make SNOW=-m32" this will build the simulator in 32-bit mode.
+
+Step6: To be able to run the application on the graphics card reverse 
+the changes mentioned in Step 4(e).
 
 3. USING THE SIMULATOR
 

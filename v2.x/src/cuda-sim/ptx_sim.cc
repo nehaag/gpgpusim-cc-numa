@@ -211,10 +211,10 @@ ptx_thread_info::~ptx_thread_info()
 ptx_thread_info::ptx_thread_info()
 {
    m_uid = g_ptx_thread_info_uid_next++;
+   m_core = NULL;
    m_barrier_num = -1;
    m_at_barrier = false;
    m_valid = false;
-   m_clock_tick = 0;
    m_gridid = 0;
    m_thread_done = false;
    m_cycle_done = 0;
@@ -229,15 +229,16 @@ ptx_thread_info::ptx_thread_info()
    m_symbol_table = NULL;
    m_func_info = NULL;
    m_hw_tid = -1;
+   m_hw_wid = -1;
    m_hw_sid = -1;
    m_last_dram_callback.function = NULL;
    m_last_dram_callback.instruction = NULL;
-   m_regs.push_back( std::map<std::string,ptx_reg_t>() );
-   m_debug_trace_regs_modified.push_back( std::map<std::string,ptx_reg_t>() );
+   m_regs.push_back( reg_map_t() );
    m_callstack.push_back( stack_entry() );
    m_RPC = -1;
    m_RPC_updated = false;
    m_last_was_call = false;
+   m_enable_debug_trace = false;
 }
 
 extern unsigned long long  gpu_sim_cycle;
@@ -247,6 +248,35 @@ void ptx_thread_info::set_done()
    assert( !m_at_barrier );
    m_thread_done = true;
    m_cycle_done = gpu_sim_cycle; 
+}
+
+extern unsigned long long  gpu_sim_cycle;
+extern signed long long gpu_tot_sim_cycle;
+
+unsigned ptx_thread_info::get_builtin( int builtin_id, unsigned dim_mod ) 
+{
+   assert( m_valid );
+   switch (builtin_id) {
+   case NTID_ID:
+      assert( dim_mod < 3 );
+      return m_ntid[dim_mod];
+   case CLOCK_ID:
+      return gpu_sim_cycle + gpu_tot_sim_cycle;
+   case CTA_ID:
+      assert( dim_mod < 3 );
+      return m_ctaid[dim_mod];
+   case GRIDID_ID:
+      return m_gridid;
+   case NCTAID_ID:
+      assert( dim_mod < 3 );
+      return m_nctaid[dim_mod];
+   case TID_ID:
+      assert( dim_mod < 3 );
+      return m_tid[dim_mod];
+   default:
+      assert(0);
+   }
+   return 0;
 }
 
 void ptx_thread_info::set_info( symbol_table *symtab, function_info *func ) 
@@ -270,6 +300,10 @@ static void print_reg( std::string name, ptx_reg_t value )
       return;
    }
    const type_info *t = sym->type();
+   if( t == NULL ) {
+      printf("<unknown type> 0x%llx\n", (unsigned long long ) value.u64 );
+      return;
+   }
    type_info_key ti = t->get_key();
 
    switch ( ti.scalar_type() ) {
@@ -301,8 +335,7 @@ void ptx_thread_info::callstack_push( unsigned pc, unsigned rpc, const symbol *r
    m_RPC_updated = true;
    m_last_was_call = true;
    m_callstack.push_back( stack_entry(m_symbol_table,m_func_info,pc,rpc,return_var_src,return_var_dst,call_uid) );
-   m_regs.push_back( std::map<std::string,ptx_reg_t>() );
-   m_debug_trace_regs_modified.push_back( std::map<std::string,ptx_reg_t>() );
+   m_regs.push_back( reg_map_t() );
 }
 
 #define POST_DOMINATOR 1 /* must match definition in shader.h */
@@ -327,7 +360,6 @@ bool ptx_thread_info::callstack_pop()
       rval = get_operand_value(rv_src);
    m_callstack.pop_back();
    m_regs.pop_back();
-   m_debug_trace_regs_modified.pop_back();
    if( rv_dst != NULL ) 
       set_operand_value(rv_dst,rval);
    return m_callstack.empty();
@@ -336,13 +368,13 @@ bool ptx_thread_info::callstack_pop()
 void ptx_thread_info::dump_callstack() const
 {
    std::list<stack_entry>::const_iterator c=m_callstack.begin();
-   std::list<std::map<std::string,ptx_reg_t> >::const_iterator r=m_regs.begin();
+   std::list<reg_map_t>::const_iterator r=m_regs.begin();
 
    printf("\n\n");
    printf("Call stack for thread uid = %u (sc=%u, hwtid=%u)\n", m_uid, m_hw_sid, m_hw_tid );
    while( c != m_callstack.end() && r != m_regs.end() ) {
       const stack_entry &c_e = *c;
-      const std::map<std::string,ptx_reg_t> &regs = *r;
+      const reg_map_t &regs = *r;
       if( !c_e.m_valid ) {
          printf("  <entry>                              #regs = %zu\n", regs.size() );
       } else {
@@ -372,9 +404,9 @@ std::string ptx_thread_info::get_location() const
 void ptx_thread_info::dump_regs()
 {
    printf("Register File Contents:\n");
-   std::map<std::string,ptx_reg_t>::const_iterator r;
+   reg_map_t::const_iterator r;
    for ( r=m_regs.back().begin(); r != m_regs.back().end(); ++r ) {
-      std::string name = r->first;
+      std::string name = r->first->name();
       ptx_reg_t value = r->second;
       print_reg(name,value);
 
@@ -386,9 +418,9 @@ void ptx_thread_info::dump_modifiedregs()
    if( m_debug_trace_regs_modified.empty() ) 
       return;
    printf("Modified Registers:\n");
-   std::map<std::string,ptx_reg_t>::const_iterator r;
-   for ( r=m_debug_trace_regs_modified.back().begin(); r != m_debug_trace_regs_modified.back().end(); ++r ) {
-      std::string name = r->first;
+   reg_map_t::const_iterator r;
+   for ( r=m_debug_trace_regs_modified.begin(); r != m_debug_trace_regs_modified.end(); ++r ) {
+      std::string name = r->first->name();
       ptx_reg_t value = r->second;
       print_reg(name,value);
    }

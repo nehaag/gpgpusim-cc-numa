@@ -1,12 +1,12 @@
 /* 
- * mem_fetch.h
+ * stack.c
  *
  * Copyright (c) 2009 by Tor M. Aamodt, Wilson W. L. Fung, Ali Bakhoda, 
- * George L. Yuan and the 
+ * Ivan Sham and the 
  * University of British Columbia
  * Vancouver, BC  V6T 1Z4
  * All Rights Reserved.
- * 
+* 
  * THIS IS A LEGAL DOCUMENT BY DOWNLOADING GPGPU-SIM, YOU ARE AGREEING TO THESE
  * TERMS AND CONDITIONS.
  * 
@@ -64,47 +64,64 @@
  * Vancouver, BC V6T 1Z4
  */
 
-#ifndef MEM_FETCH_H
-#define MEM_FETCH_H
+#include "stack.h"
 
-#include "shader.h"
-#include "addrdec.h"
+#include <stdlib.h>
+#include <assert.h>
 
-enum mf_type {
-   RD_REQ = 0,
-   WT_REQ,
-   REPLY_DATA, // send to shader
-   L2_WTBK_DATA,
-   DUMMY_READ, //used in write mask    
-   N_MF_TYPE
-};
+void push_stack(Stack *S, address_type val) {
+   assert(S->top < S->max_size);
+   S->v[S->top] = val;
+   (S->top)++;
 
-typedef struct {
-   unsigned request_uid;
-   unsigned long long int addr;
-   int nbytes_L1;
-   int txbytes_L1;
-   int rxbytes_L1;
-   int nbytes_L2;
-   int txbytes_L2;
-   int rxbytes_L2;
-   int sid; //shader core id
-   int wid; //warp id
-   int cache_hits_waiting;
-   mshr_entry* mshr;
-   address_type pc;
-   unsigned char write;
-   enum mem_access_type mem_acc;
-   unsigned int timestamp; //set to gpu_sim_cycle at struct creation
-   unsigned int timestamp2; //set to gpu_sim_cycle when pushed onto icnt to shader; only used for reads
-   unsigned int icnt_receive_time; //set to gpu_sim_cycle + interconnect_latency when fixed icnt latency mode is enabled
-   unsigned char bank;
-   unsigned char chip;
-   addrdec_t tlx;
-   enum mf_type type;
-   partial_write_mask_t write_mask;
-   int source_node; //memory node id when sending from mem to shader
-                    //same as sid when sending from shader 2 mem 
-} mem_fetch_t;
+}
 
-#endif
+address_type pop_stack(Stack *S) {
+   (S->top)--;
+   return(S->v[S->top]);
+}
+
+address_type top_stack(Stack *S) {
+   assert(S->top >= 1);
+   return(S->v[S->top - 1]);
+}
+
+Stack* new_stack(int size) {
+   Stack* S;
+   S = (Stack*)malloc(sizeof(Stack));
+   S->max_size = size;
+   S->top = 0;
+   S->v = (address_type*)calloc(size, sizeof(address_type));
+   return S;
+}
+
+void free_stack(Stack *S) {
+   free(S->v);
+   free(S);
+}
+
+int size_stack(Stack *S) {
+   return S->top;
+}
+
+int full_stack(Stack *S) {
+   return S->top >= S->max_size;
+}
+
+int empty_stack(Stack *S) {
+   return S->top == 0;
+}
+
+int element_exist_stack(Stack *S, address_type value) {
+   int i;
+   for (i = 0; i < S->top; ++i) {
+      if (value == S->v[i]) {
+         return 1;
+      }
+   }
+   return 0;
+}
+
+void reset_stack(Stack *S) {
+   S->top = 0;
+}

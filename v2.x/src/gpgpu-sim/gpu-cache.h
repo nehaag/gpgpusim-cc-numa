@@ -66,12 +66,25 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "../util.h"
 
 #ifndef GPU_CACHE_H
 #define GPU_CACHE_H
 
 #define VALID 0x01
 #define DIRTY 0x02
+#define RESERVED 0x04
+
+enum cache_request_status {
+    HIT,
+    HIT_W_WT, /* Hit, but write through cache, still needs to send to memory */
+    MISS_NO_WB, /* miss, but witeback not necessary*/
+    MISS_W_WB, /* miss, must do writeback */
+    WB_HIT_ON_MISS, /* request hit on a reservation in wb cache*/
+    RESERVATION_FAIL,
+    NUM_CACHE_REQUEST_STATUS
+};
+
 
 typedef struct {
    unsigned long long int tag;
@@ -88,6 +101,12 @@ typedef struct {
 #define FIFO 'F'
 #define RANDOM 'R'
 
+enum cache_write_policy{
+    no_writes, //line replacement when new line arrives
+    write_back, //line replacement when new line arrives
+    write_through //reservation based, use much handle reservation full error.
+};
+
 typedef struct {
 
    char *name;
@@ -98,6 +117,7 @@ typedef struct {
    unsigned int assoc;
    unsigned int line_sz; // bytes 
    unsigned int line_sz_log2;
+   enum cache_write_policy write_policy; 
    unsigned char policy;
    unsigned int hit_latency;
 
@@ -123,18 +143,29 @@ shd_cache_t * shd_cache_create( char *name,
                                 unsigned int line_sz,
                                 unsigned char policy,
                                 unsigned int hit_latency,
-                                unsigned long long int bank_mask);
+                                unsigned long long int bank_mask,
+                                enum cache_write_policy wp);
 
 void shd_cache_destroy( shd_cache_t* cp );
 
 // hook up with shader core logger
 void shd_cache_bind_logger(shd_cache_t* cp, int core_id, int type_id);
 
+//depercated, use _wb
 shd_cache_line_t* shd_cache_access( shd_cache_t *cp, 
                                     unsigned long long int addr, 
                                     unsigned int nbytes, 
                                     unsigned char write,
                                     unsigned int sim_cycle );
+
+//cache check checks for wb and forwards information over.
+enum cache_request_status shd_cache_access_wb( shd_cache_t *cp, 
+                                    unsigned long long int addr, 
+                                    unsigned int nbytes, 
+                                    unsigned char write,
+                                    unsigned int sim_cycle, 
+                                    address_type *wb_address);
+
 
 //just probe the tag array to see if addr is in the cache or not
 //does not update LRU or stats...
@@ -155,5 +186,6 @@ unsigned long long int L2_shd_cache_fill( shd_cache_t *cp,
                                           unsigned int sim_cycle );
 
 void shd_cache_print( shd_cache_t *cp,  FILE *stream);
+
 
 #endif

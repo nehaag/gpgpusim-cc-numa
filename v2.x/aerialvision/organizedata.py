@@ -60,7 +60,10 @@
 # Ali Bakhoda, George L. Yuan, at the University of British Columbia, 
 # Vancouver, BC V6T 1Z4
 
-
+import os
+import array
+#from numpy import array
+import numpy
 import lexyacctexteditor
 import variableclasses as vc
 
@@ -70,150 +73,62 @@ global skipCFLog
 convertCFLog2CUDAsrc = 0
 skipCFLog = 1 
 
+CFLOGInsnInfoFile = ''
+CFLOGptxFile = ''
+# Obtain the files required to parse CFLOG files from the source code view tab input
+def setCFLOGInfoFiles(sourceViewFileList):
+
+    global CFLOGInsnInfoFile 
+    global CFLOGptxFile
+
+    if CFLOGInsnInfoFile == '' and len(sourceViewFileList[2]) > 0:
+        CFLOGInsnInfoFile = sourceViewFileList[2][0]
+    if CFLOGptxFile == '' and len(sourceViewFileList[1]) > 0:
+        CFLOGptxFile = sourceViewFileList[1][0]
+
 def organizedata(fileVars):
 
-    print "Organizing data into internal format...";
-    
-    #Section 2.1 for adding a variable
-    if fileVars.has_key('shaderInsn'):
-        fileVars['shaderInsn'].data = nullOrganizedShader(fileVars['shaderInsn'].data)
-    
-    if fileVars.has_key('shdrctacount'):
-        fileVars['shdrctacount'].data = nullOrganizedShader(fileVars['shdrctacount'].data)
-    
-    if fileVars.has_key('cacheMissRate_globalL1_all'):
-        fileVars['cacheMissRate_globalL1_all'].data = nullOrganizedShaderv2(fileVars['cacheMissRate_globalL1_all'].data)
-    
-    if fileVars.has_key('cacheMissRate_textureL1_all'):
-        fileVars['cacheMissRate_textureL1_all'].data = nullOrganizedShaderv2(fileVars['cacheMissRate_textureL1_all'].data)
-    
-    if fileVars.has_key('cacheMissRate_constL1_all'):
-        fileVars['cacheMissRate_constL1_all'].data = nullOrganizedShaderv2(fileVars['cacheMissRate_constL1_all'].data)
-    
-    if fileVars.has_key('cacheMissRate_globalL1_noMgHt'):
-        fileVars['cacheMissRate_globalL1_noMgHt'].data = nullOrganizedShaderv2(fileVars['cacheMissRate_globalL1_noMgHt'].data)
-    
-    if fileVars.has_key('cacheMissRate_textureL1_noMgHt'):
-        fileVars['cacheMissRate_textureL1_noMgHt'].data = nullOrganizedShaderv2(fileVars['cacheMissRate_textureL1_noMgHt'].data)
-    
-    if fileVars.has_key('cacheMissRate_constL1_noMgHt'):
-        fileVars['cacheMissRate_constL1_noMgHt'].data = nullOrganizedShaderv2(fileVars['cacheMissRate_constL1_noMgHt'].data)
+    organizeFunction = {
+        'scalar':OrganizeScalar,        # Scalar data
+        'impVec':nullOrganizedShader,   # Implicit vector data for multiple units (used by Shader Core stats)
+        'stackbar':nullOrganizedStackedBar, # Stacked bars 
+        'idxVec':nullOrganizedDram,     # Vector data with index  (used by DRAM stats)
+        'idx2DVec':nullOrganizedDramV2, # Vector data with 2D index  (used by DRAM access stats)
+        'sparse':OrganizeSparse,        # Vector data with 2D index  (used by DRAM access stats)
+        'custom':0
+    }
+    data_type_char = {int:'I', float:'f'}
 
-    if fileVars.has_key('dram_writes_per_cycle'):
-        fileVars['dram_writes_per_cycle'].data = [0] + [float(x) for x in fileVars['dram_writes_per_cycle'].data]
+    print "Organizing data into internal format..."
 
-    if fileVars.has_key('dram_reads_per_cycle'):
-        fileVars['dram_reads_per_cycle'].data = [0] + [float(x) for x in fileVars['dram_reads_per_cycle'].data]
+    # Organize globalCycle in advance because it is used as a reference
+    if ('globalCycle' in fileVars):
+        statData = fileVars['globalCycle']
+        fileVars['globalCycle'].data = organizeFunction[statData.organize](statData.data, data_type_char[statData.datatype])
 
-    if fileVars.has_key('globalInsn'):
-        fileVars['globalInsn'].data = [0] + [int(x) for x in fileVars['globalInsn'].data]
-    
-    if fileVars.has_key('globalCycle'):            
-        fileVars['globalCycle'].data = [0] + [int(x) for x in fileVars['globalCycle'].data]
+    # Organize other stat data into internal format
+    for statName, statData in fileVars.iteritems():
+        if (statName != 'CFLOG' and statName != 'globalCycle' and statData.organize != 'custom'):
+            fileVars[statName].data = organizeFunction[statData.organize](statData.data, data_type_char[statData.datatype])
   
-    if fileVars.has_key('L1ReadMiss'):
-        fileVars['L1ReadMiss'].data = [0] + [int(x) for x in fileVars['L1ReadMiss'].data]
-
-    if fileVars.has_key('L1TextMiss'):
-        fileVars['L1TextMiss'].data = [0] + fileVars['L1TextMiss'].data
-    
-    if fileVars.has_key('L1ConstMiss'):
-        fileVars['L1ConstMiss'].data = [0] + fileVars['L1ConstMiss'].data
-    
-    if fileVars.has_key('shaderWarpDiv'):
-        fileVars['shaderWarpDiv'].data = nullOrganizedShader(fileVars['shaderWarpDiv'].data)
-    
-    if fileVars.has_key('globalTotInsn'):
-        fileVars['globalTotInsn'].data = fileVars['globalTotInsn'].data
-
-    if fileVars.has_key('STmemlatdist'):
-        fileVars['STmemlatdist'].data = nullOrganizedShader(fileVars['STmemlatdist'].data)
-        
-    if fileVars.has_key('LDmemlatdist'):
-        fileVars['LDmemlatdist'].data = nullOrganizedShader(fileVars['LDmemlatdist'].data)    
-
-    if fileVars.has_key('WarpDivergenceBreakdown'):
-        fileVars['WarpDivergenceBreakdown'].data = nullOrganizedShader(fileVars['WarpDivergenceBreakdown'].data)    
-
-    if fileVars.has_key('dramCMD'):
-        fileVars['dramCMD'].data = nullOrganizedDram(fileVars['dramCMD'].data)
-    
-    if fileVars.has_key('dramNOP'):
-        fileVars['dramNOP'].data = nullOrganizedDram(fileVars['dramNOP'].data)
-    
-    if fileVars.has_key('dramNACT'):
-        fileVars['dramNACT'].data = nullOrganizedDram(fileVars['dramNACT'].data)
-
-    if fileVars.has_key('dramNPRE'):            
-        fileVars['dramNPRE'].data = nullOrganizedDram(fileVars['dramNPRE'].data)
-    
-    if fileVars.has_key('dramNREQ'):
-        fileVars['dramNREQ'].data = nullOrganizedDram(fileVars['dramNREQ'].data)
-    
-    if fileVars.has_key('dramAveMRQS'):
-        fileVars['dramAveMRQS'].data = nullOrganizedDram(fileVars['dramAveMRQS'].data)
-
-    if fileVars.has_key('dramUtil'):
-        fileVars['dramUtil'].data = nullOrganizedDram(fileVars['dramUtil'].data)
-    
-    if fileVars.has_key('dramEff'):
-        fileVars['dramEff'].data = nullOrganizedDram(fileVars['dramEff'].data)
-    
-    if fileVars.has_key('dramglobal_acc_r'):
-        fileVars['dramglobal_acc_r'].data  = nullOrganizedDramV2(fileVars['dramglobal_acc_r'].data)
-    
-    if fileVars.has_key('dramglobal_acc_w'):
-        fileVars['dramglobal_acc_w'].data  = nullOrganizedDramV2(fileVars['dramglobal_acc_w'].data)
-    
-    if fileVars.has_key('dramlocal_acc_r'):
-        fileVars['dramlocal_acc_r'].data  = nullOrganizedDramV2(fileVars['dramlocal_acc_r'].data)
-    
-    if fileVars.has_key('dramlocal_acc_w'):
-        fileVars['dramlocal_acc_w'].data  = nullOrganizedDramV2(fileVars['dramlocal_acc_w'].data)
-    
-    if fileVars.has_key('dramconst_acc_r'):
-        fileVars['dramconst_acc_r'].data  = nullOrganizedDramV2(fileVars['dramconst_acc_r'].data)
-    
-    if fileVars.has_key('dramtexture_acc_r'):
-        fileVars['dramtexture_acc_r'].data  = nullOrganizedDramV2(fileVars['dramtexture_acc_r'].data)
-            
-    if fileVars.has_key('globalCompletedThreads'):
-        fileVars['globalCompletedThreads'].data = [0] + fileVars['globalCompletedThreads'].data
-    
-    if fileVars.has_key('globalSentWrites'):
-        fileVars['globalSentWrites'].data = [0] + fileVars['globalSentWrites'].data
-    
-    if fileVars.has_key('globalProcessedWrites'):
-        fileVars['globalProcessedWrites'].data = [0] + fileVars['globalProcessedWrites'].data
-    
+    # Custom routines to organize stat data into internal format
     if fileVars.has_key('averagemflatency'):
         zeros = []
         for count in range(len(fileVars['averagemflatency'].data),len(fileVars['globalCycle'].data)):
             zeros.append(0)
         fileVars['averagemflatency'].data = zeros + fileVars['averagemflatency'].data
-    if fileVars.has_key('gpu_stall_by_MSHRwb'):
-        fileVars['gpu_stall_by_MSHRwb'].data = [0] + fileVars['gpu_stall_by_MSHRwb'].data
-    
+
     if (skipCFLog == 0) and fileVars.has_key('CFLOG'):
-        loadfile = open('recentfiles.txt', 'r')
-        bool = 0
-        while loadfile:
-            line = loadfile.readline()
-            if not line: break
-            if '.ptx' in line:
-                ptxFile = line
-                bool += 1
-            if 'gpgpu_inst_stats' in line:
-                statFile = line
-                bool += 1
-            if bool == 2:
-                break
+        ptxFile = CFLOGptxFile
+        statFile = CFLOGInsnInfoFile
         
         print "PC Histogram to CUDA Src = %d" % convertCFLog2CUDAsrc
         parseCFLOGCUDA = convertCFLog2CUDAsrc
 
         if parseCFLOGCUDA == 1:
+            print "Obtaining PTX-to-CUDA Mapping from %s..." % ptxFile
             map = lexyacctexteditor.ptxToCudaMapping(ptxFile.rstrip())
+            print "Obtaining Program Range from %s..." % statFile
             maxStats = max(lexyacctexteditor.textEditorParseMe(statFile.rstrip()).keys())
 
         if parseCFLOGCUDA == 1:
@@ -231,8 +146,8 @@ def organizedata(fileVars):
     
 
         
-        fileVars['CFLOGglobalPTX'] = vc.variable(2,0)
-        fileVars['CFLOGglobalCUDA'] = vc.variable(2,0)
+        fileVars['CFLOGglobalPTX'] = vc.variable('',2,0)
+        fileVars['CFLOGglobalCUDA'] = vc.variable('',2,0)
         
         count = 0
         for iter in fileVars['CFLOG']:
@@ -242,7 +157,7 @@ def organizedata(fileVars):
             fileVars[iter + 'PTX'] = fileVars['CFLOG'][iter]
             fileVars[iter + 'PTX'].data = CFLOGOrganizePTX(fileVars['CFLOG'][iter].data, fileVars['CFLOG'][iter].maxPC)
             if parseCFLOGCUDA == 1:
-                fileVars[iter + 'CUDA'] = vc.variable(2,0)
+                fileVars[iter + 'CUDA'] = vc.variable('',2,0)
                 fileVars[iter + 'CUDA'].data = CFLOGOrganizeCuda(fileVars[iter + 'PTX'].data, newMap)
 
             try:
@@ -267,8 +182,12 @@ def organizedata(fileVars):
 
     return fileVars
 
+def OrganizeScalar(data, datatype_c):
+    organized = [0] + data;
+    organized = array.array(datatype_c, organized)
+    return organized;
 
-def nullOrganizedShader(nullVar):
+def nullOrganizedShader(nullVar, datatype_c):
     #need to organize this array into usable information
     count = 0
     organized = []
@@ -284,55 +203,41 @@ def nullOrganizedShader(nullVar):
     
     #initializing 2D list
     for x in range(0, numPlots):
-        organized.append([])
+        organized.append(array.array(datatype_c, [0]))
     
     #filling up list appropriately
     for x in range(0,(len(nullVar))):
         if nullVar[x] == 'NULL':
             count=0
         else:
-            organized[count].append(int(nullVar[x]))
-            count +=  1
-
-    for x in range(0,len(organized)):
-        organized[x] = [0] + organized[x]
-    
-    return organized
-
-def nullOrganizedShaderv2(nullVar):
-    #need to organize this array into usable information
-    count = 0
-    organized = []
-    
-    #determining how many shader cores are present
-    for x in nullVar:
-        if x != 'NULL':
+            organized[count].append(nullVar[x])
             count += 1
-        else:
-            numPlots = count
-            break
-    count = 0
-    
-    #initializing 2D list
-    for x in range(0, numPlots):
-        organized.append([])
-    
-    #filling up list appropriately
-    for x in range(0,(len(nullVar))):
-        if nullVar[x] == 'NULL':
-            count=0
-        else:
-            organized[count].append(float(nullVar[x]))
-            count +=  1
 
-    for x in range(0,len(organized)):
-        organized[x] = [0] + organized[x]
+    #for x in range(0,len(organized)):
+    #    organized[x] = [0] + organized[x]
     
     return organized
 
+def nullOrganizedStackedBar(nullVar, datatype_c):
+    organized = nullOrganizedShader(nullVar, datatype_c)
 
-def nullOrganizedDram(nullVar):
-    organized = [[0]]
+    # group data points to improve display speed
+    if len(organized[0]) > 512:
+        n_data = len(organized[0]) // 512 + 1 
+        newLen = 512
+        for row in range (0,len(organized)):
+            newy = array.array(datatype_c, [0 for col in range(newLen)])
+            for col in range(0, len(organized[row])):
+                newcol = col / n_data
+                newy[newcol] += organized[row][col]
+            for col in range(0, len(newy)):
+                newy[col] /= n_data 
+            organized[row] = newy
+
+    return organized
+    
+def nullOrganizedDram(nullVar, datatype_c):
+    organized = [array.array(datatype_c, [0])]
     mem = 1
     for iter in nullVar:
         if iter == 'NULL':
@@ -346,11 +251,11 @@ def nullOrganizedDram(nullVar):
             try:
                 organized[memNum].append(iter)
             except:
-                organized.append([0])
+                organized.append(array.array(datatype_c, [0]))
                 organized[memNum].append(iter)
     return organized
 
-def nullOrganizedDramV2(nullVar):
+def nullOrganizedDramV2(nullVar, datatype_c):
     organized = {}
     mem = 1
     for iter in nullVar:
@@ -370,8 +275,18 @@ def nullOrganizedDramV2(nullVar):
                 key = str(ChipNum) + '.' + str(BankNum)
                 organized[key].append(iter)
             except:
-                organized[key] = [0]
+                organized[key] = array.array(datatype_c, [0])
                 organized[key].append(iter)
+
+    return organized
+
+def OrganizeSparse(variable, datatype_c):
+    data = numpy.array(variable[0], dtype=numpy.int32)
+    row = numpy.array(variable[1], dtype=numpy.int32)
+    col = numpy.array(variable[2], dtype=numpy.int32)
+    del variable[0:]
+    #organized = sparse.coo_matrix((data, (row, col)))
+    organized = [data, row, col]
 
     return organized
 
@@ -382,7 +297,8 @@ def CFLOGOrganizePTX(list, maxPC):
     organizedPC = list[0]
 
     nCycles = len(organizedPC)
-    final = [[0 for cycle in range(nCycles)] for pc in range(maxPC + 1)] # fill the 2D array with zeros
+    final_template = [0 for cycle in range(nCycles)]
+    final = [array.array('I', final_template) for pc in range(maxPC + 1)] # fill the 2D array with zeros
 
     for cycle in range(0, nCycles):
         pcList = organizedPC[cycle]
@@ -391,39 +307,36 @@ def CFLOGOrganizePTX(list, maxPC):
             final[pcList[n]][cycle] = threadCountList[n]
     
     return final
-    
-def CFLOGOrganizeCuda(list, map):
+
+def CFLOGOrganizeCuda(list, ptx2cudamap):
     #We need to aggregate lines of PTX together
-    cudaMaxLineNo = max(map.keys())
+    cudaMaxLineNo = max(ptx2cudamap.keys())
     tmp = {}
     #need to fill up the final matrix appropriately
     
+    nSamples = len(list[0])
 
-    for lines in map:
-        if tmp.has_key(map[lines]):
+    # create a dictionary of empty data array (one array per cuda source line)
+    for ptxline, cudaline in ptx2cudamap.iteritems():
+        if tmp.has_key(cudaline):
             pass
         else:
-            tmp[map[lines]] = []
-            for lengthData in range(0, len(list[0])):
-                tmp[map[lines]].append(0)
-                
+            tmp[cudaline] = [0 for lengthData in range(nSamples)]
 
 
+    for cudaline in tmp:
+        for ptxLines, mapped_cudaline in ptx2cudamap.iteritems():
+            if mapped_cudaline == cudaline:
+                for lengthData in range(nSamples):
+                    tmp[cudaline][lengthData] += list[ptxLines][lengthData]
 
-    for lines in tmp:
-        for lengthData in range(0, len(list[0])):
-            for ptxLines in map:
-                if map[ptxLines] == lines:
-                    tmp[lines][lengthData] += list[ptxLines][lengthData]
     
     final = []           
-    for iter in range(0,max(tmp.keys())):
+    for iter in range(min(tmp.keys()),max(tmp.keys())):
         if tmp.has_key(iter):
             final.append(tmp[iter])            
         else:
-            final.append([])
-            for lengthData in range(0, len(list[0])):
-                final[-1].append(0)
+            final.append([0 for lengthData in range(nSamples)])
 
     return final
                 

@@ -250,7 +250,6 @@ static inline bool is_mem(int node)
 }
 
 ////////////////////
-extern "C"
 void interconnect_stats()
 {
    if (!fixed_lat_icnt) {
@@ -273,7 +272,6 @@ void interconnect_stats()
    }
 }
 
-extern "C"
 void icnt_overal_stat() //should be called upon simulation exit to give an overal stat
 {
    if (!fixed_lat_icnt) {
@@ -283,14 +281,12 @@ void icnt_overal_stat() //should be called upon simulation exit to give an overa
    }
 }
 
-extern "C"
 void icnt_init_grid (){
    for (unsigned i=0; i<net_c;i++) {
       traffic[i]->IcntInitPerGrid(0/*_time*/); //initialization before gpu grid start
    }
 }
 
-extern "C"
 int interconnect_has_buffer(unsigned int input_node, 
                             unsigned int *size) 
 {
@@ -305,6 +301,10 @@ int interconnect_has_buffer(unsigned int input_node,
    }
    unsigned int n_flits = tot_req_size / _flit_size + ((tot_req_size % _flit_size)? 1:0);
    if (!(fixed_lat_icnt || perfect_icnt)) {
+      if (n_flits > input_buffer_capacity  ) {
+         printf("ERROR: Asking for %d flit(s) while the input buffer capacity is %d\n",n_flits,input_buffer_capacity);
+         assert(0);
+      }
       has_buffer = (traffic[0]->_partial_packets[input][0].size() + n_flits) <=  input_buffer_capacity; 
       if ((net_c>1) && is_mem(input)) {
          has_buffer = (traffic[1]->_partial_packets[input][0].size() + n_flits) <=  input_buffer_capacity; 
@@ -315,7 +315,6 @@ int interconnect_has_buffer(unsigned int input_node,
    return has_buffer;
 }
 
-extern "C"
 void interconnect_push ( unsigned int input_node, unsigned int output_node, 
                          void* data, unsigned int size) 
 { 
@@ -352,7 +351,6 @@ void interconnect_push ( unsigned int input_node, unsigned int output_node,
 
 }
 
-extern "C"
 void* interconnect_pop(unsigned int output_node) 
 { 
    int output = node_map[output_node];
@@ -394,7 +392,6 @@ extern char *gpgpu_cache_dl1_opt;
 extern int gpgpu_no_dl1;
 
 
-extern "C"
 void init_interconnect (char* config_file,
                         unsigned int n_shader, unsigned int n_mem)
 {
@@ -486,7 +483,6 @@ void init_interconnect (char* config_file,
    }
 }
 
-extern "C"
 void advance_interconnect () 
 {
    if (!fixed_lat_icnt) {
@@ -496,7 +492,6 @@ void advance_interconnect ()
    }
 }
 
-extern "C"
 unsigned interconnect_busy()
 {
    unsigned i,j;
@@ -568,11 +563,11 @@ void transfer2boundary_buf(int output) {
    }
 }
 
-extern "C" void time_vector_update(unsigned int uid, int slot , long int cycle, int type);
+void time_vector_update(unsigned int uid, int slot , long int cycle, int type);
 extern unsigned long long gpu_tot_sim_cycle;
 void time_vector_update_icnt_injected(void* data, int input) {
     mem_fetch_t* mf = (mem_fetch_t*) data;
-    unsigned int uid = mf->write? mf->request_uid : mf->mshr->inst_uid;
+    unsigned int uid = mf->write? mf->request_uid : mf->mshr->insts[0].uid;
     long int cycle = gpu_sim_cycle + gpu_tot_sim_cycle;
     int req_type = mf->write? WT_REQ : RD_REQ;
     if (is_mem(input)) {

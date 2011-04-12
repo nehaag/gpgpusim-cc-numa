@@ -51,14 +51,63 @@
 # its contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
 
-
+import os
+import os.path
 import sys
 sys.path.insert(0,"Lib/site-packages/ply-3.2/ply-3.2")
 import ply.lex as lex
 import ply.yacc as yacc
 import gzip
+import gc
+
 import variableclasses as vc
 
+global skipCFLOGParsing
+skipCFLOGParsing = 0
+
+userSettingPath = os.path.join(os.environ['HOME'], '.gpgpu_sim', 'aerialvision')
+
+
+# Import user-defined statistic variables on top of the default ones built into AerialVision
+# Here is the format to specify a new variable: 
+#   <name>, <plot type>, <reset at kernel launch>, <organization>, <data type>
+# <plot type> can be one of: scalar, vector, stackedbar, vector2d
+# <organization> can be: 
+#   scalar (for scalar plot), 
+#   implicit or index (for vector plot or stackedbar), 
+#   index2d (for vector2d plot)
+# <data type> can be: int or float
+def import_user_defined_variables(variables):
+    # attempt to open the user defined variables definition file
+    try:
+        file = open(os.path.join(userSettingPath, 'variables.txt'),'r')
+    except:
+        print "No variables.txt file found."
+        return
+
+    #this can be replaced with a proper lex-yacc parser later
+    for line in file:
+        try:
+            # strip out trailing whitespaces and skip comment lines
+            line = line.strip()
+            if len(line) == 0: # skip empty line
+                continue
+            if line[0] == '#': # skip comment
+                continue
+
+            # parse the line containing definition of a stat variable
+            s = line.split(",")
+            statName = s[0]
+            statVar = vc.variable('', 1, 0)
+            statVar.importFromString(line)
+
+            # add parsed stat variable to the searchable map
+            variables[statName] = statVar
+            
+        except Exception, (e):
+            print "error:",e,", in variables.txt line:",line
+
+# Parses through a given log file for data
 def parseMe(filename):
     
     #The lexer
@@ -89,58 +138,75 @@ def parseMe(filename):
     def t_error(t):
         print "Illegal character '%s'" % t.value[0]
         t.lexer.skip(1) 
-    
-    lex.lex()    
-    
-    # Section 1.1 for adding a variable
-    shaderInsn = vc.variable(2,0)
-    globalInsn = vc.variable(1,1)
-    globalCycle = vc.variable(1,1)
-    shaderWarpDiv = vc.variable(2,0)
-    L1ConstMiss = vc.variable(1,0)
-    L1TextMiss = vc.variable(1,0)
-    L1ReadMiss = vc.variable(1,0)
-    L1WriteMiss = vc.variable(1,0)
-    L2ReadMiss = vc.variable(1,0)
-    L2WriteMiss = vc.variable(1,0)
-    L2WriteHit = vc.variable(1,0)
-    L2ReadHit = vc.variable(1,0)
-    globalTotInsn = vc.variable(1,0)
-    dramCMD = vc.variable(2,0)
-    dramNOP = vc.variable(2,0)
-    dramNACT = vc.variable(2,0)
-    dramNPRE = vc.variable(2,0)
-    dramNREQ = vc.variable(2,0)
-    dramMaxMRQS = vc.variable(2,0)
-    dramAveMRQS = vc.variable(2,0)
-    dramUtil = vc.variable(2,0)
-    dramEff = vc.variable(2,0)
-    globalCompletedThreads = vc.variable(1,1)
-    globalSentWrites = vc.variable(1,0)
-    globalProcessedWrites = vc.variable(1,0)
-    averagemflatency = vc.variable(1,0)
-    STmemlatdist = vc.variable(3,0)
-    LDmemlatdist = vc.variable(3,0)
-    WarpDivergenceBreakdown = vc.variable(3,0)
-    dram_writes_per_cycle = vc.variable(1,0)   
-    dram_reads_per_cycle = vc.variable(1,0)   
-    gpu_stall_by_MSHRwb = vc.variable(1,0)
-    dramglobal_acc_r = vc.variable(4,0)
-    dramglobal_acc_w = vc.variable(4,0)
-    dramlocal_acc_r = vc.variable(4,0)
-    dramlocal_acc_w = vc.variable(4,0)
-    dramconst_acc_r = vc.variable(4,0)
-    dramtexture_acc_r = vc.variable(4,0)
-    cacheMissRate_globalL1_all = vc.variable(2,0)
-    cacheMissRate_textureL1_all = vc.variable(2,0)
-    cacheMissRate_constL1_all = vc.variable(2,0)
-    cacheMissRate_globalL1_noMgHt = vc.variable(2,0)
-    cacheMissRate_textureL1_noMgHt = vc.variable(2,0)
-    cacheMissRate_constL1_noMgHt = vc.variable(2,0)
-    shdrctacount = vc.variable(2,0)
+
+    lex.lex()
+
+    # Creating holder for CFLOG
     CFLOG = {}
     
-    
+    # Declaring the properties of supported stats in a single dictionary
+    # FORMAT: <stat name in GUI>:vc.variable(<Stat Name in Log>, <type>, <reset@kernelstart>, [datatype]) 
+    variables = {
+        'shaderInsn':vc.variable('shaderinsncount', 2, 0, 'impVec'), 
+        'globalInsn':vc.variable('globalinsncount', 1, 1, 'scalar'), 
+        'globalCycle':vc.variable('globalcyclecount', 1, 1, 'scalar'), 
+        'shaderWarpDiv':vc.variable('shaderwarpdiv', 2, 0, 'impVec'), 
+        'L1TextMiss' :vc.variable('lonetexturemiss', 1, 0, 'scalar'), 
+        'L1ConstMiss':vc.variable('loneconstmiss',   1, 0, 'scalar'),
+        'L1ReadMiss' :vc.variable('lonereadmiss',    1, 0, 'scalar'),
+        'L1WriteMiss':vc.variable('lonewritemiss',   1, 0, 'scalar'), 
+        'L2ReadMiss' :vc.variable('ltworeadmiss',    1, 0, 'scalar'),
+        'L2WriteMiss':vc.variable('ltwowritemiss',   1, 0, 'scalar'),
+        'L2WriteHit' :vc.variable('ltwowritehit',    1, 0, 'scalar'),
+        'L2ReadHit'  :vc.variable('ltworeadhit',     1, 0, 'scalar'),
+        'globalTotInsn':vc.variable('globaltotinsncount', 1,0, 'scalar'), 
+        'dramCMD' :vc.variable('', 2, 0, 'idxVec'),
+        'dramNOP' :vc.variable('', 2, 0, 'idxVec'),
+        'dramNACT':vc.variable('', 2, 0, 'idxVec'),
+        'dramNPRE':vc.variable('', 2, 0, 'idxVec'),
+        'dramNREQ':vc.variable('', 2, 0, 'idxVec'),
+        'dramMaxMRQS':vc.variable('', 2, 0, 'idxVec'),
+        'dramAveMRQS':vc.variable('', 2, 0, 'idxVec'),
+        'dramUtil':vc.variable('', 2, 0, 'idxVec'),
+        'dramEff' :vc.variable('', 2, 0, 'idxVec'), 
+        'globalCompletedThreads':vc.variable('gpucompletedthreads', 1, 1, 'scalar'),
+        'globalSentWrites':vc.variable('gpgpunsentwrites', 1, 0, 'scalar'), 
+        'globalProcessedWrites':vc.variable('gpgpunprocessedwrites', 1, 0, 'scalar'), 
+        'averagemflatency' :vc.variable('', 1, 0, 'custom'), 
+        'LDmemlatdist':vc.variable('', 3, 0, 'stackbar'), 
+        'STmemlatdist':vc.variable('', 3, 0, 'stackbar'), 
+        'WarpDivergenceBreakdown':vc.variable('', 3, 0, 'stackbar'), 
+        'dram_writes_per_cycle':vc.variable('', 1, 0, 'scalar', float),
+        'dram_reads_per_cycle' :vc.variable('', 1, 0, 'scalar', float),
+        'gpu_stall_by_MSHRwb':vc.variable('', 1, 0, 'scalar'),
+        'dramglobal_acc_r' :vc.variable('', 4, 0, 'idx2DVec'), 
+        'dramglobal_acc_w' :vc.variable('', 4, 0, 'idx2DVec'), 
+        'dramlocal_acc_r'  :vc.variable('', 4, 0, 'idx2DVec'),
+        'dramlocal_acc_w'  :vc.variable('', 4, 0, 'idx2DVec'), 
+        'dramconst_acc_r'  :vc.variable('', 4, 0, 'idx2DVec'), 
+        'dramtexture_acc_r':vc.variable('', 4, 0, 'idx2DVec'), 
+        'cacheMissRate_globalL1_all'    :vc.variable('cachemissrate_globallocall1_all',    2, 0, 'impVec', float),
+        'cacheMissRate_textureL1_all'   :vc.variable('cachemissrate_texturel1_all',        2, 0, 'impVec', float),
+        'cacheMissRate_constL1_all'     :vc.variable('cachemissrate_constl1_all',          2, 0, 'impVec', float),
+        'cacheMissRate_globalL1_noMgHt' :vc.variable('cachemissrate_globallocall1_nomght', 2, 0, 'impVec', float),
+        'cacheMissRate_textureL1_noMgHt':vc.variable('cachemissrate_texturel1_nomght',     2, 0, 'impVec', float),
+        'cacheMissRate_constL1_noMgHt'  :vc.variable('cachemissrate_constl1_nomght',       2, 0, 'impVec', float),
+        'shdrctacount': vc.variable('shdrctacount', 2, 0, 'impVec'),
+        'CFLOG' : CFLOG 
+    }
+
+    # import user defined stat variables from variables.txt - adds on top of the defaults
+    import_user_defined_variables(variables)
+
+    # generate a lookup table based on the specified name in log file for each stat
+    stat_lookuptable = {}
+    for name, var in variables.iteritems():
+        if (name == 'CFLOG'):
+            continue;
+        if (var.lookup_tag != ''):
+            stat_lookuptable[var.lookup_tag] = var 
+        else:
+            stat_lookuptable[name.lower()] = var
     
     inputData = 'NULL'
 
@@ -149,192 +215,46 @@ def parseMe(filename):
         '''sentence : WORD NUMBERSEQUENCE'''
         #print p[0], p[1],p[2]
         num = p[2].split(" ")  
-        for x in num:
-            try:
-                float(x)
-            except:
-                num.remove(x)
+        
+        lookup_input = p[1].lower()
+        if (lookup_input  in stat_lookuptable):
+            if (lookup_input == "globalcyclecount") and (int(num[0]) % 10000 == 0):
+                print "Processing global cycle %s" % num[0]
                 
-        #Section 1.2 for adding a variable        
-        if p[1].lower() == "shaderinsncount":
-            for x in num:
-                shaderInsn.data.append(int(x))
-            shaderInsn.data.append("NULL")
+            stat = stat_lookuptable[lookup_input]
+            if (stat.type == 1):
+                for x in num:
+                    stat.data.append(stat.datatype(x))
+                
+            elif (stat.type == 2):
+                for x in num:
+                    stat.data.append(stat.datatype(x))
+                stat.data.append("NULL")
+                
+            elif (stat.type == 3):
+                for x in num:
+                    stat.data.append(stat.datatype(x))
+                stat.data.append("NULL")
 
-        elif p[1].lower() == 'cachemissrate_globallocall1_all':
-            for x in num:
-                cacheMissRate_globalL1_all.data.append(float(x))
-            cacheMissRate_globalL1_all.data.append("NULL")         
-        elif p[1].lower() == 'cachemissrate_texturel1_all':
-            for x in num:
-                cacheMissRate_textureL1_all.data.append(float(x))
-            cacheMissRate_textureL1_all.data.append("NULL")        
-        elif p[1].lower() == 'cachemissrate_constl1_all':
-            for x in num:
-                cacheMissRate_constL1_all.data.append(float(x))
-            cacheMissRate_constL1_all.data.append("NULL")
-            
-        elif p[1].lower() == 'cachemissrate_globallocall1_nomght':
-            for x in num:
-                cacheMissRate_globalL1_noMgHt.data.append(float(x))
-            cacheMissRate_globalL1_noMgHt.data.append("NULL")
-            
-        elif p[1].lower() == 'cachemissrate_texturel1_nomght':
-            for x in num:
-                cacheMissRate_textureL1_noMgHt.data.append(float(x))
-            cacheMissRate_textureL1_noMgHt.data.append("NULL")
-            
-        elif p[1].lower() == 'cachemissrate_constl1_nomght':
-            for x in num:
-                cacheMissRate_constL1_noMgHt.data.append(float(x))
-            cacheMissRate_constL1_noMgHt.data.append("NULL")
-            
-        elif p[1].lower() == 'shdrctacount':
-            for x in num:
-                shdrctacount.data.append(int(x))
-            shdrctacount.data.append("NULL")
-            
-        
-        
-        elif p[1].lower() == "globalinsncount":
-            for x in num:
-                globalInsn.data.append(int(x))
-                #globalInsn.append("NULL")
-                #print globalInsn
+            elif (stat.type == 4):
+                for x in num:
+                    stat.data.append(stat.datatype(x))
+                stat.data.append("NULL")
 
-        elif p[1].lower() == "globalcyclecount":
-            for x in num:
-                globalCycle.data.append(int(x))
-                if int(x) % 10000 == 0:
-                    print "Processing cycle %s" % x 
-                #globalCycle.append("NULL")
-                #print globalCycle
-        elif p[1].lower() == "shaderwarpdiv":
-            for x in num:
-                shaderWarpDiv.data.append(int(x))
-            shaderWarpDiv.data.append("NULL")
-        elif p[1].lower() == "loneconstmiss":
-            for x in num:
-                L1ConstMiss.data.append(int(x))
-        elif p[1].lower() == 'lonetexturemiss':
-            for x in num:
-                L1TextMiss.data.append(int(x))
-        elif p[1].lower() == 'lonereadmiss':
-            for x in num:
-                L1ReadMiss.data.append(int(x))
-        elif p[1].lower() == 'lonewritemiss':
-            for x in num:
-                L1WriteMiss.data.append(int(x))
-        elif p[1].lower() == 'ltwowritemiss':
-            for x in num:
-                L2WriteMiss.data.append(int(x))
-        elif p[1].lower() == 'ltwowritehit':
-            for x in num:
-                L2WriteHit.data.append(int(x))
-        elif p[1].lower() == 'ltworeadmiss':
-            for x in num:
-                L2ReadMiss.data.append(int(x))
-        elif p[1].lower() == 'ltworeadhit':
-            for x in num:
-                L2ReadHit.data.append(int(x))       
-        elif p[1].lower() == "globaltotinsncount":
-            for x in num:
-                globalTotInsn.data.append(int(x))
-        elif p[1].lower() == "dramncmd":
-            for x in num:
-                dramCMD.data.append(int(x))
-            dramCMD.data.append('NULL')
-        elif p[1].lower() == "dramnop":
-            for x in num:
-                dramNOP.data.append(int(x))
-            dramNOP.data.append('NULL')  
-        elif p[1].lower() == "dramnact":
-            for x in num:
-                dramNACT.data.append(int(x))
-            dramNACT.data.append('NULL')  
-        elif p[1].lower() == "dramnpre":
-            for x in num:
-                dramNPRE.data.append(int(x))
-            dramNPRE.data.append('NULL') 
-        elif p[1].lower() == "dramnreq":
-            for x in num:
-                dramNREQ.data.append(int(x))
-            dramNREQ.data.append('NULL')  
-        elif p[1].lower() == "drammaxmrqs":
-            for x in num:
-                dramMaxMRQS.data.append(int(x))
-            dramMaxMRQS.data.append('NULL')  
-        elif p[1].lower() == "dramavemrqs":
-            for x in num:
-                dramAveMRQS.data.append(int(x))
-            dramAveMRQS.data.append('NULL')
-        elif p[1].lower() == "dramutil":
-            for x in num:
-                dramUtil.data.append(int(x))
-            dramUtil.data.append('NULL')
-        elif p[1].lower() == "drameff":
-            for x in num:
-                dramEff.data.append(int(x))
-            dramEff.data.append('NULL')
-        elif p[1].lower() == 'gpucompletedthreads':
-            for x in num:
-                globalCompletedThreads.data.append(int(x))
-        elif p[1].lower() == 'gpgpunsentwrites':
-            for x in num:
-                globalSentWrites.data.append(int(x))
-        elif p[1].lower() == 'gpgpunprocessedwrites':
-            for x in num:
-                globalProcessedWrites.data.append(int(x))
-        elif p[1].lower() == 'averagemflatency':
-            for x in num:
-                averagemflatency.data.append(int(x))
-        elif p[1].lower() == 'ldmemlatdist':
-            for x in num:
-                LDmemlatdist.data.append(int(x))
-            LDmemlatdist.data.append('NULL')
-        elif p[1].lower() == 'stmemlatdist':
-            for x in num:
-                STmemlatdist.data.append(int(x))
-            STmemlatdist.data.append('NULL')
-        elif p[1].lower() == 'warpdivergencebreakdown':
-            for x in num:
-                WarpDivergenceBreakdown.data.append(int(x))
-            WarpDivergenceBreakdown.data.append('NULL') 
-        elif p[1].lower() == "dram_writes_per_cycle":
-            for x in num:
-                dram_writes_per_cycle.data.append(float(x))
-        elif p[1].lower() == "dram_reads_per_cycle":
-            for x in num:
-                dram_reads_per_cycle.data.append(float(x))
-        elif p[1].lower() == "gpu_stall_by_mshrwb":
-            for x in num:
-                gpu_stall_by_MSHRwb.data.append(int(x))
+            elif (stat.type == 5):
+                stat.initSparseMatrix()
+                for entry in num:
+                    row, value = entry.split(',')
+                    row = stat.datatype(row)
+                    value = stat.datatype(value)
+                    stat.data[0].append(value)
+                    stat.data[1].append(row)
+                    stat.data[2].append(stat.sampleNum)
+                stat.sampleNum += 1
 
-        elif p[1].lower() == 'dramglobal_acc_r':
-            for x in num:
-                dramglobal_acc_r.data.append(int(x))
-            dramglobal_acc_r.data.append('NULL')
-        elif p[1].lower() == 'dramglobal_acc_w':
-            for x in num:
-                dramglobal_acc_w.data.append(int(x))
-            dramglobal_acc_w.data.append('NULL')
-        elif p[1].lower() == 'dramlocal_acc_r':
-            for x in num:
-                dramlocal_acc_r.data.append(int(x))
-            dramlocal_acc_r.data.append('NULL')
-        elif p[1].lower() == 'dramlocal_acc_w':
-            for x in num:
-                dramlocal_acc_w.data.append(int(x))
-            dramlocal_acc_w.data.append('NULL')
-        elif p[1].lower() == 'dramconst_acc_r':
-            for x in num:
-                dramconst_acc_r.data.append(int(x))
-            dramconst_acc_r.data.append('NULL')
-        elif p[1].lower() == 'dramtexture_acc_r':
-            for x in num:
-               dramtexture_acc_r.data.append(int(x))
-            dramtexture_acc_r.data.append('NULL')
-        elif p[1].lower()[0:5] == 'cflog':
+        elif (lookup_input[0:5] == 'cflog'):
+            if (skipCFLOGParsing == 1): 
+                return
             count = 0
             pc = []
             threadcount = []
@@ -346,7 +266,7 @@ def parseMe(filename):
                 count += 1
 
             if (p[1] not in CFLOG):
-                CFLOG[p[1]] = vc.variable(2,0)
+                CFLOG[p[1]] = vc.variable('',2,0)
                 CFLOG[p[1]].data.append([]) # pc[]
                 CFLOG[p[1]].data.append([]) # threadcount[]
                 CFLOG[p[1]].maxPC = 0
@@ -368,7 +288,7 @@ def parseMe(filename):
             print("Syntax error at EOF")
     
     yacc.yacc()
-   
+
     # detect for gzip'ed log file and gunzip on the fly
     if (filename.endswith('.gz')):
         file = gzip.open(filename, 'r')
@@ -377,22 +297,16 @@ def parseMe(filename):
     while file:
         line = file.readline()
         if not line : break
-        yacc.parse(line[0:-1])
+        nameNdata = line.split(":")
+        if (len(nameNdata) != 2): 
+            print("Syntax error at '%s'" % line) 
+        namePart = nameNdata[0].strip()
+        dataPart= nameNdata[1].strip()
+        parts = [' ', namePart, dataPart]
+        p_sentence(parts)
+        # yacc.parse(line[0:-1])
     file.close()    
-    
 
-
-    #Section 1.3 for adding a variable
-    variables = {'shaderInsn':shaderInsn, 'globalInsn':globalInsn, 'globalCycle':globalCycle, 'shaderWarpDiv':shaderWarpDiv, 'L1TextMiss':L1TextMiss, 'L1ConstMiss':L1ConstMiss,
-    'L1ReadMiss':L1ReadMiss,'L1WriteMiss':L1WriteMiss, 'L2ReadMiss':L2ReadMiss,'L2WriteMiss':L2WriteMiss,'L2WriteHit':L2WriteHit,'L2ReadHit':L2ReadHit,'globalTotInsn':globalTotInsn, 'dramCMD':dramCMD,
-    'dramNOP':dramNOP,'dramNACT':dramNACT,'dramNPRE':dramNPRE,'dramNREQ':dramNREQ,'dramMaxMRQS':dramMaxMRQS,'dramAveMRQS':dramAveMRQS,'dramUtil':dramUtil,'dramEff':dramEff, 'globalCompletedThreads':globalCompletedThreads,
-    'globalSentWrites':globalSentWrites, 'globalProcessedWrites':globalProcessedWrites, 'averagemflatency' : averagemflatency, 'LDmemlatdist': LDmemlatdist, 'STmemlatdist':STmemlatdist, 'WarpDivergenceBreakdown':WarpDivergenceBreakdown, 'dram_writes_per_cycle':dram_writes_per_cycle,
-    'dram_reads_per_cycle':dram_reads_per_cycle,'gpu_stall_by_MSHRwb':gpu_stall_by_MSHRwb, 'dramglobal_acc_r' : dramglobal_acc_r, 'dramglobal_acc_w' : dramglobal_acc_w, 'dramlocal_acc_r' : dramlocal_acc_r,
-    'dramlocal_acc_w' : dramlocal_acc_w, 'dramconst_acc_r':dramconst_acc_r, 'dramtexture_acc_r':dramtexture_acc_r, 'cacheMissRate_globalL1_all':cacheMissRate_globalL1_all,'cacheMissRate_textureL1_all': cacheMissRate_textureL1_all,
-    'cacheMissRate_constL1_all':cacheMissRate_constL1_all,'cacheMissRate_globalL1_noMgHt':cacheMissRate_globalL1_noMgHt,'cacheMissRate_textureL1_noMgHt':cacheMissRate_textureL1_noMgHt,'cacheMissRate_constL1_noMgHt':cacheMissRate_constL1_noMgHt,
-    'CFLOG' : CFLOG, 'shdrctacount': shdrctacount}
-    
-    
     return variables
   
 

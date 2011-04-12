@@ -65,10 +65,6 @@
 
 extern int enable_ptx_file_line_stats;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // set options
 void ptx_file_line_stats_options(option_parser_t opp);
 
@@ -77,6 +73,7 @@ void ptx_file_line_stats_write_file();
 
 #ifdef __cplusplus
 // stat collection interface to cuda-sim
+class ptx_instruction;
 void ptx_file_line_stats_add_exec_count(const ptx_instruction *pInsn);
 #endif
 
@@ -92,8 +89,4 @@ void ptx_file_line_stats_sub_inflight_memory_insn(int sc_id, unsigned pc);
 void ptx_file_line_stats_commit_exposed_latency(int sc_id, int exposed_latency);
 
 void ptx_file_line_stats_add_warp_divergence(unsigned pc, unsigned n_way_divergence);
-
-#ifdef __cplusplus
-};
-#endif
 

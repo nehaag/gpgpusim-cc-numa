@@ -73,12 +73,12 @@
 
 extern unsigned g_max_regs_per_thread;
 extern "C" int ptx_error( const char *s );
-extern "C" void gpgpu_ptx_sim_bindTextureToArray(const struct textureReference* texref, struct cudaArray* array); //texture functions
-extern "C" struct cudaArray* gpgpu_ptx_sim_accessArrayofTexture(struct textureReference* texref);
-extern "C" void gpgpu_ptx_sim_bindNameToTexture(const char* name, struct textureReference* texref);
-extern "C" struct textureReference* gpgpu_ptx_sim_accessTextureofName(const char* name);
-extern "C" const char* gpgpu_ptx_sim_findNamefromTexture(const struct textureReference* texref);
-extern "C" int gpgpu_ptx_sim_sizeofTexture(const char* name);
+void gpgpu_ptx_sim_bindTextureToArray(const struct textureReference* texref, struct cudaArray* array); //texture functions
+struct cudaArray* gpgpu_ptx_sim_accessArrayofTexture(struct textureReference* texref);
+void gpgpu_ptx_sim_bindNameToTexture(const char* name, struct textureReference* texref);
+struct textureReference* gpgpu_ptx_sim_accessTextureofName(const char* name);
+const char* gpgpu_ptx_sim_findNamefromTexture(const struct textureReference* texref);
+int gpgpu_ptx_sim_sizeofTexture(const char* name);
 
 // the program intermediate representation...
 symbol_table *g_global_symbol_table = NULL;
@@ -382,7 +382,7 @@ void add_identifier( const char *identifier, int array_dim, unsigned array_ident
       num_bits = array_dim * num_bits;
       break;
    case ARRAY_IDENTIFIER_NO_DIM:
-      type = g_current_symbol_table->get_array_type(type,-1);
+      type = g_current_symbol_table->get_array_type(type,(unsigned)-1);
       num_bits = 0;
       break;
    default:
@@ -390,10 +390,20 @@ void add_identifier( const char *identifier, int array_dim, unsigned array_ident
    }
    g_last_symbol = g_current_symbol_table->add_variable(identifier,type,g_filename,ptx_lineno);
    switch ( g_space_spec ) {
-   case REG_DIRECTIVE:
+   case REG_DIRECTIVE: {
       regnum = g_current_symbol_table->next_reg_num();
-      g_last_symbol->set_regno(regnum);
-      break;
+      int arch_regnum = -1;
+      for (int d = 0; d < strlen(identifier); d++) {
+         if (isdigit(identifier[d])) {
+            sscanf(identifier + d, "%d", &arch_regnum);
+            break;
+         }
+      }
+      if (strcmp(identifier, "%sp") == 0) {
+         arch_regnum = 0;
+      }
+      g_last_symbol->set_regno(regnum, arch_regnum);
+      } break;
    case SHARED_DIRECTIVE:
       printf("GPGPU-Sim PTX: allocating shared region for \"%s\" from 0x%x to 0x%lx (shared memory space)\n",
              identifier,
@@ -462,7 +472,7 @@ void add_identifier( const char *identifier, int array_dim, unsigned array_ident
 
 
    if ( ti.is_param() ) {
-      g_func_info->add_param_name_and_type(g_entry_func_param_index,identifier, ti.scalar_type() );
+      g_func_info->add_param_name_type_size(g_entry_func_param_index,identifier, ti.scalar_type(), num_bits );
       g_entry_func_param_index++;
    }
 }
@@ -777,7 +787,7 @@ bool symbol_table::add_function_decl( const char *name, int entry_point, functio
       assert( !prior_decl );
       *sym_table = new symbol_table( "", entry_point, g_global_symbol_table );
       symbol *null_reg = (*sym_table)->add_variable("_",NULL,"",0); 
-      null_reg->set_regno(0);
+      null_reg->set_regno(0, 0);
       (*sym_table)->set_name(name);
       (*func_info)->set_symtab(*sym_table);
       m_function_symtab_lookup[key] = *sym_table;

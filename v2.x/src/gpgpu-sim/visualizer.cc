@@ -98,20 +98,20 @@ extern unsigned max_icnt2sh_latency;
 extern int gpgpu_warpdistro_shader;
 extern unsigned ***mem_access_type_stats;
 
-extern "C" unsigned int warp_size; 
-extern "C" unsigned int *shader_cycle_distro;
-extern "C" void time_vector_print_interval2file(FILE *outfile);
-extern "C" void time_vector_print_interval2gzfile(gzFile outfile);
-extern "C" void cflog_visualizer_gzprint(gzFile fout);
-extern "C" void shader_CTA_count_visualizer_gzprint(gzFile fout);
-extern "C" float shd_cache_windowed_cache_miss_rate(shd_cache_t*, int);
-extern "C" void shd_cache_new_window(shd_cache_t*);
+extern unsigned int warp_size; 
+extern unsigned int *shader_cycle_distro;
+void time_vector_print_interval2file(FILE *outfile);
+void time_vector_print_interval2gzfile(gzFile outfile);
+void cflog_visualizer_gzprint(gzFile fout);
+void shader_CTA_count_visualizer_gzprint(gzFile fout);
+float shd_cache_windowed_cache_miss_rate(shd_cache_t*, int);
+void shd_cache_new_window(shd_cache_t*);
 
 int g_visualizer_enabled = 1;
 char *g_visualizer_filename = NULL;
 int g_visualizer_zlevel = 6;
 
-extern "C" void visualizer_options(option_parser_t opp)
+void visualizer_options(option_parser_t opp)
 {
    option_parser_register(opp, "-visualizer_enabled", OPT_BOOL,
                           &g_visualizer_enabled, "Turn on visualizer output (1=On, 0=Off)",
@@ -127,16 +127,14 @@ extern "C" void visualizer_options(option_parser_t opp)
 
 }
 
-extern "C" void visualizer_printstat()
+void visualizer_printstat()
 {
-   static unsigned int *last_shader_cycle_distro = NULL;
    gzFile visualizer_file = NULL; // gzFile is basically a pointer to a struct, so it is fine to initialize it as NULL
    unsigned i;
    if ( !g_visualizer_enabled )
       return;
-   if (!last_shader_cycle_distro)
-      last_shader_cycle_distro = (unsigned int*) calloc(warp_size + 3, sizeof(unsigned int));
 
+   // initialize file name if it is not set 
    if ( g_visualizer_filename == NULL ) {
       time_t curr_time;
       time(&curr_time);
@@ -149,21 +147,18 @@ extern "C" void visualizer_printstat()
       }
       char buf[1024];
       snprintf(buf,1024,"gpgpusim_visualizer__%s.log.gz",date);
-      visualizer_file = gzopen(buf, "w");
-      if (visualizer_file == NULL) {
-         printf("error - could not open visualizer trace file.\n");
-         exit(1);
-      }
-      gzsetparams(visualizer_file, g_visualizer_zlevel, Z_DEFAULT_STRATEGY);
       g_visualizer_filename = strdup(buf);
-   } else {
-      visualizer_file = gzopen(g_visualizer_filename,"a");
-      if (visualizer_file == NULL) {
-         printf("error - could not open visualizer trace file.\n");
-         exit(1);
-      }
-      gzsetparams(visualizer_file, g_visualizer_zlevel, Z_DEFAULT_STRATEGY);
    }
+
+   // clean the content of the visualizer log if it is the first time, otherwise attach at the end
+   static bool visualizer_first_printstat = true;
+   visualizer_file = gzopen(g_visualizer_filename, (visualizer_first_printstat)? "w" : "a");
+   if (visualizer_file == NULL) {
+      printf("error - could not open visualizer trace file.\n");
+      exit(1);
+   }
+   gzsetparams(visualizer_file, g_visualizer_zlevel, Z_DEFAULT_STRATEGY);
+   visualizer_first_printstat = false;
 
    // instruction count per shader core
    gzprintf(visualizer_file, "shaderinsncount:  ");
@@ -299,6 +294,9 @@ extern "C" void visualizer_printstat()
    gzprintf(visualizer_file, "gpu_stall_by_MSHRwb: %d\n", gpu_stall_by_MSHRwb);   
 
    // warp divergence breakdown
+   static unsigned int *last_shader_cycle_distro = NULL;
+   if (!last_shader_cycle_distro)
+      last_shader_cycle_distro = (unsigned int*) calloc(warp_size + 3, sizeof(unsigned int));
    time_vector_print_interval2gzfile(visualizer_file);
    gzprintf(visualizer_file, "WarpDivergenceBreakdown:");
    unsigned int total=0;
@@ -394,6 +392,7 @@ private:
       long int last_update,diff;
       int finished_count=0;
       ld_time_dist.clear();
+      ld_time_dist.resize(ld_vector_size);
       std::map< unsigned int, std::vector<long int> >::iterator iter, iter_temp;
       iter =ld_time_map.begin() ;
       while (iter != ld_time_map.end()) {
@@ -438,6 +437,7 @@ private:
       long int last_update,diff;
       int finished_count=0;
       st_time_dist.clear();
+      st_time_dist.resize(st_vector_size);
       std::map< unsigned int, std::vector<long int> >::iterator iter,iter_temp;
       iter =st_time_map.begin() ;
       while (  iter != st_time_map.end() ) {
@@ -557,28 +557,27 @@ public:
 
 my_time_vector* g_my_time_vector; 
 
-extern "C"
 void time_vector_create(int ld_size,int st_size) {
    g_my_time_vector = new my_time_vector(ld_size,st_size); 
 }                               
 
-extern "C" 
+
 void time_vector_print(void) {
    g_my_time_vector->print_dist();
 }
 
-extern "C" 
+
 void time_vector_print_interval2file(FILE *outfile) {
    g_my_time_vector->print_to_file(outfile);
 }
 
-extern "C" 
+
 void time_vector_print_interval2gzfile(gzFile outfile) {
    g_my_time_vector->print_to_gzfile(outfile);
 }
 
 #include "../gpgpu-sim/mem_fetch.h"
-extern "C" 
+
 void time_vector_update(unsigned int uid,int slot ,long int cycle,int type) {
    if ( (type == RD_REQ) || (type == REPLY_DATA) ) {
       g_my_time_vector->update_ld( uid, slot,cycle);
@@ -589,7 +588,7 @@ void time_vector_update(unsigned int uid,int slot ,long int cycle,int type) {
    }
 }
 
-extern "C" void check_time_vector_update(unsigned int uid,int slot ,long int latency,int type) 
+void check_time_vector_update(unsigned int uid,int slot ,long int latency,int type) 
 {
    if ( (type == RD_REQ) || (type == REPLY_DATA) ) {
       g_my_time_vector->check_ld_update( uid, slot, latency );

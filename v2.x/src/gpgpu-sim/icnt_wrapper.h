@@ -83,11 +83,17 @@ extern icnt_transfer_p   icnt_transfer;
 extern icnt_busy_p       icnt_busy;
 extern icnt_drain_p      icnt_drain;
 
+/*
 // definition of valid gpu network mode.
-enum {
+extern enum {
    INTERSIM = 1,
    N_NETWORK_MODE
 } gpu_network_mode;
+*/
+enum network_mode {
+   INTERSIM = 1,
+   N_NETWORK_MODE
+};
 
 void icnt_init( unsigned int n_shader, unsigned int n_mem );
 

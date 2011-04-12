@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # Copyright (C) 2009 by Aaron Ariel, Tor M. Aamodt and the University of British 
 # Columbia, Vancouver, BC V6T 1Z4, All Rights Reserved.
 # 
@@ -72,7 +74,7 @@ os.system('mkdir $HOME/.gpgpu_sim')
 os.system('mkdir $HOME/.gpgpu_sim/aerialvision')
 
 ###Installing Pmw
-os.system('echo "XYZ 2"; wget -P "$HOME/local/test" "http://superb-west.dl.sourceforge.net/sourceforge/pmw/Pmw.1.3.2.tar.gz"')
+os.system('echo "XYZ 2"; curl -L -o "$HOME/local/test/Pmw.1.3.2.tar.gz" "http://sourceforge.net/projects/pmw/files/Pmw/Pmw.1.3.2/Pmw.1.3.2.tar.gz/download"')
 os.system('echo "XYZ 3"; tar xvfz $HOME/local/test/Pmw.1.3.2.tar.gz -C $HOME/local/test')
 os.system('echo "XYZ 4"; cd $HOME/local/test/Pmw.1.3.2/src/; ./setup.py build')
 os.system('echo "XYZ 5"; cd $HOME/local/test/Pmw.1.3.2/src/; ./setup.py install --prefix=$HOME/local/test')
@@ -80,21 +82,21 @@ os.system('echo "XYZ 6"; rm $HOME/local/test/Pmw.1.3.2.tar.gz')
 
 
 ####Installing PLY
-os.system('echo "XYZ 7"; wget -P "$HOME/local/test" "http://www.dabeaz.com/ply/ply-3.2.tar.gz"')
+os.system('echo "XYZ 7"; curl -L -o "$HOME/local/test/ply-3.2.tar.gz" "http://www.dabeaz.com/ply/ply-3.2.tar.gz"')
 os.system('echo "XYZ 8"; tar xvfz $HOME/local/test/ply-3.2.tar.gz -C $HOME/local/test')
 os.system('echo "XYZ 9"; cd $HOME/local/test/ply-3.2/; python setup.py build')
-os.system('echo "XYZ 10"; cd $HOME/local/test/ply-3.2/; python setup.py install --prefix=$HOME/local/test')
+os.system('echo "XYZ 10"; export PYTHONPATH=$PYTHONPATH:$HOME/local/test/lib/python2.6/site-packages:$HOME/local/test/lib64/python2.6/site-packages; cd $HOME/local/test/ply-3.2/; python setup.py install --prefix=$HOME/local/test')
 os.system('echo "XYZ 11"; rm $HOME/local/test/ply-3.2.tar.gz')
 
 #####Installing Numpy
-os.system('echo "XYZ 12"; wget -P "$HOME/local/test" "http://superb-west.dl.sourceforge.net/sourceforge/numpy/numpy-1.3.0.tar.gz"')
+os.system('echo "XYZ 12"; curl -L -o "$HOME/local/test/numpy-1.3.0.tar.gz" "http://sourceforge.net/projects/numpy/files/NumPy/1.3.0/numpy-1.3.0.tar.gz/download"')
 os.system('echo "XYZ 13"; tar xvfz $HOME/local/test/numpy-1.3.0.tar.gz -C $HOME/local/test')
 os.system('echo "XYZ 14"; rm $HOME/local/test/numpy-1.3.0.tar.gz')
 os.system('echo "XYZ 15"; python $HOME/local/test/numpy-1.3.0/setup.py build')
 os.system('echo "XYZ 16"; python $HOME/local/test/numpy-1.3.0/setup.py install --prefix=$HOME/local/test')
 
 #####Installing LibPng
-os.system('echo "XYZ 17"; wget -P "$HOME/local/test" "http://superb-west.dl.sourceforge.net/sourceforge/libpng/libpng-1.2.37.tar.gz"')
+os.system('echo "XYZ 17"; curl -L -o "$HOME/local/test/libpng-1.2.37.tar.gz" "http://sourceforge.net/projects/libpng/files/libpng-stable/1.2.37/libpng-1.2.37.tar.gz/download"')
 os.system('echo "XYZ 18"; tar xvfz $HOME/local/test/libpng-1.2.37.tar.gz -C $HOME/local/test')
 os.system('echo "XYZ 19"; rm $HOME/local/test/libpng-1.2.37.tar.gz')
 os.system('echo "XYZ 20"; cd $HOME/local/test/libpng-1.2.37')
@@ -103,9 +105,9 @@ os.system('echo "XYZ 22"; cd $HOME/local/test/libpng-1.2.37; make')
 os.system('echo "XYZ 23"; cd $HOME/local/test/libpng-1.2.37; make install')
 
 ####Installing matplotlib
-os.system('echo "XYZ 24"; wget -P "$HOME/local/test" "http://superb-west.dl.sourceforge.net/sourceforge/matplotlib/matplotlib-0.98.5.3.tar.gz"')
+os.system('echo "XYZ 24"; curl -L -o "$HOME/local/test/matplotlib-0.98.5.3.tar.gz" "http://sourceforge.net/projects/matplotlib/files/matplotlib/matplotlib-0.98.5/matplotlib-0.98.5.3.tar.gz/download"')
 os.system('echo "XYZ 25"; tar xvfz $HOME/local/test/matplotlib-0.98.5.3.tar.gz -C $HOME/local/test')
 os.system('echo "XYZ 26"; rm $HOME/local/test/matplotlib-0.98.5.3.tar.gz')
-os.system('echo "XYZ 27"; export PYTHONPATH=$PYTHONPATH:$HOME/local/test/lib64/python2.6/site-packages; export CPLUS_INCLUDE_PATH=$HOME/local/test/include; export PKG_CONFIG_PATH=$HOME/local/test/lib/pkgconfig; cd $HOME/local/test/matplotlib-0.98.5.3;python setup.py build')
-os.system('echo "XYZ 28"; export PYTHONPATH=$PYTHONPATH:$HOME/local/test/lib64/python2.6/site-packages; export CPLUS_INCLUDE_PATH=$HOME/local/test/include; export PKG_CONFIG_PATH=$HOME/local/test/lib/pkgconfig; cd $HOME/local/test/matplotlib-0.98.5.3/; python setup.py install --prefix=$HOME/local/test')
-os.system('echo "XYZ 29"; echo "Please add the following to your environment (e.g., via your .bashrc file)\n    export PYTHONPATH=$PYTHONPATH:$HOME/local/test/lib64/python2.6/site-packages\n    export CPLUS_INCLUDE_PATH=$HOME/local/test/include\n    export PKG_CONFIG_PATH=$HOME/local/test/lib/pkgconfig\n"')
+os.system('echo "XYZ 27"; export PYTHONPATH=$PYTHONPATH:$HOME/local/test/lib/python2.6/site-packages:$HOME/local/test/lib64/python2.6/site-packages; export CPLUS_INCLUDE_PATH=$HOME/local/test/include; export PKG_CONFIG_PATH=$HOME/local/test/lib/pkgconfig; cd $HOME/local/test/matplotlib-0.98.5.3;python setup.py build')
+os.system('echo "XYZ 28"; export PYTHONPATH=$PYTHONPATH:$HOME/local/test/lib/python2.6/site-packages:$HOME/local/test/lib64/python2.6/site-packages; export CPLUS_INCLUDE_PATH=$HOME/local/test/include; export PKG_CONFIG_PATH=$HOME/local/test/lib/pkgconfig; cd $HOME/local/test/matplotlib-0.98.5.3/; python setup.py install --prefix=$HOME/local/test')
+os.system('echo "XYZ 29"; echo "Please add the following to your environment (e.g., via your .bashrc file)\n    export PYTHONPATH=\$PYTHONPATH:$HOME/local/test/lib/python2.6/site-packages:$HOME/local/test/lib64/python2.6/site-packages\n    export CPLUS_INCLUDE_PATH=$HOME/local/test/include\n    export PKG_CONFIG_PATH=$HOME/local/test/lib/pkgconfig\n"')

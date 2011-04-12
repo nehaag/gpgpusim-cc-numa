@@ -66,64 +66,56 @@
 #ifndef CFLOGGER_H
 #define CFLOGGER_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+void try_snap_shot (unsigned long long  current_cycle);
+void set_spill_interval (unsigned long long  interval);
+void spill_log_to_file (FILE *fout, int final, unsigned long long  current_cycle);
 
-   void try_snap_shot (unsigned long long  current_cycle);
-   void set_spill_interval (unsigned long long  interval);
-   void spill_log_to_file (FILE *fout, int final, unsigned long long  current_cycle);
-
-   void create_thread_CFlogger( int n_loggers, int n_threads, int n_insn, address_type start_pc, unsigned long long  logging_interval);
-   void destroy_thread_CFlogger( );
-   void cflog_update_thread_pc( int logger_id, int thread_id, address_type pc );
-   void cflog_snapshot( int logger_id, unsigned long long  cycle );
-   void cflog_print(FILE *fout);
-   void cflog_print_path_expression(FILE *fout);
-   void cflog_visualizer_print(FILE *fout);
+void create_thread_CFlogger( int n_loggers, int n_threads, int n_insn, address_type start_pc, unsigned long long  logging_interval);
+void destroy_thread_CFlogger( );
+void cflog_update_thread_pc( int logger_id, int thread_id, address_type pc );
+void cflog_snapshot( int logger_id, unsigned long long  cycle );
+void cflog_print(FILE *fout);
+void cflog_print_path_expression(FILE *fout);
+void cflog_visualizer_print(FILE *fout);
 
 
-   void insn_warp_occ_create( int n_loggers, int simd_width, int n_insn );
-   void insn_warp_occ_log( int logger_id, address_type pc, int warp_occ );
-   void insn_warp_occ_print( FILE *fout );
+void insn_warp_occ_create( int n_loggers, int simd_width, int n_insn );
+void insn_warp_occ_log( int logger_id, address_type pc, int warp_occ );
+void insn_warp_occ_print( FILE *fout );
 
 
-   void shader_warp_occ_create( int n_loggers, int simd_width, unsigned long long  logging_interval );
-   void shader_warp_occ_log( int logger_id, int warp_occ );
-   void shader_warp_occ_snapshot( int logger_id, unsigned long long  current_cycle );
-   void shader_warp_occ_print( FILE *fout );
+void shader_warp_occ_create( int n_loggers, int simd_width, unsigned long long  logging_interval );
+void shader_warp_occ_log( int logger_id, int warp_occ );
+void shader_warp_occ_snapshot( int logger_id, unsigned long long  current_cycle );
+void shader_warp_occ_print( FILE *fout );
 
 
-   void shader_mem_acc_create( int n_loggers, int n_dram, int n_bank, unsigned long long  logging_interval );
-   void shader_mem_acc_log( int logger_id, int dram_id, int bank, char rw );
-   void shader_mem_acc_snapshot( int logger_id, unsigned long long  current_cycle );
-   void shader_mem_acc_print( FILE *fout );
+void shader_mem_acc_create( int n_loggers, int n_dram, int n_bank, unsigned long long  logging_interval );
+void shader_mem_acc_log( int logger_id, int dram_id, int bank, char rw );
+void shader_mem_acc_snapshot( int logger_id, unsigned long long  current_cycle );
+void shader_mem_acc_print( FILE *fout );
 
 
-   void shader_mem_lat_create( int n_loggers, unsigned long long  logging_interval );
-   void shader_mem_lat_log( int logger_id, int latency );
-   void shader_mem_lat_snapshot( int logger_id, unsigned long long  current_cycle );
-   void shader_mem_lat_print( FILE *fout );
+void shader_mem_lat_create( int n_loggers, unsigned long long  logging_interval );
+void shader_mem_lat_log( int logger_id, int latency );
+void shader_mem_lat_snapshot( int logger_id, unsigned long long  current_cycle );
+void shader_mem_lat_print( FILE *fout );
 
 
-   int get_shader_normal_cache_id();
-   int get_shader_texture_cache_id();
-   int get_shader_constant_cache_id();
-   void shader_cache_access_create( int n_loggers, int n_types, unsigned long long  logging_interval );
-   void shader_cache_access_log( int logger_id, int type, int miss);
-   void shader_cache_access_unlog( int logger_id, int type, int miss);
-   void shader_cache_access_print( FILE *fout );
+int get_shader_normal_cache_id();
+int get_shader_texture_cache_id();
+int get_shader_constant_cache_id();
+void shader_cache_access_create( int n_loggers, int n_types, unsigned long long  logging_interval );
+void shader_cache_access_log( int logger_id, int type, int miss);
+void shader_cache_access_unlog( int logger_id, int type, int miss);
+void shader_cache_access_print( FILE *fout );
 
 
-   void shader_CTA_count_create( int n_shaders, unsigned long long  logging_interval);
-   void shader_CTA_count_log( int shader_id, int nCTAadded );
-   void shader_CTA_count_unlog( int shader_id, int nCTAdone );
-   void shader_CTA_count_resetnow( );
-   void shader_CTA_count_print( FILE *fout );
-   void shader_CTA_count_visualizer_print( FILE *fout );
-
-#ifdef __cplusplus
-}
-#endif
+void shader_CTA_count_create( int n_shaders, unsigned long long  logging_interval);
+void shader_CTA_count_log( int shader_id, int nCTAadded );
+void shader_CTA_count_unlog( int shader_id, int nCTAdone );
+void shader_CTA_count_resetnow( );
+void shader_CTA_count_print( FILE *fout );
+void shader_CTA_count_visualizer_print( FILE *fout );
 
 #endif /* CFLOGGER_H */

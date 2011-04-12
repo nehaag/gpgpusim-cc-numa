@@ -81,7 +81,7 @@ struct delay_data_t {
 };
 
 typedef struct {
-   char* name;
+   const char* name;
    int uid;
 
    unsigned int latency;
@@ -100,32 +100,23 @@ typedef struct {
    float  avg_size_stat;
 } delay_queue;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+unsigned char dq_full(delay_queue* dq );
+unsigned char dq_empty(delay_queue* dq );
+unsigned int dq_n_element(delay_queue* dq );
+unsigned char dq_push(delay_queue* dq, void* data);
+void* dq_pop(delay_queue* dq);
+void dq_set_min_length(delay_queue* dq, unsigned int new_min_len);
+void removeEntry(void* data, delay_queue** dq, int size_dq);
+delay_queue* dq_create( const char* name, 
+		   unsigned int latency, 
+		   unsigned int min_len, 
+		   unsigned int max_len);
+void dq_remove(void* data, delay_queue* dq);
+void dq_print(delay_queue* dq);
+void dq_free(delay_queue* dq);
+void* dq_top(delay_queue* dq);//return the data in the head without poping the queue
 
-   unsigned char dq_full(delay_queue* dq );
-   unsigned char dq_empty(delay_queue* dq );
-   unsigned int dq_n_element(delay_queue* dq );
-   unsigned char dq_push(delay_queue* dq, void* data);
-   void* dq_pop(delay_queue* dq);
-   void dq_set_min_length(delay_queue* dq, unsigned int new_min_len);
-   void removeEntry(void* data, delay_queue** dq, int size_dq);
-   delay_queue* dq_create( char* name, 
-                           unsigned int latency, 
-                           unsigned int min_len, 
-                           unsigned int max_len);
-   void dq_remove(void* data, delay_queue* dq);
-   void dq_print(delay_queue* dq);
-   void dq_free(delay_queue* dq);
-   void* dq_top(delay_queue* dq);//return the data in the head without poping the queue
-
-   void dq_update_stat(delay_queue* dq);
-   void dq_print_stat(delay_queue* dq);
-
-
-#ifdef __cplusplus
-}
-#endif
+void dq_update_stat(delay_queue* dq);
+void dq_print_stat(delay_queue* dq);
 
 #endif

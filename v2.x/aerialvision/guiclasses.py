@@ -63,6 +63,7 @@
 
 import time
 import os
+import array
 import Tkinter as Tk
 import matplotlib
 matplotlib.use('TkAgg')
@@ -70,6 +71,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 from matplotlib import mpl
 from matplotlib.colors import colorConverter
+from matplotlib import pyplot
 import Pmw
 import numpy
 import startup
@@ -79,17 +81,19 @@ import lexyacc
 import organizedata
 import lexyacctexteditor
 import variableclasses
+from configs import avconfig
+
 class formEntry:
   
   #This class is essentially a form placed inside a tab. It collects all the data from the user required for graphing. It then instantiates a new object that takes care of all the graphing
-
+  graphForVarType = { 1:[0,3], 2:[0,3], 3:[4], 4:[0,3,5], 5:[6] }
   
   def __init__(self, graphTabs, numb, vars, res, entry):
     
     #Variable Initializations
     self.data = vars
     self.subBool = 0
-    self.possGraphs = ['Line', 'Histogram', 'Bar Chart', 'Parallel Intensity Plot', 'Stacked Bar Chart']
+    self.possGraphs = ['Line', 'Histogram', 'Bar Chart', 'Parallel Intensity Plot', 'Stacked Bar Chart', 'Parallel Intensity Plot (Sum)', 'Scatter Plot']
     self.res = res
     self.subplots = []
     self.dataChosenX = "globalCycle"
@@ -119,7 +123,7 @@ class formEntry:
         self.formArea = Tk.Frame(self.background, bg = "white")
     chosenVars = Tk.Frame(self.background, bg = 'white')
     self.background.pack()
-    self.background.pack_propagate(0)
+    # self.background.pack_propagate(0)
     self.formArea.pack(side = Tk.LEFT, anchor = Tk.N)
     chosenVars.pack(side = Tk.LEFT, anchor = Tk.N, padx = 15)
     
@@ -150,7 +154,7 @@ class formEntry:
     chooseDataFrame.pack(side = Tk.TOP, anchor = Tk.W)
     lchooseDataFrame = Tk.Label(chooseDataFrame, text= 'Data to be Plotted:', font = ("Gills Sans MT", 12), bg = "white")
     lchooseDataFrame.pack(side= Tk.LEFT);
-    bQchooseDataFrameHelp = Tk.Button(chooseDataFrame, text = " ? -->", command = (lambda: helpMSG(1)))
+    bQchooseDataFrameHelp = Tk.Button(chooseDataFrame, text = " ? -->", command = (lambda: self.helpMsg('Double-Click on the metric to select it for plotting.')))
     bQchooseDataFrameHelp.pack(side =Tk.LEFT, padx = 5)
     XListbox = Tk.Frame(chooseDataFrame, bg= 'white')
     XListbox.pack(side = Tk.LEFT)
@@ -182,7 +186,7 @@ class formEntry:
     typeGraph.pack(side = Tk.TOP, anchor = Tk.W, pady = 10)
     lTypeGraph = Tk.Label(typeGraph, text= 'Type of Graph:', font = ("Gills Sans MT", 12), bg = "white")
     lTypeGraph.pack(side= Tk.LEFT);
-    bQTypeGraphHelp = Tk.Button(typeGraph, text = " ? -->", command = (lambda: helpMSG(3)))
+    bQTypeGraphHelp = Tk.Button(typeGraph, text = " ? -->", command = (lambda: self.helpMsg('Double-Click on the graph type to select it.')))
     bQTypeGraphHelp.pack(side =Tk.LEFT, padx = 5)
     self.cTypeGraph = Tk.Listbox(typeGraph, width = 50, height = 3)
     self.cTypeGraph.bind("<Double-Button-1>", self.chooseGraph)
@@ -201,22 +205,22 @@ class formEntry:
     bcancelSubplot = Tk.Button(subplotWindow, text= "Cancel", command = lambda: self.removeSubplotWindow())
     bcancelSubplot.pack(side = Tk.LEFT)
     
+    #Button for graphing  
+    graphButton = Tk.Frame(chosenVars, bg = "white")
+    graphButton.pack(side = Tk.TOP, fill = Tk.X)
+    bGraphButton = Tk.Button(graphButton,borderwidth = 5, bg = 'green', text = "GraphMe!",font = ("Gills Sans MT", 14), command = (lambda: self.setupPlotData()))
+    bGraphButton.pack(side = Tk.RIGHT, pady = 5)
+    
     #Frame that will have the textbox that lists everything the user has chosen to do
     ChosenVarsTitle = Tk.Label(chosenVars, text = 'Options Chosen', font = ("Gills Sans MT", 12), bg = "white")
     ChosenVarsTitle.pack(side = Tk.TOP)
     innerChosenVarsFrame = Tk.Frame(chosenVars, bg= 'white')
-    innerChosenVarsFrame.pack(side = Tk.TOP, pady = 10)
+    innerChosenVarsFrame.pack(side = Tk.TOP, pady = 10, fill = Tk.Y)
     ChosenVarsTextboxScrollbar = Tk.Scrollbar(innerChosenVarsFrame, orient = Tk.VERTICAL)
-    ChosenVarsTextboxScrollbar.pack(side = Tk.RIGHT, fill = 'y')
+    ChosenVarsTextboxScrollbar.pack(side = Tk.RIGHT, fill = Tk.Y)
     self.ChosenVarsTextbox = Tk.Text(innerChosenVarsFrame, height = 41, width = 45, yscrollcommand = ChosenVarsTextboxScrollbar.set)
-    self.ChosenVarsTextbox.pack()
+    self.ChosenVarsTextbox.pack(fill = Tk.Y)
     ChosenVarsTextboxScrollbar.config(command = self.ChosenVarsTextbox.yview)
-    
-    #Button for graphing  
-    graphButton = Tk.Frame(chosenVars, bg = "white")
-    graphButton.pack(side = Tk.RIGHT)
-    bGraphButton = Tk.Button(graphButton,borderwidth = 5, bg = 'green', text = "GraphMe!",font = ("Gills Sans MT", 14), command = (lambda: self.setupPlotData()))
-    bGraphButton.pack()
     
     
     #Setting up subplot stuff
@@ -255,9 +259,9 @@ class formEntry:
     #filling in yAxis vars
     #Need to fill up list alphabetically
     keysAlpha = []
-    for keys in self.data[self.fileChosen].keys():
-        if keys != 'globalCycle':
-            keysAlpha.append(keys)
+    for key in self.data[self.fileChosen].keys():
+        if key not in ['globalCycle','CFLOG','EXTVARS']:#exclude hacks from list
+            keysAlpha.append(key)
     keysAlpha.sort(lambda x, y: cmp(x.lower(),y.lower()))
     for keys in keysAlpha:
         self.cYAxisData.insert(Tk.END, keys)
@@ -288,11 +292,18 @@ class formEntry:
     
     
     if ((self.dataChosenX != "") and (self.dataChosenY != "")):
-      if self.data[self.fileChosen][self.dataChosenY].type == 1 or self.data[self.fileChosen][self.dataChosenY].type == 2 or self.data[self.fileChosen][self.dataChosenY].type == 4:
-          self.cTypeGraph.insert(Tk.END, self.possGraphs[0])
-          self.cTypeGraph.insert(Tk.END, self.possGraphs[3])
-      else:
-          self.cTypeGraph.insert(Tk.END, self.possGraphs[4])
+      varType = self.data[self.fileChosen][self.dataChosenY].type
+      for g in formEntry.graphForVarType[varType]:
+          self.cTypeGraph.insert(Tk.END, self.possGraphs[g])
+      #if self.data[self.fileChosen][self.dataChosenY].type == 1 or self.data[self.fileChosen][self.dataChosenY].type == 2:
+      #    self.cTypeGraph.insert(Tk.END, self.possGraphs[0])
+      #    self.cTypeGraph.insert(Tk.END, self.possGraphs[3])
+      #elif self.data[self.fileChosen][self.dataChosenY].type == 4:
+      #    self.cTypeGraph.insert(Tk.END, self.possGraphs[0])
+      #    self.cTypeGraph.insert(Tk.END, self.possGraphs[3])
+      #    self.cTypeGraph.insert(Tk.END, self.possGraphs[5])
+      #else:
+      #    self.cTypeGraph.insert(Tk.END, self.possGraphs[4])
           
           
     self.updateChosen()
@@ -518,7 +529,7 @@ class formEntry:
         self.subplots[iter].dataChosenX = self.bookmarks[bookmarkNum].dataChosenX[iter+1]
         self.subplots[iter].dataChosenY = self.bookmarks[bookmarkNum].dataChosenY[iter+1]
         self.subplots[iter].graphChosen = self.bookmarks[bookmarkNum].graphChosen[iter+1]
-        self.subplots[iter].dydx = int(self.bookmarks[bookmarkNum].dydx[iter])
+        self.subplots[iter].dydx = int(self.bookmarks[bookmarkNum].dydx[iter+1])
         
     self.favouriteWindow.destroy()
     self.background.destroy()
@@ -536,6 +547,15 @@ class formEntry:
     lError.pack(pady = 10, padx = 10)
     bError = Tk.Button(error, text = "OK", font = ("Times New Roman", 14), command = (lambda: error.destroy()))
     bError.pack(pady = 10)
+  
+
+  def helpMsg(self, string):
+    helpTip = Tk.Toplevel(bg = 'white')
+    helpTip.title("Helping Tip")
+    lHelpTip = Tk.Label(helpTip, text = string, font = ("Gills Sans MT", 15, "bold"), bg = 'white')
+    lHelpTip.pack(pady = 10, padx = 10)
+    bHelpTip = Tk.Button(helpTip, text = "OK", font = ("Times New Roman", 14), command = (lambda: helpTip.destroy()))
+    bHelpTip.pack(pady = 10)
     
         
 class subplotInstance(formEntry):
@@ -552,7 +572,7 @@ class subplotInstance(formEntry):
     self.graphChosen = ''
     self.data = data
     self.var0 = Tk.IntVar()
-    self.possGraphs = ['Line', 'Histogram', 'Bar Chart', 'Parallel Intensity Plot', 'Stacked Bar Chart']
+    self.possGraphs = ['Line', 'Histogram', 'Bar Chart', 'Parallel Intensity Plot', 'Stacked Bar Chart', 'Parallel Intensity Plot (Sum)', 'Scatter Plot']
     self.dydx = 0
     self.ChosenVarsTextbox = plotInstance.ChosenVarsTextbox
     self.num = subNum
@@ -580,7 +600,7 @@ class subplotInstance(formEntry):
     chooseDataFrame.pack(side = Tk.TOP, anchor = Tk.W)
     lchooseDataFrame = Tk.Label(chooseDataFrame, text= 'Data to be Plotted:', font = ("Gills Sans MT", 12), bg = "white")
     lchooseDataFrame.pack(side= Tk.LEFT);
-    bQchooseDataFrameHelp = Tk.Button(chooseDataFrame, text = " ? -->", command = (lambda: helpMSG(1)))
+    bQchooseDataFrameHelp = Tk.Button(chooseDataFrame, text = " ? -->", command = (lambda: self.helpMsg('Double-Click on the metric to select it for plotting.')))
     bQchooseDataFrameHelp.pack(side =Tk.LEFT, padx = 5)
     XListbox = Tk.Frame(chooseDataFrame, bg= 'white')
     XListbox.pack(side = Tk.LEFT)
@@ -612,7 +632,7 @@ class subplotInstance(formEntry):
     typeGraph.pack(side = Tk.TOP, anchor = Tk.W, pady = 10)
     lTypeGraph = Tk.Label(typeGraph, text= 'Type of Graph:', font = ("Gills Sans MT", 12), bg = "white")
     lTypeGraph.pack(side= Tk.LEFT);
-    bQTypeGraphHelp = Tk.Button(typeGraph, text = " ? -->", command = (lambda: helpMSG(3)))
+    bQTypeGraphHelp = Tk.Button(typeGraph, text = " ? -->", command = (lambda: self.helpMsg('Double-Click on the graph type to select it.')))
     bQTypeGraphHelp.pack(side =Tk.LEFT, padx = 5)
     self.cTypeGraph = Tk.Listbox(typeGraph, width = 50, height = 3)
     self.cTypeGraph.bind("<Double-Button-1>", self.chooseGraph)
@@ -623,18 +643,35 @@ class subplotInstance(formEntry):
 class PlotFormatInfo:
 
     # names of available colormaps
-    cmapOptions = ['gist_heat_r', 'gist_heat', 'hot_r', 'hot', 'gray', 'gray_r', 'spectral', 'bone', 'bone_r', 'GnBu', 'GnBu_r', 'gist_earth', 'gist_earth_r']
+    cmapOptions = ['gist_heat_r', 'gist_heat', 'hot_r', 'hot', 'gray', 'gray_r', 'spectral', 'bone', 'bone_r', 'GnBu', 'GnBu_r', 'gist_earth', 'gist_earth_r', 'zero_dark', 'zero_white']
+
+    # custom color maps
+    zero_dark = {'red':  ((0.0, 0.0, 0.0), (0.0001, 1.0, 1.0), (1.0, 0.0, 1.0)),
+                 'green':((0.0, 0.0, 0.0), (0.0001, 0.0, 0.0), (0.5, 1.0, 1.0), (1.0, 0.0, 1.0)),
+                 'blue': ((0.0, 0.0, 0.0), (0.0001, 0.0, 0.0), (0.25, 0.0, 0.0), (1.0, 1.0, 1.0))}
+    zero_dark_cmap = mpl.colors.LinearSegmentedColormap('zero_dark', zero_dark, 1024)
+
+    zero_white = {'red':  ((0.0, 1.0, 1.0), (0.0001, 1.0, 1.0), (1.0, 0.0, 1.0)),
+                 'green':((0.0, 1.0, 1.0), (0.0001, 1.0, 0.0), (0.5, 1.0, 1.0), (1.0, 0.0, 1.0)),
+                 'blue': ((0.0, 1.0, 1.0), (0.0001, 1.0, 0.0), (0.25, 0.0, 0.0), (1.0, 1.0, 1.0))}
+    zero_white_cmap = mpl.colors.LinearSegmentedColormap('zero_white', zero_white, 1024)
+
+    custom_cmaps = {'zero_dark': zero_dark_cmap, 'zero_white': zero_white_cmap }
 
     strNoDisplay = 'NULL:0x0000'
+
+    optionSection = 'TimeLapseView'
 
     def __init__(self, plotID,
                  title = strNoDisplay,
                  xlabel = strNoDisplay, 
                  ylabel = strNoDisplay, 
                  cbarlabel = strNoDisplay, 
-                 labelFontSize = 13, 
-                 xticksFontSize = 10, 
-                 yticksFontSize = 10):
+                 rotation = avconfig.get_value(optionSection, 'xTicksRotation', 'horizontal'),
+                 labelFontSize = avconfig.get_value(optionSection, 'labelFontSize', 13), 
+                 cticksFontSize = avconfig.get_value(optionSection, 'cTicksFontSize', 10), 
+                 xticksFontSize = avconfig.get_value(optionSection, 'xTicksFontSize', 10), 
+                 yticksFontSize = avconfig.get_value(optionSection, 'yTicksFontSize', 10)):
        
         self.plotID = plotID   # for debugging purpose
 
@@ -642,12 +679,16 @@ class PlotFormatInfo:
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.cbarlabel = cbarlabel
+        self.rotation = rotation
         self.labelFontSize = labelFontSize
+        self.cticksFontSize = cticksFontSize
         self.xticksFontSize = xticksFontSize
         self.yticksFontSize = yticksFontSize
 
         self.cmap = Tk.StringVar()
         self.cmap.set(PlotFormatInfo.cmapOptions[0])
+
+        self.norm = mpl.colors.Normalize()
 
     def InitLabels(self, xlabel, ylabel, cbarlabel, title = ''):
         
@@ -663,6 +704,15 @@ class PlotFormatInfo:
         if (self.title == PlotFormatInfo.strNoDisplay):
             self.title = title
 
+    # Obtain the matplotlib colormap that will be used for the parallel intensity plot
+    def GetColorMap(self):
+        cmapName = self.cmap.get()
+        if (cmapName in PlotFormatInfo.custom_cmaps):
+            cmap = PlotFormatInfo.custom_cmaps[cmapName]
+        else:
+            cmap = mpl.cm.get_cmap(name=cmapName) 
+        return cmap
+        
 class graphManager:
   
     def __init__(self, master, data, res, dataChosen):
@@ -676,59 +726,58 @@ class graphManager:
         self.dataChosen = dataChosen
         self.data = data
         self.disconnect = 0
-        self.possGraphs = ['Line', 'Histogram', 'Bar Chart', 'Parallel Intensity Plot', 'Stacked Bar Chart']
+        self.possGraphs = ['Line', 'Histogram', 'Bar Chart', 'Parallel Intensity Plot', 'Stacked Bar Chart', 'Parallel Intensity Plot (Sum)', 'Scatter Plot']
         self.xlim = 0
         self.xAxisStepsWilStack = {}
-        # self.cmap = {}
         self.cbarAxes = {}
         self.plotRef = {}
         self.plotFormatInfo = {}
-        
-        if self.res == "small":
-            self.graphArea = Tk.Canvas(master, bg = "black", borderwidth = 5, relief = Tk.GROOVE, width = 1200, height = 575);
-        elif self.res == 'medium':
-            self.graphArea = Tk.Canvas(master, bg = "black", borderwidth = 5, relief = Tk.GROOVE, width = 1513, height = 800);
-        else:
-            self.graphArea = Tk.Canvas(master, bg = "black", borderwidth = 5, relief = Tk.GROOVE, width = 1513, height = 800);
-        self.graphArea.pack_propagate(0)
-        self.graphArea.pack(side = Tk.TOP)
-        
+        self.displayData = {}
+
         if self.res == "small":
             self.underneathGraph = Tk.Frame(master, borderwidth = 5, relief = Tk.GROOVE, height = 100, width = 1225);
         elif self.res == 'medium':
             self.underneathGraph = Tk.Frame(master, borderwidth = 5, relief = Tk.GROOVE, height = 100, width = 1572);
         else:
             self.underneathGraph = Tk.Frame(master, borderwidth = 5, relief = Tk.GROOVE, height = 100, width = 1572);
-        self.underneathGraph.pack(side = Tk.BOTTOM)
-        self.underneathGraph.pack_propagate(0)
+        self.underneathGraph.pack(side = Tk.BOTTOM, fill = Tk.X )
+        
+        if self.res == "small":
+            self.graphArea = Tk.Canvas(master, bg = "black", borderwidth = 5, relief = Tk.GROOVE, width = 1200);
+        elif self.res == 'medium':
+            self.graphArea = Tk.Canvas(master, bg = "black", borderwidth = 5, relief = Tk.GROOVE, width = 1513, height = 800);
+        else:
+            self.graphArea = Tk.Canvas(master, bg = "black", borderwidth = 5, relief = Tk.GROOVE, width = 1513, height = 800);
+        self.graphArea.pack(side = Tk.BOTTOM, fill = Tk.BOTH, expand = 1)
         
         ## Allow user to choose specific graph options
         
         self.leftMostUnderneath = Tk.Frame(self.underneathGraph);
         self.leftMostUnderneath.pack(side = Tk.LEFT, anchor = Tk.N)
-        self.toolbarArea = Tk.Frame(self.leftMostUnderneath, borderwidth = 5, relief = Tk.GROOVE, bg = 'black')
+        self.toolbarArea = Tk.Frame(self.leftMostUnderneath, borderwidth = 1, relief = Tk.GROOVE, bg = 'black')
         self.toolbarArea.pack(anchor = Tk.N)
         bDyDx = Tk.Button(self.underneathGraph, text = 'dy/dx', command = self.takeDerivativeButton)
-        bDyDx.pack(side = Tk.RIGHT)
+        bDyDx.pack(side = Tk.RIGHT, anchor = Tk.N)
         bAddToFavourites = Tk.Button(self.underneathGraph, text = "Add to Favourites", command = self.addToFavourites)
-        bAddToFavourites.pack(side = Tk.RIGHT)
+        bAddToFavourites.pack(side = Tk.RIGHT, anchor = Tk.N)
         bRefreshInputFiles = Tk.Button(self.underneathGraph, text= "Refresh Input Files", command = self.refreshInputs)
-        bRefreshInputFiles.pack(side = Tk.RIGHT)
+        bRefreshInputFiles.pack(side = Tk.RIGHT, anchor = Tk.N)
         bChangeColorMapMaxMin = Tk.Button(self.underneathGraph, text = "Change Colormap Max/Min", command = self.changeColorMapMaxMin)
-        bChangeColorMapMaxMin.pack(side = Tk.RIGHT)
+        bChangeColorMapMaxMin.pack(side = Tk.RIGHT, anchor = Tk.N)
         bChangeBinning = Tk.Button(self.underneathGraph, text = 'Change Binning', command = self.changeBinning)
-        bChangeBinning.pack(side = Tk.RIGHT)
+        bChangeBinning.pack(side = Tk.RIGHT, anchor = Tk.N)
         bEditLabels = Tk.Button(self.underneathGraph, text = 'Edit Labels', command = self.editLabelsButton)
-        bEditLabels.pack(side = Tk.RIGHT)
+        bEditLabels.pack(side = Tk.RIGHT, anchor = Tk.N)
+        bZoom = Tk.Button(self.underneathGraph, text = 'Zoom', command = self.zoomButton)
+        bZoom.pack(side = Tk.RIGHT, anchor = Tk.N)
 
-        #self.buttonFrame.pack_propagate(0)
         
         if self.res == "small":
-          self.figure = Figure(figsize=(17,9), dpi=70)
+          self.figure = Figure(figsize=(17,9), dpi=96)
         elif self.res == 'medium':
-          self.figure = Figure(figsize=(20,9), dpi=100)  
+          self.figure = Figure(figsize=(20,9), dpi=96)  
         else:
-          self.figure = Figure(figsize=(22,13), dpi=70)
+          self.figure = Figure(figsize=(22,13), dpi=96)
         
         #self.plot = self.figure.add_subplot(111)
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.graphArea)
@@ -791,15 +840,18 @@ class graphManager:
             self.dataPointer = self.dataChosen[1][self.currPlot - 1]
 
         file.close()
-    
-    def format_coordWilson(self,x, y):
+   
+   
+    def format_coordWilson(self, x, y):
         col = int(x)*(self.simplerName[self.dataPointer.dataChosenX].data[1])
         row = int(y+0.5)
+
         numrows = len(self.simplerName[self.dataPointer.dataChosenY].data)
         try:
           numcols = len(self.simplerName[self.dataPointer.dataChosenY].data[0])
         except:
           numcols = 1
+
         if x>=0 and x<numcols and y>=0 and y<numrows:
             #z = self.simplerName[self.dataPointer.dataChosenY].data[int(y)][int(x)]
             #return 'x=%d, y=%d, z=%1.3f'%(col, row, z)
@@ -807,10 +859,7 @@ class graphManager:
         else:
             return 'x=%d, y=%d'%(col, row)
 
-    
-      
-    
-      
+
     def plotData(self):
         
         #Variable initializations
@@ -824,7 +873,7 @@ class graphManager:
         self.colorbars = {}
         
         for self.currPlot in range(1,numPlots + 1):
-          self.xAxisStepsWilStack.append(20)
+          self.xAxisStepsWilStack.append(8)
           self.yAxisStepsWilStack.append('null')
           self.findKernalLocs()
           tmp = self.updateVarKernal(self.simplerName[self.dataPointer.dataChosenX].data)
@@ -852,23 +901,27 @@ class graphManager:
               self.figure.delaxes(self.plotRef[self.currPlot])
           self.plot = self.figure.add_subplot(numPlots,1,self.currPlot)
           self.plotRef[self.currPlot] = self.plot 
+          self.plotFormatInfo[self.currPlot].graphType = self.dataPointer.graphChosen
           if self.dataPointer.graphChosen == 'Parallel Intensity Plot':
               self.plot.format_coord = self.format_coordWilson
-          if self.simplerName[self.dataPointer.dataChosenY].type == 1:
+          yDataType = self.simplerName[self.dataPointer.dataChosenY].type
+          if yDataType == 1:
               self.type1Variable(self.simplerName[self.dataPointer.dataChosenX].data , self.dataPointer.dataChosenX, self.simplerName[self.dataPointer.dataChosenY].data, self.dataPointer.dataChosenY, self.simplerName[self.dataPointer.dataChosenY].bool, self.currPlot)
-          elif self.simplerName[self.dataPointer.dataChosenY].type == 2:
+          elif yDataType == 2:
               self.type2Variable(self.simplerName[self.dataPointer.dataChosenX].data,self.dataPointer.dataChosenX, self.simplerName[self.dataPointer.dataChosenY].data,self.dataPointer.dataChosenY, self.currPlot)
-          elif self.simplerName[self.dataPointer.dataChosenY].type == 3:
+          elif yDataType == 3:
               self.type3Variable(self.simplerName[self.dataPointer.dataChosenX].data,self.dataPointer.dataChosenX,self.simplerName[self.dataPointer.dataChosenY].data,self.dataPointer.dataChosenY, self.currPlot)
-          else:
+          elif yDataType == 4:
               self.type4Variable(self.simplerName[self.dataPointer.dataChosenX].data,self.dataPointer.dataChosenX,self.simplerName[self.dataPointer.dataChosenY].data,self.dataPointer.dataChosenY, self.currPlot)
-          
+          elif yDataType == 5:
+              self.type5Variable(self.simplerName[self.dataPointer.dataChosenX].data,self.dataPointer.dataChosenX,self.simplerName[self.dataPointer.dataChosenY].data,self.dataPointer.dataChosenY, self.currPlot)
+          else:
+              raise Exception("Unknown data type!\n")
+
           if self.dataChosen[1] != [] and self.currPlot != numPlots:
               self.dataPointer = self.dataChosen[1][self.currPlot - 1]
               self.simplerName = self.data[self.dataPointer.fileChosen]
     
-          
-          
         #self.figure.subplots_adjust(top = 0.80)
     
 
@@ -889,7 +942,7 @@ class graphManager:
             yAxis = yAxis + '/Cycle'
                 
             if (self.graphChosen == self.possGraphs[3]):
-                self.plotWilson(x, xAxis, [y], yAxis, yAxis, plotID)
+                self.plotParallelIntensity(x, xAxis, [y], yAxis, yAxis, [1], plotID)
             else:
                 self.plot2VarLine(x, xAxis, y, yAxis)
     
@@ -907,7 +960,7 @@ class graphManager:
     
                
           if (self.dataPointer.graphChosen == self.possGraphs[3]):
-              self.plotWilson(x, xAxis, [y], yAxis, yAxis, plotID)
+              self.plotParallelIntensity(x, xAxis, [y], yAxis, yAxis, [1], plotID)
           else:           
               #Label and plot Line Graph
               self.labelKernals(x,y)
@@ -931,7 +984,8 @@ class graphManager:
           yAxis = yAxis + '/Cycle' 
     
           if (self.dataPointer.graphChosen == self.possGraphs[3]):
-              self.plotWilson(x, xAxis, y, yAxis, yAxis, plotID)
+              yTicks = [n for n in range(len(y))]
+              self.plotParallelIntensity(x, xAxis, y, yAxis, yAxis, yTicks, plotID)
           else:
               self.plotMultVarLine(x, xAxis, y, yAxis)
     
@@ -948,12 +1002,13 @@ class graphManager:
     
     
           if (self.dataPointer.graphChosen == self.possGraphs[3]):
-            self.plotWilson(x, xAxis, y, yAxis, yAxis, plotID)
+              yTicks = [n for n in range(len(y))]
+              self.plotParallelIntensity(x, xAxis, y, yAxis, yAxis, yTicks, plotID)
           
           else:           
-            #Label and Plot
-            self.labelKernalsMult(x, y)
-            self.plotMultVarLine(x,xAxis, y,yAxis)
+              #Label and Plot
+              self.labelKernalsMult(x, y)
+              self.plotMultVarLine(x,xAxis, y,yAxis)
 
 
 
@@ -966,16 +1021,7 @@ class graphManager:
         if self.simplerName.has_key('globalTotInsn'):
             x = self.updateVarKernal(x)
 
-        concentrationFactor = 1
-        if len(y[0]) > 512: 
-            concentrationFactor = len(y[0]) // 512 + 1
-            newLen = 512
-            for row in range (0,len(y)):
-                newy = [0 for col in range(newLen)] 
-                for col in range(0, len(y[row])):
-                    newcol = col/concentrationFactor
-                    newy[newcol] += y[row][col]
-                y[row] = newy
+        concentrationFactor = len(x) // 512 + 1
         
         #Scalar Vars
         numCols = len(y[0]) #the number of columns in the stacked bar plot
@@ -990,139 +1036,113 @@ class graphManager:
         #Non-Scalar Vars
         ind = [tmp for tmp in range(0,numCols)] #the location of the bar and the x axis labels        
         yoff = numpy.array([0.0] * numCols) #variable use to remember the last top location of a bar so that we may stack the proceeding bar on top of it
-        Legendname = ['UNUSED', 'UNUSED', 'FQPUSHED','ICNT_PUSHED','ICNT_INJECTED','ICNT_AT_DEST','DRAMQ','DRAM_PROCESSING_START','DRAM_PROCESSING_END','DRAM_OUTQ','2SH_ICNT_PUSHED','2SH_ICNT_INJECTED','2SH_ICNT_AT_DEST','2SH_FQ_POP','RETURN_Q']; 
-        
+        #Legendname = ['UNUSED', 'UNUSED', 'FQPUSHED','ICNT_PUSHED','ICNT_INJECTED','ICNT_AT_DEST','DRAMQ','DRAM_PROCESSING_START','DRAM_PROCESSING_END','DRAM_OUTQ','2SH_ICNT_PUSHED','2SH_ICNT_INJECTED','2SH_ICNT_AT_DEST','2SH_FQ_POP','RETURN_Q']; 
+        Legendname = ['N/A', 'N/A','N/A','IcntInpBuf','N/A','Icnt2DRAM','N/A','N/A','N/A','DRAM','2Sh_IcntInpBuf','N/A','Icnt2shd','N/A','N/A']; 
+        BarSequence = range(numRows-1,-1,-1)
+
+        if yAxis == 'WarpDivergenceBreakdown':
+            Legendname = []
+            Legendname.append('Fetch Stalled')
+            Legendname.append('W0')
+            for c in range(2, numRows):
+                Legendname.append('W' + `4*(c-2)+1` +  ':' + `4*(c-1)`)
+            BarSequence = range(0,numRows)
+
         yoff_max = numpy.array([0.0] * numCols)
         for row in range(numRows-1,-1,-1):
             yoff_max += y[row]
     
-        if yAxis == 'WarpDivergenceBreakdown':
-            for row in range(0,numRows):
-                row1 = float(row) #Used to select a new color from the colormap.. need to be a float thats why a new variable was made
-                yoff = yoff + y[row] #updating the yoff variable
-                if row == 0:
-                  self.plot.bar(ind, y[row], width, bottom = yoff_max-yoff, color=colours(row1/numRows), edgecolor=colours(row1/numRows), label = 'Fetch Stalled' ) 
-                elif row == 1:
-                  self.plot.bar(ind, y[row], width, bottom = yoff_max-yoff, color=colours(row1/numRows), edgecolor=colours(row1/numRows), label = 'W0' ) 
-                else: # next line: 4=warp_size/8 
-                  self.plot.bar(ind, y[row], width, bottom = yoff_max-yoff, color=colours(row1/numRows), edgecolor=colours(row1/numRows), label = 'W' + `4*(row-2)+1` +  ':' + `4*(row-1)`) 
-        else:
-            for row in range(numRows-1,-1,-1):
-                row1 = float(row) #Used to select a new color from the colormap.. need to be a float thats why a new variable was made
-                yoff = yoff + y[row] #updating the yoff variable
-                self.plot.bar(ind, y[row], width, bottom = yoff_max-yoff, color=colours(row1/numRows), edgecolor=colours(row1/numRows), label = Legendname[row]) #plotting each set of bar plots individually
+        for row in BarSequence:
+            row1 = float(row) #Used to select a new color from the colormap.. need to be a float thats why a new variable was made
+            yoff = yoff + y[row] #updating the yoff variable
+            self.plot.bar(ind, y[row], width, bottom = yoff_max-yoff, color=colours(row1/numRows), edgecolor=colours(row1/numRows), label = Legendname[row]) #plotting each set of bar plots individually
         
         
-        self.plotFormatInfo[plotID].InitLabels(xlabel = xAxis, ylabel = yAxis, cbarlabel = '', 
-                                               title = yAxis + ' vs ' + xAxis + ' ...' + self.dataPointer.fileChosen[-80:])
-        self.plot.set_title(self.plotFormatInfo[plotID].title)
+        plotFormat = self.plotFormatInfo[plotID]
+        plotFormat.InitLabels(xlabel = xAxis, ylabel = yAxis, cbarlabel = '', 
+                              title = yAxis + ' vs ' + xAxis + ' ...' + self.dataPointer.fileChosen[-80:])
+        self.plot.set_title(plotFormat.title)
 
         # More Labelling 
-        self.plot.set_xlabel(self.plotFormatInfo[plotID].xlabel, fontsize = self.plotFormatInfo[plotID].labelFontSize)
-        self.plot.set_ylabel(self.plotFormatInfo[plotID].ylabel, fontsize = self.plotFormatInfo[plotID].labelFontSize)
-        # self.plot.set_ylabel(self.plotFormatInfo[plotID].ylabel)
-        # self.plot.set_xlabel(self.plotFormatInfo[plotID].xlabel)
-        
+        self.plot.set_xlabel(plotFormat.xlabel, fontsize = plotFormat.labelFontSize)
+        self.plot.set_ylabel(plotFormat.ylabel, fontsize = plotFormat.labelFontSize)
+       
+        matplotlib.rcParams['legend.fontsize'] = plotFormat.yticksFontSize
         self.plot.legend(loc=(1.01,0.1))
             
         labelValues = []
         labelPos = []
-        for count in range(0,len(x)/concentrationFactor,len(x)/20/concentrationFactor):
-            labelValues.append(x[count * concentrationFactor])
-            labelPos.append(ind[count])
+        try:
+            for count in range(0,len(x)/concentrationFactor,len(x)/8/concentrationFactor):
+                labelValues.append(x[count * concentrationFactor])
+                labelPos.append(ind[count])
+        except:
+            pass
 
         
         xlim = self.type3findxlim(ind[-1], x[1])
-        self.plot.set_xlim(0,xlim)
+        self.plot.set_xlim(0,xlim / concentrationFactor)
         
-        self.plot.set_xticklabels(labelValues, rotation = 'vertical')
+        self.plot.set_xticklabels(labelValues, rotation = plotFormat.rotation, fontsize = plotFormat.xticksFontSize)
         self.plot.set_xticks(labelPos)  
+        for label in self.plot.get_yticklabels():
+            label.set_fontsize(plotFormat.yticksFontSize)
      
         self.canvas.show()
         
     def type4Variable(self, x, xAxis, y, yAxis, plotID):
         keys = y.keys()
         keys.sort()
-        
-        # Obtain plot format info
-        plotFormat = self.plotFormatInfo[plotID]      
-
-        #Defining the matplotlib colormap that we will use for the wilson plot
-        cmap = mpl.cm.get_cmap(plotFormat.cmap.get())
-
-        #The yAxis/xAxis Labels and their corresponding positions
-        yticks, yticksPos =  self.updateWilTicks(y)
-        #currently not using the variable xticks. we want to use values from the x input parameter and place them at 'xticksPos'
-        xticks, xticksPos = self.updateWilTicks(x) 
-
-        #Limits the number of xAxis labels to 20 otherwise the labels will become too cluttered
-        xlabelValues = []
-        xlabelPos = []
-        ylabelValues = []
-        ylabelPos = []
-        
-        if self.xAxisStepsWilStack[self.currPlot] < 1:
-            self.xAxisStepsWilStack[self.currPlot] = 1
-        if self.xAxisStepsWilStack[self.currPlot] > len(x):
-            self.xAxisStepsWilStack[self.currPlot] = len(x)
-        
-        if self.yAxisStepsWilStack[self.currPlot] == 'null':
-            self.yAxisStepsWilStack[self.currPlot] = len(y)
-        if self.yAxisStepsWilStack[self.currPlot] < 1:
-            self.yAxisStepsWilStack[self.currPlot] = 1
-        if self.yAxisStepsWilStack[self.currPlot] > len(y):
-            self.yAxisStepsWilStack[self.currPlot] = len(y)
             
-        
-        # put number on axis if there are more than one ticks 
-        if (self.xAxisStepsWilStack[self.currPlot] != 1):
-            for count in range(0,len(x),len(x)/self.xAxisStepsWilStack[self.currPlot]):
-                xlabelValues.append(x[count])
-                xlabelPos.append(xticksPos[count])
-        
-        print self.yAxisStepsWilStack[self.currPlot]
-        for count in range(0,len(y),len(y)/self.yAxisStepsWilStack[self.currPlot]):
-            ylabelValues.append(keys[count])
-            ylabelPos.append(yticksPos[count])    
+        if (self.dataPointer.graphChosen == self.possGraphs[3]):
+            image = []
+            for iter in keys:
+                image.append(y[iter])
+              
+            if self.dataPointer.dydx >= 1:
+                for iter in range(0, self.dataPointer.dydx):
+                    image = self.takeDerivativeMult(x, image)
 
-        #Now that we have all of our axis labels, lets set them
-        self.plot.set_yticklabels(ylabelValues, fontsize = plotFormat.yticksFontSize)
-        self.plot.set_yticks(ylabelPos)
-        self.plot.set_xticklabels(xlabelValues, rotation = 'vertical', fontsize = plotFormat.xticksFontSize)
-        self.plot.set_xticks(xlabelPos)
+        elif (self.dataPointer.graphChosen == self.possGraphs[5]):
+            # collect a set of majorkeys (assuming format m.n in key)
+            majorKeys = set()
+            dataLength = 0
+            for k in keys:
+                majork, minork = k.split('.')
+                majorKeys.add(majork)
+                dataLength = len(y[k])
+            majorKeys = list(majorKeys)
+            majorKeys.sort()
+           
+            # define a (dataLength x #MajorKeys) array
+            image = [[0 for t in range(dataLength)] for s in range(len(majorKeys))]
+            for k in keys:
+                majork, minork = k.split('.')
+                imageArray = image[int(majork)]
+                dataArray = y[k]
+                for pt in range(dataLength):
+                    imageArray[pt] += dataArray[pt]
+              
+            if self.dataPointer.dydx >= 1:
+                for iter in range(0, self.dataPointer.dydx):
+                    image = self.takeDerivativeMult(x, image)
 
-        image = []
-        for iter in keys:
-          image.append(y[iter])
-          
-        if self.dataPointer.dydx >= 1:
-          for iter in range(0, self.dataPointer.dydx):
-            image = self.takeDerivativeMult(x, image)
-        
-        image = self.wilsonScaleX(image)
-        im = self.plot.imshow(image,cmap = cmap, interpolation = 'nearest', aspect = 'auto')
-        tmp = im.get_axes().get_position().get_points()
+            keys = majorKeys
+        else: 
+            pass
 
-        if (plotID in self.cbarAxes):
-            self.figure.delaxes(self.cbarAxes[plotID])
-        cax = self.figure.add_axes([0.91, tmp[0][1], 0.01, tmp[1][1] - tmp[0][1]])
-        cbar = self.figure.colorbar(im,cax= cax, orientation = 'vertical')
-        self.cbarAxes[plotID] = cax
-        self.colorbars[self.currPlot] = cbar
-
-        scaleTicks = self.updateWilScaleTicks(image)
-        #cbar = self.figure.colorbar(im,ticks=scaleTicks, orientation = 'vertical', shrink = 0.5, aspect = 40)
-
-        plotFormat.InitLabels(xlabel = xAxis + ' ...' + self.dataPointer.fileChosen[-80:], ylabel = yAxis, cbarlabel = 'Scale: ' + yAxis)
-        cbar.set_label(plotFormat.cbarlabel, fontsize = plotFormat.labelFontSize)
-        self.plot.set_xlabel(xAxis + ' ...' + self.dataPointer.fileChosen[-80:])
-        self.plot.set_ylabel(yAxis)
-        #self.plot.set_title(self.dataChosenY)
-        self.plot.grid(False)
-        self.canvas.show()
+        self.plotParallelIntensity(x, xAxis, image, yAxis, yAxis, keys, plotID)
       
 
+    def type5Variable(self, x, xAxis, y, yAxis, plotID):
+            
+        assert (self.dataPointer.graphChosen == self.possGraphs[6])
 
+        xScatter = y[2][0:] * (x[1] - x[0])
+        self.plotScatter(xScatter, xAxis, y[1], yAxis, plotID)
+
+        del xScatter
+      
 
     def updateVarKernal(self,var):
           var = [val for val in var]
@@ -1174,47 +1194,39 @@ class graphManager:
             if max(y[vectors]) > max(y[maximum]):
                 maximum = vectors
     
-    
         for a in self.kernalLocs:
             a = a - 1
             countKernal += 1
             label = " EndKern" + str(countKernal)
-            self.plot.text(x[a],sum[a]/len(y), label, fontsize = 13)
-            tmpx = []
-            tmpy = []
-            for num in (y[maximum] + [max(y[maximum]) + max(sumAve)/10]):
-                tmpx.append(x[a])
-                tmpy.append(num)
+            self.plot.text(x[a],sum[a]/len(y), label, fontsize = 10)
+            tmpx = [x[a], x[a]]
+            tmpy = [0, max(y[maximum])]
             self.plot.plot(tmpx, tmpy, 'k:' )
-     
         
         
     def labelKernals(self,x, y):
         countKernal = 0
         label = ""
     
-
         for cycleNum in range(0,len(x)):
             if(self.xIsKernal(cycleNum,self.kernalLocs)):
                 countKernal += 1
                 label = " EndKern" + str(countKernal)
-                self.plot.text(x[self.kernalLocs[self.kernalLocs.index(cycleNum)] - 1], y[self.kernalLocs[self.kernalLocs.index(cycleNum)] - 1], label, fontsize = 10)
+                kernelBound = self.kernalLocs[self.kernalLocs.index(cycleNum)] - 1
+                self.plot.text(x[kernelBound], y[kernelBound], label, fontsize = 10)
+
+                kernelBoundx = x[kernelBound]
                 
-                tmpx = []
-                tmpy = []
-                for num in (y + [max(y) + max(y)/10]):
-                    tmpx.append(x[self.kernalLocs[self.kernalLocs.index(cycleNum)] - 1])
-                    tmpy.append(num)
-                # tmpx, tmpy
+                tmpx = [kernelBoundx, kernelBoundx]
+                tmpy = [0, max(y)]
                 self.plot.plot(tmpx, tmpy, 'k:' )
         countKernal += 1
         label = " EndKern" + str(countKernal)
         self.plot.text(x[-1], y[-1], label, fontsize = 10)
-        tmpx = []
-        tmpy = []
-        for num in (y + [max(y) + max(y)/10]):
-            tmpx.append(x[-1])
-            tmpy.append(num)
+
+        kernelBoundx = x[-1]
+        tmpx = [kernelBoundx, kernelBoundx]
+        tmpy = [0, max(y)]
         self.plot.plot(tmpx, tmpy, 'k:' )
     
     
@@ -1235,10 +1247,22 @@ class graphManager:
       self.plotFormatInfo[self.currPlot].InitLabels(xlabel = xAxis, ylabel = yAxis, cbarlabel = '', title = '')
       self.plot.set_xlabel(self.plotFormatInfo[self.currPlot].xlabel, fontsize = self.plotFormatInfo[self.currPlot].labelFontSize)
       self.plot.set_ylabel(self.plotFormatInfo[self.currPlot].ylabel, fontsize = self.plotFormatInfo[self.currPlot].labelFontSize)
-      #self.plot.set_xlabel(xAxis)
-      #self.plot.set_ylabel(yAxis)
-      #self.plot.set_title(self.dataChosen)
       self.canvas.show()
+
+
+    def plotScatter(self, x, xAxis, y, yAxis, plotID):
+        plotFormat = self.plotFormatInfo[self.currPlot]
+        self.plot.scatter(x, y, s=5, marker='s', edgecolors='none')
+        self.plot.set_xlim(0, self.xlim)
+        ymax = max(y)
+        ymin = min(y)
+        self.plot.set_ylim(ymin, ymax)
+        plotFormat.InitLabels(xlabel = xAxis, ylabel = yAxis, cbarlabel = '', title = xAxis + ' vs ' + yAxis + ' ...' + self.dataPointer.fileChosen[-80:])
+        self.plot.set_title(plotFormat.title, fontsize = plotFormat.labelFontSize)
+        self.plot.set_xlabel(plotFormat.xlabel, fontsize = plotFormat.labelFontSize)
+        self.plot.set_ylabel(plotFormat.ylabel, fontsize = plotFormat.labelFontSize)
+        self.canvas.show()
+      
     
     def takeDerivativeMult(self,x,y):
         multDerivative = []
@@ -1251,10 +1275,10 @@ class graphManager:
         return multDerivative                
     
     
-    def takeDerivative(self,x,y): #both variables have to already be organized for this to work!!!
-        x = [val for val in x]
-        y = [val for val in y]
-        derivative = []
+    def takeDerivative(self,x,y,b_acc=1): #both variables have to already be organized for this to work!!!
+        #x = [val for val in x]
+        #y = [val for val in y]
+        derivative = array.array('f')
         prevY = 0
         
         cycleStep = x[1] - x[0]
@@ -1269,24 +1293,26 @@ class graphManager:
                 prevCycle = cycle
         # fill up self.globalIPC list
         for yNum in y:
+            if (b_acc == 1 and yNum < prevY):
+                prevY = 0	
             derivative.append(float(yNum - prevY)/cycleStep)
             prevY = yNum
         return derivative
     
     
-    def plotWilson(self, x, xAxis, y, yAxis, colorAxis, plotID):
+    def plotParallelIntensity(self, x, xAxis, y, yAxis, colorAxis, yTicks, plotID):
         # Obtain plot format info
         plotFormat = self.plotFormatInfo[plotID]
 
-        #Defining the matplotlib colormap that we will use for the wilson plot
-        cmap = mpl.cm.get_cmap(name=plotFormat.cmap.get()) 
+        # Obtain the matplotlib colormap that we will use for the parallel intensity plot
+        cmap = plotFormat.GetColorMap()
         
         #The yAxis/xAxis Labels and their corresponding positions
         yticks, yticksPos =  self.updateWilTicks(y)
         #currently not using the variable xticks. we want to use values from the x input parameter and place them at 'xticksPos'
         xticks, xticksPos = self.updateWilTicks(x) 
-        
-        #Limits the number of xAxis labels to 20 otherwise the labels will become too cluttered
+
+        #Limits the number of xAxis labels to 8 otherwise the labels will become too cluttered
         xlabelValues = []
         xlabelPos = []
         ylabelValues = []
@@ -1298,7 +1324,7 @@ class graphManager:
             self.xAxisStepsWilStack[self.currPlot] = len(x)
         
         if self.yAxisStepsWilStack[self.currPlot] == 'null':
-            self.yAxisStepsWilStack[self.currPlot] = 32
+            self.yAxisStepsWilStack[self.currPlot] = 8
         if self.yAxisStepsWilStack[self.currPlot] < 1:
             self.yAxisStepsWilStack[self.currPlot] = 1
         if self.yAxisStepsWilStack[self.currPlot] > len(y):
@@ -1313,67 +1339,39 @@ class graphManager:
         
         print self.yAxisStepsWilStack[self.currPlot]
         for count in range(0,len(y),len(y)/self.yAxisStepsWilStack[self.currPlot]):
-            ylabelValues.append(yticks[count])
+            ylabelValues.append(yTicks[count])
             ylabelPos.append(yticksPos[count])            
-
 
         #Now that we have all of our axis labels, lets set them
         self.plot.set_yticklabels(ylabelValues, fontsize = plotFormat.yticksFontSize)
         self.plot.set_yticks(ylabelPos)
-        self.plot.set_xticklabels(xlabelValues, rotation = 'vertical', fontsize = plotFormat.xticksFontSize)
+        self.plot.set_xticklabels(xlabelValues, rotation = plotFormat.rotation, fontsize = plotFormat.xticksFontSize)
         self.plot.set_xticks(xlabelPos)
         
-        #Setting spacing parameters based on whether or not there is a subplot... and if there is based on which of the subplots we are currently plotting
-        #if self.currPlot == 1:
-        #    cax = self.figure.add_axes([0.2, 0.52, 0.6, 0.01])
-        #else:
-        #    cax = self.figure.add_axes([0.2, 0.05, 0.6, 0.01])       
-        
-        y = self.wilsonScaleX(y)
-        bool = 0
+        interpolation = 'nearest'
+        norm = plotFormat.norm
+        im = self.plot.imshow(y, cmap = cmap, interpolation = interpolation, aspect = 'auto', norm = norm )
+        tmp = im.get_axes().get_position().get_points()
+
         if (plotID in self.cbarAxes):
             self.figure.delaxes(self.cbarAxes[plotID])
-
-        # interpolation = 'hermite'
-        interpolation = 'nearest'
-        
-        if self.normalizePlotColors != '':
-            for iter in self.normalizePlotColors:
-                if str(self.currPlot) == iter[0]:
-                    bool = 1
-                    if iter[1:] == 'max':
-                        max = self.normalizePlotColors[iter]
-                    else:
-                        min = self.normalizePlotColors[iter]
-          
-            if bool == 1:   
-                norm = mpl.colors.Normalize(vmin = min, vmax = max)  
-                im = self.plot.imshow(y,cmap = cmap, interpolation = interpolation, aspect = 'auto', norm = norm )
-                tmp = im.get_axes().get_position().get_points()
-                cax = self.figure.add_axes([0.91, tmp[0][1], 0.01, tmp[1][1] - tmp[0][1]])
-                cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap,norm=norm, orientation = 'vertical')
-            else:
-                im = self.plot.imshow(y,cmap = cmap, interpolation = interpolation, aspect = 'auto')
-                tmp = im.get_axes().get_position().get_points()
-                cax = self.figure.add_axes([0.91, tmp[0][1], 0.01, tmp[1][1] - tmp[0][1]])
-                cbar = self.figure.colorbar(im,cax= cax, orientation = 'vertical')
-        else: #This takes care of the initial pass when it is still impossible to make changes to the colormap
-            im = self.plot.imshow(y,cmap = cmap, interpolation = interpolation, aspect = 'auto')
-            tmp = im.get_axes().get_position().get_points()
-            cax = self.figure.add_axes([0.91, tmp[0][1], 0.01, tmp[1][1] - tmp[0][1]])
-            cbar = self.figure.colorbar(im,cax= cax, orientation = 'vertical')
-    
+        cax = self.figure.add_axes([0.91, tmp[0][1], 0.01, tmp[1][1] - tmp[0][1]])
+        cbar = self.figure.colorbar(im, cax = cax, orientation = 'vertical')
         self.cbarAxes[plotID]= cax  # use for cleanup
         self.colorbars[self.currPlot] = cbar
-        tmp = im.get_axes().get_position().get_points() 
-        scaleTicks = self.updateWilScaleTicks(y)
-        #cbar = self.figure.colorbar(im,ticks=scaleTicks, orientation = 'vertical', shrink = 0.5, aspect = 40)
+
         self.plotFormatInfo[plotID].InitLabels( cbarlabel = 'Scale: ' + colorAxis, xlabel = xAxis + ' ...' + self.dataPointer.fileChosen[-80:], ylabel = yAxis )
-        # scaleLabel = 'Scale: ' + colorAxis
         cbar.set_label( plotFormat.cbarlabel, fontsize = plotFormat.labelFontSize)
-        self.plot.set_xlabel(xAxis + ' ...' + self.dataPointer.fileChosen[-80:])
-        self.plot.set_ylabel(yAxis)
+        for label in cbar.ax.get_yticklabels():
+            label.set_fontsize(plotFormat.cticksFontSize)
+        self.plot.set_xlabel(plotFormat.xlabel, fontsize = plotFormat.labelFontSize)
+        self.plot.set_ylabel(plotFormat.ylabel, fontsize = plotFormat.labelFontSize)
         #self.plot.set_title(self.dataChosenY)
+
+        # provide default scaling to match all plots on figure 
+        xtickStep = x[1] - x[0]
+        self.plot.set_xlim(0 / xtickStep - 0.5, self.xlim / xtickStep + 0.5)
+
         self.canvas.show()
         
     def updateWilTicks(self, z):
@@ -1457,8 +1455,11 @@ class graphManager:
         
         for self.currPlot in range(1,numPlots + 1):
           self.findKernalLocs()
-          if self.dataPointer.graphChosen == 'Parallel Intensity Plot':
-              if self.simplerName[self.dataPointer.dataChosenY].type != 1:
+          if 'Parallel Intensity Plot' in self.dataPointer.graphChosen:
+              if self.simplerName[self.dataPointer.dataChosenY].type == 5:
+                  locMax = self.simplerName[self.dataPointer.dataChosenY].data[0,1][0]
+                  locMin = 0
+              elif self.simplerName[self.dataPointer.dataChosenY].type != 1:
                   if self.dataPointer.dydx == 0:
                       y = self.simplerName[self.dataPointer.dataChosenY].data
                   else:
@@ -1496,14 +1497,15 @@ class graphManager:
               root[-1].pack(side = Tk.TOP, anchor = Tk.W, pady = 10)
               plotLabel = Tk.Label(root[-1], text= '\n' + self.dataPointer.dataChosenY + ' vs ' + self.dataPointer.dataChosenX  + '\t Current Max: ' + str(locMax) + ' \t New Max: ', bg= 'white')
               plotLabel.pack(side = Tk.LEFT)
-              entry[str(self.currPlot) + 'max'] = Tk.Entry(root[-1])
-              entry[str(self.currPlot) + 'max'].insert(0, str(locMax))
-              entry[str(self.currPlot) + 'max'].pack(side = Tk.LEFT)
+              maxEntry = Tk.Entry(root[-1])
+              maxEntry.insert(0, str(locMax))
+              maxEntry.pack(side = Tk.LEFT)
               plotLabel1 = Tk.Label(root[-1], text = '\t Current Min: ' + str(locMin) + '\t New Min: ', bg= 'white')
               plotLabel1.pack(side = Tk.LEFT)
-              entry[str(self.currPlot) + 'min'] = Tk.Entry(root[-1])
-              entry[str(self.currPlot) + 'min'].insert(0, str(locMin))
-              entry[str(self.currPlot) + 'min'].pack(side = Tk.LEFT, padx = 15)
+              minEntry = Tk.Entry(root[-1])
+              minEntry.insert(0, str(locMin))
+              minEntry.pack(side = Tk.LEFT, padx = 15)
+              entry[self.currPlot] = (maxEntry, minEntry)
         
               cmap = self.plotFormatInfo[self.currPlot].cmap
               plotCMap = apply(Tk.OptionMenu, (root[-1], cmap) + tuple(PlotFormatInfo.cmapOptions)) 
@@ -1526,29 +1528,25 @@ class graphManager:
         bCancel.pack(side = Tk.BOTTOM)
         
     def normalizeSubplots(self, absoluteMax, dict, master):
-      self.normalizePlotColors = {}
-      listKeys = list(dict.keys())
-      for iter in listKeys:
-          if iter[1:] == 'max':
-              self.normalizePlotColors[iter] = int(absoluteMax)
-          else:
-              self.normalizePlotColors[iter] = 0
-        
-        
-      master.destroy()
-      self.plotData()
-        
+        listKeys = list(dict.keys())
+        for plotID in listKeys:
+            self.plotFormatInfo[plotID].norm.vmax = int(absoluteMax)
+            self.plotFormatInfo[plotID].norm.vmin = 0
+        master.destroy()
+        self.plotData()
         
     def collectDataChangeColormaps(self, dict, master):
         listKeys = list(dict.keys())
-        self.normalizePlotColors = {}
-        for iter in listKeys:
-            num = dict[iter].get()
-            if num != '':
-                self.normalizePlotColors[iter] = float(num)
+        for plotID in listKeys:
+            maxEntry, minEntry = dict[plotID]
+            maxValue = maxEntry.get()
+            if maxValue != '':
+                self.plotFormatInfo[plotID].norm.vmax = float(maxValue)
+            minValue = minEntry.get()
+            if minValue != '':
+                self.plotFormatInfo[plotID].norm.vmin = float(minValue)
         master.destroy()
-        ## Now replot with changes.....
-        self.plotData()
+        self.plotData() # Now replot with changes.....
         
     def takeDerivativeButton(self):
         #Variable initializations
@@ -1642,7 +1640,7 @@ class graphManager:
         
         for self.currPlot in range(1,numPlots + 1):
           self.findKernalLocs()
-          if self.dataPointer.graphChosen == 'Parallel Intensity Plot':
+          if 'Parallel Intensity Plot' in self.dataPointer.graphChosen:
               plotListbox.insert(Tk.END,str(self.currPlot) + ' ' + self.dataPointer.dataChosenY + ' vs ' + self.dataPointer.dataChosenX)
 
           if self.dataChosen[1] != [] and self.currPlot != numPlots:
@@ -1802,6 +1800,7 @@ class graphManager:
           ticksFontOptionIndex = ticksFontOptionIndex + 1
           if entries[self.currPlot][ticksFontOptionIndex].get() != '':
               plotFormat.yticksFontSize = int(entries[self.currPlot][ticksFontOptionIndex].get())
+              plotFormat.cticksFontSize = plotFormat.yticksFontSize
 
           plotFormat.ylabel = entries[self.currPlot][0].get()
           self.plot.set_ylabel(plotFormat.ylabel, fontsize=plotFormat.labelFontSize)
@@ -1826,7 +1825,10 @@ class graphManager:
           for n in range(0,len(ytickslabels)):
               ytickslabels[n].set_fontsize(plotFormat.yticksFontSize)
 
-          # change colorbar ticks label fontsize?
+          # change colorbar ticks label fontsize
+          if self.colorbars.has_key(self.currPlot):
+              for label in self.colorbars[self.currPlot].ax.get_yticklabels():
+                  label.set_fontsize(plotFormat.cticksFontSize)
 
           if self.dataChosen[1] != [] and self.currPlot != numPlots:
               self.dataPointer = self.dataChosen[1][self.currPlot - 1]
@@ -1836,11 +1838,151 @@ class graphManager:
         ## Now replot with changes.....
         self.canvas.show()
 
+    def zoomButton(self):
+        #Variable initializations
+        NEWFRAME = Tk.Toplevel(self.master, bg = 'white') 
+        numPlots = len(self.dataChosen[1]) + 1
+        
+        root = Tk.Frame(NEWFRAME, bg = 'white')
+        root.pack(side = Tk.TOP, anchor = Tk.W, pady = 10)
+
+        numPlots = len(self.dataChosen[1]) + 1
+        currentRow = 0
+        
+        # create text label for fields
+        labelYmin = Tk.Label(root, text = 'Y min: ', bg = 'white')
+        labelYmin.grid(row = currentRow, column = 1)
+        labelYmax = Tk.Label(root, text = 'Y max: ', bg = 'white')
+        labelYmax.grid(row = currentRow, column = 2)
+        labelXmin = Tk.Label(root, text = 'X min: ', bg = 'white')
+        labelXmin.grid(row = currentRow, column = 3)
+        labelXmax = Tk.Label(root, text = 'X max: ', bg = 'white')
+        labelXmax.grid(row = currentRow, column = 4)
+        currentRow += 1
+
+        # for x-axis scaling
+        xData = self.simplerName[self.dataPointer.dataChosenX].data
+        xtickStep = xData[1] - xData[0]
+
+        # create entry fields for each plot
+        entries = {}
+        for plotID in range(1,numPlots + 1):
+            plot = self.plotRef[plotID]
+            plotFormat = self.plotFormatInfo[plotID]
+            ymin, ymax = plot.get_ylim()
+            xmin, xmax = plot.get_xlim()
+            if ('Parallel Intensity Plot' in plotFormat.graphType):
+                ymin = (ymin - 0.5)
+                ymax = (ymax + 0.5)
+                xmin = (xmin + 0.5) * xtickStep
+                xmax = (xmax - 0.5) * xtickStep
+            elif ('Bar Chart' in plotFormat.graphType):
+                xmin = (xmin) * xtickStep
+                xmax = (xmax) * xtickStep
+            
+            plotLabel = Tk.Label(root, text= self.dataPointer.dataChosenY + ' vs ' + self.dataPointer.dataChosenX, bg= 'white')
+            plotLabel.grid(row = currentRow, column = 0, pady = 10, padx = 15, sticky=Tk.W)
+
+            entries[plotID] = []
+            # Y min
+            entries[plotID].append(Tk.Entry(root, width = 12))
+            entries[plotID][-1].grid(row = currentRow, column = 1, padx = 10)
+            entries[plotID][-1].insert(0, ymin)
+            # Y max
+            entries[plotID].append(Tk.Entry(root, width = 12))
+            entries[plotID][-1].grid(row = currentRow, column = 2, padx = 10)
+            entries[plotID][-1].insert(0, ymax)
+            # X min
+            entries[plotID].append(Tk.Entry(root, width = 12))
+            entries[plotID][-1].grid(row = currentRow, column = 3, padx = 10)
+            entries[plotID][-1].insert(0, xmin)
+            # X max
+            entries[plotID].append(Tk.Entry(root, width = 12))
+            entries[plotID][-1].grid(row = currentRow, column = 4, padx = 10)
+            entries[plotID][-1].insert(0, xmax)
+          
+            currentRow += 1
+
+        bottomFrame = Tk.Frame(NEWFRAME, bg = 'white')
+        bottomFrame.pack(side = Tk.BOTTOM, pady = 15)
+        bDONE = Tk.Button(bottomFrame, text = 'Apply Changes', bg = 'green', command = lambda: self.zoomCollect(entries,NEWFRAME))
+        bDONE.pack(side = Tk.BOTTOM)
+        bCancel = Tk.Button(bottomFrame, text = 'Cancel', command = lambda: NEWFRAME.destroy())
+        bCancel.pack(side = Tk.BOTTOM)
+        
+    def zoomCollect(self, entries, master):
  
+        numPlots = len(self.dataChosen[1]) + 1
+        zoomLimit = [ [] for plotID in range(numPlots + 1) ]
+
+        # for xtick generation
+        xData = self.simplerName[self.dataPointer.dataChosenX].data
+        xtickStep = xData[1] - xData[0]
+        xLength = len(xData)
+
+        # obtain entered x and y limit
+        for plotID in range(1,numPlots + 1):
+            plot = self.plotRef[plotID]
+           
+            ylim = plot.get_ylim()
+            xlim = plot.get_xlim()
+            zoomLimit[plotID] = [ylim[0], ylim[1], xlim[0], xlim[1]] 
+            for idx in range(len(zoomLimit[plotID])):
+                limitStr = entries[plotID][idx].get()
+                if limitStr != '':
+                    zoomLimit[plotID][idx] = float(limitStr)
+            
+        # apply change of x and y limit to each plot
+        for plotID in range(1,numPlots + 1):
+            plot = self.plotRef[plotID]
+            plotFormat = self.plotFormatInfo[plotID]
+            if ('Parallel Intensity Plot' in plotFormat.graphType):
+                zoomLimit[plotID][2] /= xtickStep
+                zoomLimit[plotID][3] /= xtickStep
+                zoomLimit[plotID][0] += 0.5
+                zoomLimit[plotID][1] -= 0.5
+                zoomLimit[plotID][2] -= 0.5
+                zoomLimit[plotID][3] += 0.5
+            elif ('Bar Chart' in plotFormat.graphType):
+                zoomLimit[plotID][2] /= xtickStep
+                zoomLimit[plotID][3] /= xtickStep
+            plot.set_ylim( ymin = zoomLimit[plotID][0], ymax = zoomLimit[plotID][1])
+            plot.set_xlim( xmin = zoomLimit[plotID][2], xmax = zoomLimit[plotID][3])
+
+            # regenerate the xtick labels if the new maximum is exceeds the data length
+            if ('Parallel Intensity Plot' in plotFormat.graphType or 'Bar Chart' in plotFormat.graphType):
+                xmaxNew = zoomLimit[plotID][3]
+                if (xmaxNew > xLength):
+                    xlabelValues = []
+                    xlabelPos = []
+                    if (self.xAxisStepsWilStack[plotID] != 1):
+                        xNticks = self.xAxisStepsWilStack[plotID]
+                        for count in range(0, int(xmaxNew + 1), int(xmaxNew + 1) / xNticks):
+                            xlabelValues.append(count * xtickStep)
+                            xlabelPos.append(count)
+                    
+                    plot.set_xticklabels(xlabelValues, rotation = plotFormat.rotation, fontsize = plotFormat.xticksFontSize)
+                    plot.set_xticks(xlabelPos)
+
+        master.destroy()
+        self.canvas.show()
     
-    
+
+class NaviPlotInfo:
+
+    srcViewSection = 'SourceCodeView'
+
+    def __init__(self):
+        self.titleFontSize = avconfig.get_value(self.__class__.srcViewSection, 'titleFontSize', 12)
+        self.ylabelFontSize = avconfig.get_value(self.__class__.srcViewSection, 'yLabelFontSize', 12)
+        self.xlabelFontSize = avconfig.get_value(self.__class__.srcViewSection, 'xLabelFontSize', 12)
+        self.yticksFontSize = avconfig.get_value(self.__class__.srcViewSection, 'yTicksFontSize', 10)
+        self.xticksFontSize = avconfig.get_value(self.__class__.srcViewSection, 'xTicksFontSize', 10)
+
 class newTextTab:
     
+    srcViewSection = 'SourceCodeView'
+
     def __init__(self, textTabs, numb, res, TEFILES):  
         
         tabnum = "self.page " + numb
@@ -1854,7 +1996,9 @@ class newTextTab:
         self.key2bool = 0
         self.chosenMethod = ''
         self.showLineStatName = 0
-        self.textFont = ('courier', 12)
+        self.first_draw = 1
+        self.textFont = ('courier', avconfig.get_value(self.__class__.srcViewSection, 'codeFontSize', 8))
+        self.naviPlotInfo = NaviPlotInfo()
         
         
         if self.res == "small":
@@ -2051,7 +2195,10 @@ class newTextTab:
                     try:
                         tmp.append(self.stats[ptxLines])
                     except:
-                        tmp.append(["Null", "Null", "Null", "Null", "Null", "Null", "Null", "Null"])
+                        noDataArray = []
+                        for nStats in variableclasses.lineStatName:
+                            noDataArray.append("Null")
+                        tmp.append(noDataArray)
                 self.Lines[keys] = variableclasses.cudaLineNo(self.map[keys], tmp)
         else:
             for keys in self.stats:
@@ -2096,25 +2243,18 @@ class newTextTab:
                 else:
                     self.lineCounts.append(0)
                     
-  
-        ind = [y for y in range(0, countLines)]
+        if (self.first_draw == 1): 
+            self.xlabelfreq = countLines/30
+            self.first_draw = 0
         self.countLines = countLines
-        self.ind = ind
         width = 0.4
         
-        self.histogram.set_xticks(ind)
-        self.xlabelfreq = countLines/30
-        labels = []
-        for x in range(0,countLines):
-            if x % self.xlabelfreq == 0:
-                labels.append(x)
-            else:
-                labels.append('')
-            
-        self.histogram.set_xticklabels(labels)
+        self.generate_xticklabels()
+
         self.histogram.set_xlim(0, countLines)
         
-        rects1 = self.histogram.bar(ind, self.lineCounts, width, color = 'blue', edgecolor = 'blue' )
+        self.data_x_posn = [x for x in range(0, countLines)]
+        rects1 = self.histogram.bar(self.data_x_posn, self.lineCounts, width, color = 'blue', edgecolor = 'blue' )
         if self.chosenStat2 == '':
             self.histogram.set_title(self.chosenStat1)
         else:
@@ -2221,33 +2361,27 @@ class newTextTab:
         self.key2bool = 0
         self.cAvailableStats1.delete(0, Tk.END)
         self.cAvailableStats2.delete(0, Tk.END)
-        
-        self.cAvailableStats1.insert(Tk.END, 'count')
-        self.cAvailableStats1.insert(Tk.END, 'latency')
-        self.cAvailableStats1.insert(Tk.END, 'dram_traffic')
-        self.cAvailableStats1.insert(Tk.END, 'smem_bk_conflicts')
-        self.cAvailableStats1.insert(Tk.END, 'smem_warp')
-        self.cAvailableStats1.insert(Tk.END, 'gmem_access_generated')
-        self.cAvailableStats1.insert(Tk.END, 'gmem_warp')
-        self.cAvailableStats1.insert(Tk.END, 'exposed_latency')
-        self.cAvailableStats1.insert(Tk.END, 'warp_divergence')
-        
+
+        if self.typeFileChosen == 'cuda':
+            statFile = self.TEFILES[2][self.TEFILES[0].index(self.fileChosen)]
+        else:
+            statFile = self.TEFILES[2][self.TEFILES[1].index(self.fileChosen)] 
+
+        variableclasses.loadLineStatName(statFile)
+       
+        for statName in variableclasses.lineStatName:
+            self.cAvailableStats1.insert(Tk.END, statName)
+
         if self.chosenMethod == 'Ratio':
             self.key2bool = 1
             try:
                 self.cAvailableStats2.delete(0, Tk.END)
             except:
                 pass
-            self.cAvailableStats2.insert(Tk.END, 'count')
-            self.cAvailableStats2.insert(Tk.END, 'latency')
-            self.cAvailableStats2.insert(Tk.END, 'dram_traffic')
-            self.cAvailableStats2.insert(Tk.END, 'smem_bk_conflicts')
-            self.cAvailableStats2.insert(Tk.END, 'smem_warp')
-            self.cAvailableStats2.insert(Tk.END, 'gmem_access_generated')
-            self.cAvailableStats2.insert(Tk.END, 'gmem_warp')
-            self.cAvailableStats2.insert(Tk.END, 'exposed_latency')
-            self.cAvailableStats2.insert(Tk.END, 'warp_divergence')
-        
+
+            for statName in variableclasses.lineStatName:
+                self.cAvailableStats2.insert(Tk.END, statName)
+
         self.updateChosen()
             
           
@@ -2316,9 +2450,9 @@ class newTextTab:
         
     def editPlotLabelsSubmit(self, oldFrame, entries):
         oldFrame.destroy()
-        self.histogram.set_title(entries['title'])
-        self.histogram.set_xlabel(entries['xlabel'])
-        self.histogram.set_ylabel(entries['ylabel'])
+        self.histogram.set_title(entries['title'], fontsize = self.naviPlotInfo.titleFontSize)
+        self.histogram.set_xlabel(entries['xlabel'], fontsize = self.naviPlotInfo.xlabelFontSize)
+        self.histogram.set_ylabel(entries['ylabel'], fontsize = self.naviPlotInfo.ylabelFontSize)
         self.histArea.show()
         
         
@@ -2361,22 +2495,21 @@ class newTextTab:
         oldframe.destroy()
         if entries['title'] != '':
             self.histogram.set_title(self.histogram.get_title(), fontsize = int(entries['title']))
+            self.naviPlotInfo.titleFontSize = int(entries['title'])
         if entries['xlabel'] != '':
             self.histogram.set_xlabel(self.histogram.get_xlabel(), fontsize = int(entries['xlabel']))
+            self.naviPlotInfo.xlabelFontSize = int(entries['xlabel'])
         if entries['ylabel'] != '':
             self.histogram.set_ylabel(self.histogram.get_ylabel(), fontsize = int(entries['ylabel']))
+            self.naviPlotInfo.ylabelFontSize = int(entries['ylabel'])
         if entries['ybinning'] != '':
-            self.histogram.set_yticklabels(int(self.histogram.get_yticks()), fontsize = int(entries['ybinning']))
+            for label in self.histogram.get_yticklabels():
+                label.set_fontsize(int(entries['ybinning']))
+            self.naviPlotInfo.yticksFontSize = int(entries['ybinning'])
         if entries['xbinning'] != '':
-            labels = []
-            for x in range(0,self.countLines):
-                if x % self.xlabelfreq == 0:
-                    labels.append(x)
-                else:
-                    labels.append('')
-            self.histogram.set_xticklabels(labels, fontsize = int(entries['xbinning']))
-        
-            
+            for label in self.histogram.get_xticklabels():
+                label.set_fontsize(int(entries['xbinning']))
+            self.naviPlotInfo.xticksFontSize = int(entries['xbinning'])
             
         self.histArea.show()
     
@@ -2395,29 +2528,29 @@ class newTextTab:
         bCancel.pack(side = Tk.TOP, pady = 5)
         bSubmit = Tk.Button(bottomFrame, text = 'Submit', bg = 'green', command = lambda: master.destroy())
         bSubmit.pack(side = Tk.TOP, pady = 5)
+
+    def generate_xticklabels(self, fontsize = -1):
+        ind = [x * self.xlabelfreq for x in range(0, self.countLines / self.xlabelfreq)]
+        self.histogram.set_xticks(ind)
+
+        labels = []
+        for x in range(0, self.countLines / self.xlabelfreq):
+            labels.append(x * self.xlabelfreq)
+        if (fontsize >= 0):
+            self.histogram.set_xticklabels(labels, fontsize = fontsize)
+        else:
+            self.histogram.set_xticklabels(labels)
         
     def increaseBinning(self):
         self.xlabelfreq = int(self.xlabelfreq / 1.5)
         if self.xlabelfreq < 1:
             self.xlabelfreq = 1
-        labels = []
-        for x in range(0,self.countLines):
-            if x % self.xlabelfreq == 0:
-                labels.append(x)
-            else:
-                labels.append('')
-        self.histogram.set_xticklabels(labels)
+        self.generate_xticklabels()
         self.histArea.show()        
 
     def decreaseBinning(self):
         self.xlabelfreq = int(self.xlabelfreq * 1.5)
-        labels = []
-        for x in range(0,self.countLines):
-            if x % self.xlabelfreq == 0:
-                labels.append(x)
-            else:
-                labels.append('')
-        self.histogram.set_xticklabels(labels)
+        self.generate_xticklabels()
         self.histArea.show()        
       
             
