@@ -1,4 +1,32 @@
 CHANGE LOG:
+Version 3.0.1 versus 3.0.0b
+- Updated README and setup_environment for more streamlined setup. 
+  Including install instructions for Ubuntu 10.04.3 LTS
+- Changed Quadro FX 5800 config to use PTX by default (not SASS/decuda)
+- Added Doxygen generated documentation
+- Removed ISPASS 2009 configuration (use Quadro FX 5800 config instead)
+- Removed common.mk (run native CUDA/OpenCL applications)
+- Removed out-of-date GPGPU-Sim documentation. This wil be updated in a 
+  later release.  Refer to Doxygen documentation and/or source code.
+- Added prints for L1 data cache statistics
+- SIMD width option removed from shader_core_pipeline_opt (was not used)
+- Added read-to-precharge constraint in DRAM
+- Disabled Stream Manager's verbose output by default, use debug level 3 to 
+  enable it
+- Addresses returned by memory allocation are now 256 bytes aligned
+- Ejection from the clock domain interface buffer between interconnection 
+  network and L2 cache happens in the L2 clock domain instead of interconnect 
+  clock domain.
+- Update OpenCL support to work with AMD OpenCL sample applications
+- Bug fixes
+   - Fixed the variation in instruction count seen under different cache
+     configurations on the same workload
+   - Fixed unnecessary flushing of instruction buffer
+   - Fixed mislabeling of stall cycles recorded by scheduler
+   - Fixed compilation issues when using gcc 4.5.1
+   - Cleanup and bugfixes to build scripts
+   - Fixed gpu_sim_cycle with sequential kernel launches
+   - Fixed memory corruption bug in decuda_to_ptxplus causing parse errors
 
 Version 3.0.0b versus 2.1.2b
 - massive refactoring of code to C++ (most global variables eliminated)
@@ -12,7 +40,20 @@ Version 3.0.0b versus 2.1.2b
 - other changes I don't remember right now
 
 Version 2.1.2b versus 2.1.1b:
-- TODO: fill this in!
+- Better 1D texture support 
+- bar.sync timing change for compatibility with NVIDIA hardware 
+  (release barrier when all warps reach barrier, irrespective of 
+  divergence state). Functional simulation mode disabled to 
+  implement the expected barrier behavior under branch divergence 
+- Refactored memory stage 
+- Limited miss status holding registers 
+- Experimental support for running on Mac OS X 
+- Register bank conflict modeling (see MICRO-42 tutorial) 
+- Changed files to C++ 
+- Updated makefiles 
+- Various improvements to aerialvision 
+- Simulation speed improvement 
+- Various minor fixes 
 
 Version 2.1.1b versus 2.1.0b:
 - Added support for OpenCL (requires OpenCL driver from NVIDIA)

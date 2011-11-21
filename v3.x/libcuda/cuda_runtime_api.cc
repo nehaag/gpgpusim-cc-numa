@@ -415,7 +415,8 @@ __host__ cudaError_t CUDARTAPI cudaMalloc(void **devPtr, size_t size)
 {
    CUctx_st* context = GPGPUSim_Context();
    *devPtr = context->get_device()->get_gpgpu()->gpu_malloc(size);
-   printf("GPGPU-Sim PTX: cudaMallocing %zu bytes starting at 0x%llx..\n",size, (unsigned long long) *devPtr);
+   if(g_debug_execution >= 3)
+      printf("GPGPU-Sim PTX: cudaMallocing %zu bytes starting at 0x%llx..\n",size, (unsigned long long) *devPtr);
    if ( *devPtr  ) {
        return g_last_cudaError = cudaSuccess;
    } else { 
@@ -495,7 +496,8 @@ __host__ cudaError_t CUDARTAPI cudaMemcpy(void *dst, const void *src, size_t cou
 {
    //CUctx_st *context = GPGPUSim_Context();
    //gpgpu_t *gpu = context->get_device()->get_gpgpu();
-   printf("GPGPU-Sim PTX: cudaMemcpy(): devPtr = %p\n", dst);
+   if(g_debug_execution >= 3)
+      printf("GPGPU-Sim PTX: cudaMemcpy(): devPtr = %p\n", dst);
    if( kind == cudaMemcpyHostToDevice ) 
        g_stream_manager->push( stream_operation(src,(size_t)dst,count,0) );
    else if( kind == cudaMemcpyDeviceToHost ) 
@@ -1141,6 +1143,10 @@ void** CUDARTAPI __cudaRegisterFatBinary( void *fatCubin )
       symbol_table *symtab;
       const char *ptx = info->ptx[selected_capability].ptx;
       if(context->get_device()->get_gpgpu()->get_config().convert_to_ptxplus() ) {
+           if (info->cubin[selected_capability].cubin ==NULL) {
+			   printf("GPGPU-Sim PTX: Cannot convert to ptxplus no cubin found, probably because it was compiled using newer version of cuda (>=3.0)\nGPGPU-Sim PTX: Exiting ...\n");
+			   exit(1);
+		   }
            char *ptxplus_str = gpgpu_ptx_sim_convert_ptx_to_ptxplus(ptx, info->cubin[selected_capability].cubin, source_num++,
                                                   context->get_device()->get_gpgpu()->get_config().saved_converted_ptxplus());
            symtab=gpgpu_ptx_sim_load_ptx_from_string(ptxplus_str,source_num);

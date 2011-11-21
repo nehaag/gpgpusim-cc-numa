@@ -1,3 +1,31 @@
+// Copyright (c) 2009-2011, Jimmy Kwa,
+// The University of British Columbia
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// Redistributions of source code must retain the above copyright notice, this
+// list of conditions and the following disclaimer.
+// Redistributions in binary form must reproduce the above copyright notice, this
+// list of conditions and the following disclaimer in the documentation and/or
+// other materials provided with the distribution.
+// Neither the name of The University of British Columbia nor the names of its
+// contributors may be used to endorse or promote products derived from this
+// software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
 #include "decudaInstList.h"
 
 extern void output(const char * text);
@@ -315,7 +343,7 @@ void decudaInstList::addRegister(std::string reg, bool lo)
 	std::string parsedReg = parseRegister(reg, lo, vectorFlag);
 
 	// Add the register to instruction operand list
-	char* regName = new char [strlen(parsedReg.c_str())];
+	char* regName = new char [strlen(parsedReg.c_str())+1];
 	strcpy(regName, parsedReg.c_str());
 	getListEnd().addOperand(regName);
 }
@@ -360,7 +388,7 @@ void decudaInstList::addPredicate(std::string pred)
 	std::string parsedPred = parsePredicate(pred);
 
 	// Add the predicate to instruction operand list
-	char* predName = new char [strlen(parsedPred.c_str())];
+	char* predName = new char [strlen(parsedPred.c_str())+1];
 	strcpy(predName, parsedPred.c_str());
 	getListEnd().addOperand(predName);
 }
@@ -388,7 +416,7 @@ void decudaInstList::addDoublePredReg(std::string pred, std::string reg, bool lo
 	else
 		doublePredReg = parsedPred + "|" + parsedReg;
 
-	char* doublePredRegName = new char [strlen(doublePredReg.c_str())];
+	char* doublePredRegName = new char [strlen(doublePredReg.c_str())+1];
 	strcpy(doublePredRegName, doublePredReg.c_str());
 	getListEnd().addOperand(doublePredRegName);
 }
@@ -418,7 +446,7 @@ void decudaInstList::addTex(std::string tex)
 	}
 
 	// Add the tex to instruction operand list
-	char* texName = new char [strlen(origTex.c_str())];
+	char* texName = new char [strlen(origTex.c_str())+1];
 	strcpy(texName, origTex.c_str());
 	getListEnd().addOperand(texName);
 }
@@ -524,7 +552,7 @@ void decudaInstList::addVector(char* vector, int vectorSize) {
 	if(vectorSize == 1) {
 		std::string vectorNew = vector;
 		vectorNew = vectorNew.substr(0,vectorNew.size()-1) + ",_,_,_}";
-		char* vectorNewName = new char [strlen(vectorNew.c_str())];
+		char* vectorNewName = new char [strlen(vectorNew.c_str())+1];
 		strcpy(vectorNewName, vectorNew.c_str());
 		getListEnd().addOperand(vectorNewName);
 	} else {
@@ -593,7 +621,7 @@ void decudaInstList::addMemoryOperand(std::string mem, int memType) {
 	}
 
 	// Add the memory operand to instruction operand list
-	char* memName = new char [strlen(mem.c_str())];
+	char* memName = new char [strlen(mem.c_str())+1];
 	strcpy(memName, mem.c_str());
 	getListEnd().addOperand(memName);
 }

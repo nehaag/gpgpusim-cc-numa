@@ -87,20 +87,25 @@ bool g_sim_done = true;
 void *gpgpu_sim_thread_concurrent(void*)
 {
     // concurrent kernel execution simulation thread
-    g_the_gpu->init();
+
     do {
-        printf("GPGPU-Sim: *** simulation thread starting and spinning waiting for work ***\n");
-        fflush(stdout);
+       if(g_debug_execution >= 3) {
+          printf("GPGPU-Sim: *** simulation thread starting and spinning waiting for work ***\n");
+          fflush(stdout);
+       }
         while( g_stream_manager->empty() && !g_sim_done )
             ;
-        printf("GPGPU-Sim: ** START simulation thread (detected work) **\n");
-        g_stream_manager->print(stdout);
-        fflush(stdout);
+        if(g_debug_execution >= 3) {
+           printf("GPGPU-Sim: ** START simulation thread (detected work) **\n");
+           g_stream_manager->print(stdout);
+           fflush(stdout);
+        }
         pthread_mutex_lock(&g_sim_lock);
         g_sim_active = true;
         pthread_mutex_unlock(&g_sim_lock);
         bool active = false;
         bool sim_cycles = false;
+        g_the_gpu->init();
         do {
             // check if a kernel has completed
             unsigned grid_uid = g_the_gpu->finished_kernel();
@@ -119,16 +124,20 @@ void *gpgpu_sim_thread_concurrent(void*)
             g_the_gpu->deadlock_check();
             active = g_the_gpu->active() || !g_stream_manager->empty();
         } while( active );
-        printf("GPGPU-Sim: ** STOP simulation thread (no work) **\n");
-        fflush(stdout);
+        if(g_debug_execution >= 3) {
+           printf("GPGPU-Sim: ** STOP simulation thread (no work) **\n");
+           fflush(stdout);
+        }
         if( sim_cycles ) 
             g_the_gpu->print_stats();
         pthread_mutex_lock(&g_sim_lock);
         g_sim_active = false;
         pthread_mutex_unlock(&g_sim_lock);
     } while( !g_sim_done );
-    printf("GPGPU-Sim: *** simulation thread exiting ***\n");
-    fflush(stdout);
+    if(g_debug_execution >= 3) {
+       printf("GPGPU-Sim: *** simulation thread exiting ***\n");
+       fflush(stdout);
+    }
     sem_post(&g_sim_signal_exit);
     return NULL;
 }
@@ -194,7 +203,7 @@ void start_sim_thread(int api)
 {
     if( g_sim_done ) {
         g_sim_done = false;
-        if( g_the_gpu_config.get_max_concurrent_kernel() > 1 && api == 1 ) {
+        if( api == 1 ) {
            pthread_create(&g_simulation_thread,NULL,gpgpu_sim_thread_concurrent,NULL);
         } else {
            pthread_create(&g_simulation_thread,NULL,gpgpu_sim_thread_sequential,NULL);

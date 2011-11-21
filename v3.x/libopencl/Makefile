@@ -103,12 +103,12 @@ depend:
 
 nvopencl_wrapper: nvopencl_wrapper.cc
 	if [ ! -d bin ]; then mkdir bin; fi
-	g++ $(CCFLAGS) nvopencl_wrapper.cc -I./ -L $(NVOPENCL_LIBDIR) -lOpenCL  -o bin/nvopencl_wrapper
+	g++ $(CCFLAGS) nvopencl_wrapper.cc -I./ -I$(NVOPENCL_INCDIR)/ -L $(NVOPENCL_LIBDIR) -lOpenCL  -o bin/nvopencl_wrapper
 	
 OUTPUT_DIR=../$(SIM_OBJ_FILES_DIR)/libopencl
 
 $(OUTPUT_DIR)/%.o: %.cc
-	$(CPP) $(CCFLAGS) -I./ -I$(CUDAHOME)/include  -c $< -o $@
+	$(CPP) $(CCFLAGS) -I./ -I$(CUDA_INSTALL_PATH)/include  -c $< -o $@
 
 clean:
 	rm -f $(PROG)
@@ -148,7 +148,6 @@ clean:
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/abstract_hardware_model.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/cuda-sim.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/abstract_hardware_model.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/dram_callback.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx_loader.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx_ir.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx.tab.h
@@ -168,7 +167,6 @@ clean:
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/mathdef.h
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/mathcalls.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx.tab.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/dram_callback.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/delayqueue.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/intersim/statwraper.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/gpu-misc.h

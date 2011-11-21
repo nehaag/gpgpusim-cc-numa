@@ -100,10 +100,10 @@ void memory_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_cache:dl2", OPT_CSTR, &m_L2_config.m_config_string, 
                    "unified banked L2 data cache config "
                    " {<nsets>:<bsize>:<assoc>:<rep>:<wr>:<alloc>,<mshr>:<N>:<merge>,<mq>}",
-                   NULL);
+                   "64:128:8:L:R:m,A:16:4,4");
     option_parser_register(opp, "-gpgpu_cache:dl2_texture_only", OPT_BOOL, &m_L2_texure_only, 
                            "L2 cache used for texture only",
-                           "0");
+                           "1");
     option_parser_register(opp, "-gpgpu_n_mem", OPT_UINT32, &m_n_mem, 
                  "number of memory modules (e.g. memory controllers) in gpu",
                  "8");
@@ -134,11 +134,12 @@ void shader_core_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_simd_model", OPT_INT32, &model, 
                    "1 = post-dominator", "1");
     option_parser_register(opp, "-gpgpu_shader_core_pipeline", OPT_CSTR, &gpgpu_shader_core_pipeline_opt, 
-                   "shader core pipeline config, i.e., {<nthread>:<warpsize>:<pipe_simd_width>}",
-                   "256:32:32");
+                   "shader core pipeline config, i.e., {<nthread>:<warpsize>}",
+                   "1024:32");
     option_parser_register(opp, "-gpgpu_tex_cache:l1", OPT_CSTR, &m_L1T_config.m_config_string, 
-                   "per-shader L1 texture cache  (READ-ONLY) config, i.e., {<nsets>:<linesize>:<assoc>:<repl>|none}",
-                   "512:64:2:L:R:m");
+                   "per-shader L1 texture cache  (READ-ONLY) config "
+                   " {<nsets>:<bsize>:<assoc>:<rep>:<wr>:<alloc>,<mshr>:<N>:<merge>,<mq>:<rf>}",
+                   "8:128:5:L:R:m,F:128:4,128:2");
     option_parser_register(opp, "-gpgpu_const_cache:l1", OPT_CSTR, &m_L1C_config.m_config_string, 
                    "per-shader L1 constant memory cache  (READ-ONLY) config "
                    " {<nsets>:<bsize>:<assoc>:<rep>:<wr>:<alloc>,<mshr>:<N>:<merge>,<mq>}",
@@ -232,6 +233,9 @@ void shader_core_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_num_sched_per_core", OPT_INT32, &gpgpu_num_sched_per_core, 
                             "Number of warp schedulers per core", 
                             "1");
+    option_parser_register(opp, "-gpgpu_max_insn_issue_per_warp", OPT_INT32, &gpgpu_max_insn_issue_per_warp,
+                            "Max number of instructions that can be issued per warp in one cycle by scheduler",
+                            "2");
 }
 
 void gpgpu_sim_config::reg_options(option_parser_t opp)
@@ -596,6 +600,8 @@ void gpgpu_sim::gpu_print_stat() const
    printf("gpu_stall_dramfull = %d\n", gpu_stall_dramfull);
    printf("gpu_stall_icnt2sh    = %d\n", gpu_stall_icnt2sh );
 
+   shader_print_l1_miss_stat( stdout );
+
    m_shader_stats->print(stdout);
 
    // performance counter that are not local to one shader
@@ -808,20 +814,20 @@ void gpgpu_sim::cycle()
 
    // L2 operations follow L2 clock domain
    if (clock_mask & L2) {
-      for (unsigned i=0;i<m_memory_config->m_n_mem;i++) 
-         m_memory_partition_unit[i]->cache_cycle(gpu_sim_cycle+gpu_tot_sim_cycle);
+      for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
+          //move memory request from interconnect into memory partition (if not backed up)
+          //Note:This needs to be called in DRAM clock domain if there is no L2 cache in the system
+          if ( m_memory_partition_unit[i]->full() ) {
+             gpu_stall_dramfull++;
+          } else {
+              mem_fetch* mf = (mem_fetch*) icnt_pop( m_shader_config->mem2device(i) );
+              m_memory_partition_unit[i]->push( mf, gpu_sim_cycle + gpu_tot_sim_cycle );
+          }
+          m_memory_partition_unit[i]->cache_cycle(gpu_sim_cycle+gpu_tot_sim_cycle);
+      }
    }
 
    if (clock_mask & ICNT) {
-      for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
-         if ( m_memory_partition_unit[i]->full() ) {
-            gpu_stall_dramfull++;
-            continue;
-         }
-         // move memory request from interconnect into memory partition (if memory controller not backed up)
-         mem_fetch* mf = (mem_fetch*) icnt_pop( m_shader_config->mem2device(i) );
-         m_memory_partition_unit[i]->push( mf, gpu_sim_cycle + gpu_tot_sim_cycle );
-      }
       icnt_transfer();
    }
 

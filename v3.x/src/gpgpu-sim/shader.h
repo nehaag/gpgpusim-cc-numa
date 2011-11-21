@@ -891,6 +891,7 @@ public:
     virtual bool stallable() const { return true; }
     bool response_buffer_full() const;
     void print(FILE *fout) const;
+    void print_cache_stats( FILE *fp, unsigned& dl1_accesses, unsigned& dl1_misses );
 
 private:
    bool shared_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type);
@@ -986,6 +987,7 @@ struct shader_core_config : public core_config
     bool gpgpu_dwf_reg_bankconflict;
 
     int gpgpu_num_sched_per_core;
+    int gpgpu_max_insn_issue_per_warp;
 
     //op collector
     int gpgpu_operand_collector_num_units_sp;
@@ -1108,7 +1110,6 @@ public:
     mem_fetch *alloc( const warp_inst_t &inst, const mem_access_t &access ) const
     {
         warp_inst_t inst_copy = inst;
-        inst_copy.set_active(access.get_warp_mask());
         mem_fetch *mf = new mem_fetch(access, 
                                       &inst_copy, 
                                       access.is_write()?WRITE_PACKET_SIZE:READ_PACKET_SIZE,
@@ -1184,6 +1185,7 @@ public:
     // accessors
     std::list<unsigned> get_regs_written( const inst_t &fvt ) const;
     const shader_core_config *get_config() const { return m_config; }
+    void print_cache_stats( FILE *fp, unsigned& dl1_accesses, unsigned& dl1_misses );
 
 // debug:
     void display_simt_state(FILE *fout, int mask ) const;
@@ -1300,6 +1302,7 @@ public:
     gpgpu_sim *get_gpu() { return m_gpu; }
 
     void display_pipeline( unsigned sid, FILE *fout, int print_mem, int mask );
+    void print_cache_stats( FILE *fp, unsigned& dl1_accesses, unsigned& dl1_misses ) const;
 
 private:
     unsigned m_cluster_id;
