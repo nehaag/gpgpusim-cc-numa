@@ -72,7 +72,6 @@
 
 class thread_ctx_t {
 public:
-   class ptx_thread_info *m_functional_model_thread_state; 
    unsigned m_cta_id; // hardware CTA this thread belongs
 
    // per thread stats (ac stands for accumulative).
@@ -240,41 +239,7 @@ private:
 inline unsigned hw_tid_from_wid(unsigned wid, unsigned warp_size, unsigned i){return wid * warp_size + i;};
 inline unsigned wid_from_hw_tid(unsigned tid, unsigned warp_size){return tid/warp_size;};
 
-
-// bounded stack that implements simt reconvergence using pdom mechanism from MICRO'07 paper
-
-#define MAX_WARP_SIZE_SIMT_STACK  MAX_WARP_SIZE
-typedef std::bitset<MAX_WARP_SIZE_SIMT_STACK> simt_mask_t;
-typedef std::vector<address_type> addr_vector_t;
-
-class simt_stack {
-public:
-    simt_stack( unsigned wid, class shader_core_ctx *shdr );
-
-    void reset();
-    void launch( address_type start_pc, const simt_mask_t &active_mask );
-    void update( simt_mask_t &thread_done, addr_vector_t &next_pc, address_type recvg_pc );
-
-    const simt_mask_t &get_active_mask() const;
-    void     get_pdom_stack_top_info( unsigned *pc, unsigned *rpc ) const;
-    unsigned get_rp() const;
-    void     print(FILE*fp) const;
-
-protected:
-    unsigned m_warp_id;
-    class shader_core_ctx *m_shader;
-    unsigned m_stack_top;
-    unsigned m_warp_size;
-    
-    address_type *m_pc;
-    simt_mask_t  *m_active_mask;
-    address_type *m_recvg_pc;
-    unsigned int *m_calldepth;
-    
-    unsigned long long  *m_branch_div_cycle;
-};
-
-const unsigned WARP_PER_CTA_MAX = 32;
+const unsigned WARP_PER_CTA_MAX = 48;
 typedef std::bitset<WARP_PER_CTA_MAX> warp_set_t;
 
 int register_bank(int regnum, int wid, unsigned num_banks, unsigned bank_warp_shift);
@@ -525,7 +490,7 @@ private:
       void add_read_requests( collector_unit_t *cu ) 
       {
          const op_t *src = cu->get_operands();
-         for( unsigned i=0; i<MAX_REG_OPERANDS; i++) {
+         for( unsigned i=0; i<MAX_REG_OPERANDS*2; i++) {
             const op_t &op = src[i];
             if( op.valid() ) {
                unsigned bank = op.get_bank();
@@ -589,7 +554,7 @@ private:
          m_free = true;
          m_warp = NULL;
          m_output_register = NULL;
-         m_src_op = new op_t[MAX_REG_OPERANDS];
+         m_src_op = new op_t[MAX_REG_OPERANDS*2];
          m_not_ready.reset();
          m_warp_id = -1;
          m_num_banks = 0;
@@ -626,7 +591,7 @@ private:
       warp_inst_t  *m_warp;
       warp_inst_t** m_output_register; // pipeline register to issue to when ready
       op_t *m_src_op;
-      std::bitset<MAX_REG_OPERANDS> m_not_ready;
+      std::bitset<MAX_REG_OPERANDS*2> m_not_ready;
       unsigned m_num_banks;
       unsigned m_bank_warp_shift;
       opndcoll_rfu_t *m_rfu;
@@ -869,6 +834,7 @@ public:
                unsigned sid, unsigned tpc );
 
     // modifiers
+    virtual void issue( warp_inst_t *&inst ); 
     virtual void cycle();
      
     void fill( mem_fetch *mf );
@@ -952,6 +918,11 @@ struct shader_core_config : public core_config
            printf("GPGPU-Sim uArch: error while parsing configuration string gpgpu_shader_core_pipeline_opt\n");
            abort();
         }
+        if (n_thread_per_shader > MAX_THREAD_PER_SM) {
+           printf("GPGPU-Sim uArch: Error ** increase MAX_THREAD_PER_SM in abstract_hardware_model.h from %u to %u\n", 
+                  MAX_THREAD_PER_SM, n_thread_per_shader);
+           abort();
+        }
         max_warps_per_shader =  n_thread_per_shader/warp_size;
         assert( !(n_thread_per_shader % warp_size) );
         max_sfu_latency = 32;
@@ -1019,12 +990,15 @@ struct shader_core_config : public core_config
     unsigned n_simt_clusters;
     unsigned n_simt_ejection_buffer_size;
     unsigned ldst_unit_response_queue_size;
+
+    int simt_core_sim_order; 
     
     unsigned mem2device(unsigned memid) const { return memid + n_simt_clusters; }
 };
 
 struct shader_core_stats_pod {
-    unsigned *m_num_sim_insn; // number of instructions committed by this shader core
+    unsigned *m_num_sim_insn; // number of scalar thread instructions committed by this shader core
+    unsigned *m_num_sim_winsn; // number of warp instructions committed by this shader core
     unsigned *m_n_diverge;    // number of divergence occurring in this shader
     unsigned gpgpu_n_load_insn;
     unsigned gpgpu_n_store_insn;
@@ -1065,6 +1039,7 @@ public:
         memset(pod,0,sizeof(shader_core_stats_pod));
 
         m_num_sim_insn = (unsigned*) calloc(config->num_shader(),sizeof(unsigned));
+        m_num_sim_winsn = (unsigned*) calloc(config->num_shader(),sizeof(unsigned));
         m_n_diverge = (unsigned*) calloc(config->num_shader(),sizeof(unsigned));
         shader_cycle_distro = (unsigned*) calloc(config->warp_size+3, sizeof(unsigned));
         last_shader_cycle_distro = (unsigned*) calloc(m_config->warp_size+3, sizeof(unsigned));
@@ -1164,13 +1139,10 @@ public:
 // used by functional simulation:
     // modifiers
     virtual void warp_exit( unsigned warp_id );
-    class ptx_thread_info *get_thread_state( unsigned hw_thread_id );
-    virtual class gpgpu_sim *get_gpu();
     
     // accessors
     virtual bool warp_waiting_at_barrier( unsigned warp_id ) const;
     void get_pdom_stack_top_info( unsigned tid, unsigned *pc, unsigned *rpc ) const;
-    bool ptx_thread_done( unsigned hw_thread_id ) const;
 
 // used by pipeline timing model components:
     // modifiers
@@ -1181,6 +1153,7 @@ public:
     void store_ack( class mem_fetch *mf );
     bool warp_waiting_at_mem_barrier( unsigned warp_id );
     void set_max_cta( const kernel_info_t &kernel );
+    void warp_inst_complete(const warp_inst_t &inst); 
     
     // accessors
     std::list<unsigned> get_regs_written( const inst_t &fvt ) const;
@@ -1193,9 +1166,8 @@ public:
 
 private:
     void init_warps(unsigned cta_id, unsigned start_thread, unsigned end_thread);
-
+    virtual void checkExecutionStatusAndUpdate(warp_inst_t &inst, unsigned t, unsigned tid);
     address_type next_pc( int tid ) const;
-    
     void fetch();
     void register_cta_thread_exit( unsigned cta_num );
 
@@ -1206,7 +1178,7 @@ private:
     void issue_warp( warp_inst_t *&warp, const warp_inst_t *pI, const active_mask_t &active_mask, unsigned warp_id );
     void func_exec_inst( warp_inst_t &inst );
 
-    // Returns numbers of addresses in translated_addrs
+     // Returns numbers of addresses in translated_addrs
     unsigned translate_local_memaddr( address_type localaddr, unsigned tid, unsigned num_shader, unsigned datasize, new_addr_type* translated_addrs );
 
     void read_operands();
@@ -1227,9 +1199,7 @@ private:
     const shader_core_config *m_config;
     const memory_config *m_memory_config;
     class simt_core_cluster *m_cluster;
-    class gpgpu_sim *m_gpu;
-    kernel_info_t *m_kernel;
-    
+
     // statistics 
     shader_core_stats *m_stats;
 
@@ -1240,7 +1210,7 @@ private:
     std::bitset<MAX_THREAD_PER_SM> m_active_threads;
     
     // thread contexts 
-    thread_ctx_t             *m_thread; // functional state, per thread fetch state
+    thread_ctx_t             *m_threadState;
     
     // interconnect interface
     shader_memory_interface *m_icnt;
@@ -1254,7 +1224,6 @@ private:
     std::vector<shd_warp_t>   m_warp;   // per warp information array
     barrier_set_t             m_barriers;
     ifetch_buffer_t           m_inst_fetch_buffer;
-    simt_stack              **m_simt_stack; // pdom based reconvergence context for each warp
     warp_inst_t             **m_pipeline_reg;
     Scoreboard               *m_scoreboard;
     opndcoll_rfu_t            m_operand_collector;
@@ -1313,6 +1282,7 @@ private:
     shader_core_ctx **m_core;
 
     unsigned m_cta_issue_next_core;
+    std::list<unsigned> m_core_sim_order;
     std::list<mem_fetch*> m_response_fifo;
 };
 
@@ -1325,8 +1295,6 @@ public:
     }
     virtual void push(mem_fetch *mf) 
     {
-    	if( !mf->get_inst().empty() ) 
-    	    m_core->mem_instruction_stats(mf->get_inst()); // not I$-fetch
         m_cluster->icnt_inject_request_packet(mf);
     }
 private:

@@ -1870,17 +1870,27 @@ void div_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 
    switch ( i_type ) {
    case S8_TYPE:
+      data.s8  = src1_data.s8  / src2_data.s8 ; break;
    case S16_TYPE:
+      data.s16 = src1_data.s16 / src2_data.s16; break;
    case S32_TYPE:
+      data.s32 = src1_data.s32 / src2_data.s32; break;
    case S64_TYPE: 
       data.s64 = src1_data.s64 / src2_data.s64; break;
    case U8_TYPE:
+      data.u8  = src1_data.u8  / src2_data.u8 ; break;
    case U16_TYPE:
+      data.u16 = src1_data.u16 / src2_data.u16; break;
    case U32_TYPE:
+      data.u32 = src1_data.u32 / src2_data.u32; break;
    case U64_TYPE: 
+      data.u64 = src1_data.u64 / src2_data.u64; break;
    case B8_TYPE:
+      data.u8  = src1_data.u8  / src2_data.u8 ; break;
    case B16_TYPE:
+      data.u16 = src1_data.u16 / src2_data.u16; break;
    case B32_TYPE:
+      data.u32 = src1_data.u32 / src2_data.u32; break;
    case B64_TYPE:
       data.u64 = src1_data.u64 / src2_data.u64; break;
    case F16_TYPE: assert(0); break;
@@ -1911,17 +1921,14 @@ void ex2_impl( const ptx_instruction *pI, ptx_thread_info *thread )
       assert(0); 
       break;
    }
-
+   
    thread->set_operand_value(dst,data, i_type, thread,pI);
 }
 
 void exit_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
-{ 
-   core_t *sc = thread->get_core();
-   unsigned warp_id = thread->get_hw_wid();
-   sc->warp_exit(warp_id);
-
-   thread->m_cta_info->register_thread_exit(thread);
+{    
+   thread->exitCore();
+   thread->registerExit();
    thread->set_done();
 }
 
@@ -2730,11 +2737,9 @@ void ret_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 { 
    bool empty = thread->callstack_pop();
    if( empty ) {
-      core_t *sc = thread->get_core();
-      unsigned warp_id = thread->get_hw_wid();
-      sc->warp_exit(warp_id);
-      thread->m_cta_info->register_thread_exit(thread);
-      thread->set_done();
+   thread->exitCore();
+   thread->registerExit();
+   thread->set_done();
    }
 }
 
@@ -2743,11 +2748,9 @@ void retp_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 {
    bool empty = thread->callstack_pop_plus();
    if( empty ) {
-      core_t *sc = thread->get_core();
-      unsigned warp_id = thread->get_hw_wid();
-      sc->warp_exit(warp_id);
-      thread->m_cta_info->register_thread_exit(thread);
-      thread->set_done();
+   thread->exitCore();
+   thread->registerExit();
+   thread->set_done();
    }
 }
 

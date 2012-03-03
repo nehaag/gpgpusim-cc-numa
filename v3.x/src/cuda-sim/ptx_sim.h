@@ -123,12 +123,8 @@ class ptx_cta_info {
 public:
    ptx_cta_info( unsigned sm_idx );
    void add_thread( ptx_thread_info *thd );
-   void add_to_barrier( ptx_thread_info *thd );
-   bool all_at_barrier() const;
-   void release_barrier();
    unsigned num_threads() const;
    void check_cta_thread_status_and_reset();
-   void assert_barrier_empty( bool called_from_delete_threads = false ) const;
    void register_thread_exit( ptx_thread_info *thd );
    void register_deleted_thread( ptx_thread_info *thd );
    unsigned get_sm_idx() const;
@@ -137,7 +133,6 @@ private:
    unsigned long long         m_uid;
    unsigned                m_sm_idx;
    std::set<ptx_thread_info*>    m_threads_in_cta;
-   std::set<ptx_thread_info*>    m_threads_waiting_at_barrier;
    std::set<ptx_thread_info*>  m_threads_that_have_exited;
    std::set<ptx_thread_info*>  m_dangling_pointers;
 };
@@ -237,7 +232,7 @@ public:
    ~ptx_thread_info();
    ptx_thread_info( kernel_info_t &kernel );
 
-   void init(gpgpu_t *gpu, core_t *core, unsigned sid, unsigned cta_id, unsigned wid, unsigned tid ) 
+   void init(gpgpu_t *gpu, core_t *core, unsigned sid, unsigned cta_id, unsigned wid, unsigned tid, bool fsim) 
    { 
       m_gpu = gpu;
       m_core = core; 
@@ -245,6 +240,7 @@ public:
       m_hw_ctaid=cta_id;
       m_hw_wid=wid;
       m_hw_tid=tid;
+      m_functionalSimulationMode = fsim;
    }
 
    void ptx_fetch_inst( inst_t &inst ) const;
@@ -276,7 +272,7 @@ public:
 
    dim3 get_ctaid() const { return m_ctaid; }
    dim3 get_tid() const { return m_tid; }
-   class gpgpu_sim *get_gpu() { return m_core->get_gpu(); }
+   class gpgpu_sim *get_gpu() { return (gpgpu_sim*)m_gpu;}
    unsigned get_hw_tid() const { return m_hw_tid;}
    unsigned get_hw_ctaid() const { return m_hw_ctaid;}
    unsigned get_hw_wid() const { return m_hw_wid;}
@@ -288,21 +284,7 @@ public:
    addr_t last_eaddr() const { return m_last_effective_address;}
    memory_space_t last_space() const { return m_last_memory_space;}
    dram_callback_t last_callback() const { return m_last_dram_callback;}
-   void set_at_barrier( int barrier_num ) 
-   { 
-      m_barrier_num = barrier_num;
-      m_at_barrier = true; 
-      m_cta_info->add_to_barrier(this);
-   }
-   bool is_at_barrier() const { return m_at_barrier;}
-   bool all_at_barrier() const { return m_cta_info->all_at_barrier();}
    unsigned long long get_cta_uid() { return m_cta_info->get_sm_idx();}
-   void clear_barrier( ) 
-   { 
-      m_barrier_num = -1;
-      m_at_barrier = false; 
-   }
-   void release_barrier() { m_cta_info->release_barrier();}
 
    void set_single_thread_single_block()
    {
@@ -392,6 +374,15 @@ public:
    memory_space *get_surf_memory() { return m_gpu->get_surf_memory(); }
    memory_space *get_param_memory() { return m_kernel.get_param_memory(); }
    const gpgpu_functional_sim_config &get_config() const { return m_gpu->get_config(); }
+   bool isInFunctionalSimulationMode(){ return m_functionalSimulationMode;}
+   void exitCore()
+   {
+       //m_core is not used in case of functional simulation mode
+       if(!m_functionalSimulationMode)
+           m_core->warp_exit(m_hw_wid);
+   }
+   
+   void registerExit(){m_cta_info->register_thread_exit(this);}
 
 public:
    addr_t         m_last_effective_address;
@@ -405,7 +396,7 @@ public:
 
 private:
 
-
+   bool m_functionalSimulationMode; 
    unsigned m_uid;
    kernel_info_t &m_kernel;
    core_t *m_core;

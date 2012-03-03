@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2011, Tor M. Aamodt, Wilson W.L. Fung,
+// Copyright (c) 2009 by Tor M. Aamodt, Tim Rogers and 
 // The University of British Columbia
 // All rights reserved.
 //
@@ -25,60 +25,33 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
-#include "../option_parser.h"
-
-#ifndef ADDRDEC_H
-#define ADDRDEC_H
-
-#include "../abstract_hardware_model.h"
-
-struct addrdec_t {
-   void print( FILE *fp ) const;
-    
-   unsigned chip;
-   unsigned bk;
-   unsigned row;
-   unsigned col;
-   unsigned burst;
-};
-
-class linear_to_raw_address_translation {
-public:
-   linear_to_raw_address_translation();
-   void addrdec_setoption(option_parser_t opp);
-   void init(unsigned int nchips); 
-
-   // accessors
-   void addrdec_tlx(new_addr_type addr, addrdec_t *tlx) const; 
-   new_addr_type partition_address( new_addr_type addr ) const;
-
-private:
-   void addrdec_parseoption(const char *option);
-   void sweep_test() const; // sanity check to ensure no overlapping
-
-   enum {
-      CHIP  = 0,
-      BK    = 1,
-      ROW   = 2,
-      COL   = 3,
-      BURST = 4,
-      N_ADDRDEC
-   };
-
-   const char *addrdec_option;
-   int gpgpu_mem_address_mask;
-   bool run_test; 
-
-   int ADDR_CHIP_S;
-   unsigned char addrdec_mklow[N_ADDRDEC];
-   unsigned char addrdec_mkhigh[N_ADDRDEC];
-   new_addr_type addrdec_mask[N_ADDRDEC];
-   
-   unsigned int gap;
-   int Nchips;
-};
-
-#endif
+MF_TUP_BEGIN( mem_fetch_status )
+    MF_TUP( MEM_FETCH_INITIALIZED ),
+    MF_TUP( IN_L1I_MISS_QUEUE ),
+    MF_TUP( IN_L1D_MISS_QUEUE ),
+    MF_TUP( IN_L1T_MISS_QUEUE ),
+    MF_TUP( IN_L1C_MISS_QUEUE ),
+    MF_TUP( IN_TLB_MISS_QUEUE ),
+    MF_TUP( IN_VM_MANAGER_QUEUE ),
+    MF_TUP( IN_ICNT_TO_MEM ),
+    MF_TUP( IN_PARTITION_ROP_DELAY ),
+    MF_TUP( IN_PARTITION_ICNT_TO_L2_QUEUE ),
+    MF_TUP( IN_PARTITION_L2_TO_DRAM_QUEUE ),
+    MF_TUP( IN_PARTITION_DRAM_LATENCY_QUEUE ),
+    MF_TUP( IN_PARTITION_L2_MISS_QUEUE ),
+    MF_TUP( IN_PARTITION_MC_INTERFACE_QUEUE ),
+    MF_TUP( IN_PARTITION_MC_INPUT_QUEUE ),
+    MF_TUP( IN_PARTITION_MC_BANK_ARB_QUEUE ),
+    MF_TUP( IN_PARTITION_DRAM ),
+    MF_TUP( IN_PARTITION_MC_RETURNQ ),
+    MF_TUP( IN_PARTITION_DRAM_TO_L2_QUEUE ),
+    MF_TUP( IN_PARTITION_L2_FILL_QUEUE ),
+    MF_TUP( IN_PARTITION_L2_TO_ICNT_QUEUE ),
+    MF_TUP( IN_ICNT_TO_SHADER ),
+    MF_TUP( IN_CLUSTER_TO_SHADER_QUEUE ),
+    MF_TUP( IN_SHADER_LDST_RESPONSE_FIFO ),
+    MF_TUP( IN_SHADER_FETCHED ),
+    MF_TUP( IN_SHADER_L1T_ROB ),
+    MF_TUP( MEM_FETCH_DELETED ),
+    MF_TUP( NUM_MEM_REQ_STAT )
+MF_TUP_END( mem_fetch_status )

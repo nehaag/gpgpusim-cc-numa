@@ -232,20 +232,45 @@ struct core_config {
 	unsigned gpgpu_max_insn_issue_per_warp;
 };
 
-class core_t {
+// bounded stack that implements simt reconvergence using pdom mechanism from MICRO'07 paper
+const unsigned MAX_WARP_SIZE = 32;
+typedef std::bitset<MAX_WARP_SIZE> active_mask_t;
+#define MAX_WARP_SIZE_SIMT_STACK  MAX_WARP_SIZE
+typedef std::bitset<MAX_WARP_SIZE_SIMT_STACK> simt_mask_t;
+typedef std::vector<address_type> addr_vector_t;
+
+class simt_stack {
 public:
-   virtual ~core_t() {}
-   virtual void warp_exit( unsigned warp_id ) = 0;
-   virtual bool warp_waiting_at_barrier( unsigned warp_id ) const = 0;
-   virtual class gpgpu_sim *get_gpu() = 0;
+    simt_stack( unsigned wid,  unsigned warpSize);
+
+    void reset();
+    void launch( address_type start_pc, const simt_mask_t &active_mask );
+    void update( simt_mask_t &thread_done, addr_vector_t &next_pc, address_type recvg_pc );
+
+    const simt_mask_t &get_active_mask() const;
+    void     get_pdom_stack_top_info( unsigned *pc, unsigned *rpc ) const;
+    unsigned get_rp() const;
+    void     print(FILE*fp) const;
+
+protected:
+    unsigned m_warp_id;
+    unsigned m_stack_top;
+    unsigned m_warp_size;
+    
+    address_type *m_pc;
+    simt_mask_t  *m_active_mask;
+    address_type *m_recvg_pc;
+    unsigned int *m_calldepth;
+    
+    unsigned long long  *m_branch_div_cycle;
 };
 
 #define GLOBAL_HEAP_START 0x80000000
    // start allocating from this address (lower values used for allocating globals in .ptx file)
 #define SHARED_MEM_SIZE_MAX (64*1024)
-#define LOCAL_MEM_SIZE_MAX (16*1024)
+#define LOCAL_MEM_SIZE_MAX (8*1024)
 #define MAX_STREAMING_MULTIPROCESSORS 64
-#define MAX_THREAD_PER_SM 1024
+#define MAX_THREAD_PER_SM 2048
 #define TOTAL_LOCAL_MEM_PER_SM (MAX_THREAD_PER_SM*LOCAL_MEM_SIZE_MAX)
 #define TOTAL_SHARED_MEM (MAX_STREAMING_MULTIPROCESSORS*SHARED_MEM_SIZE_MAX)
 #define TOTAL_LOCAL_MEM (MAX_STREAMING_MULTIPROCESSORS*MAX_THREAD_PER_SM*LOCAL_MEM_SIZE_MAX)
@@ -445,9 +470,6 @@ const unsigned MAX_MEMORY_ACCESS_SIZE = 128;
 typedef std::bitset<MAX_MEMORY_ACCESS_SIZE> mem_access_byte_mask_t;
 #define NO_PARTIAL_WRITE (mem_access_byte_mask_t())
 
-const unsigned MAX_WARP_SIZE = 32;
-typedef std::bitset<MAX_WARP_SIZE> active_mask_t;
-
 enum mem_access_type {
    GLOBAL_ACC_R, 
    LOCAL_ACC_R, 
@@ -564,6 +586,7 @@ public:
     virtual mem_fetch *alloc( const class warp_inst_t &inst, const mem_access_t &access ) const = 0;
 };
 
+// the maximum number of destination, source, or address uarch operands in a instruction
 #define MAX_REG_OPERANDS 8
 
 struct dram_callback_t {
@@ -589,8 +612,10 @@ public:
         cache_op = CACHE_UNDEFINED;
         latency = 1;
         initiation_interval = 1;
-        for( unsigned i=0; i < MAX_REG_OPERANDS; i++ )
-           arch_reg[i]=-1;
+        for( unsigned i=0; i < MAX_REG_OPERANDS; i++ ) {
+            arch_reg.src[i] = -1;
+            arch_reg.dst[i] = -1;
+        }
         isize=0;
     }
     bool valid() const { return m_decoded; }
@@ -614,7 +639,12 @@ public:
     unsigned char is_vectorout;
     int pred; // predicate register number
     int ar1, ar2;
-    int arch_reg[MAX_REG_OPERANDS]; // register number for bank conflict evaluation
+    // register number for bank conflict evaluation
+    struct {
+        int dst[MAX_REG_OPERANDS];
+        int src[MAX_REG_OPERANDS];
+    } arch_reg;
+    //int arch_reg[MAX_REG_OPERANDS]; // register number for bank conflict evaluation
     unsigned latency; // operation latency 
     unsigned initiation_interval;
 
@@ -631,6 +661,8 @@ enum divergence_support_t {
    POST_DOMINATOR = 1,
    NUM_SIMD_MODEL
 };
+
+const unsigned MAX_ACCESSES_PER_INSN_PER_THREAD = 8;
 
 class warp_inst_t: public inst_t {
 public:
@@ -654,8 +686,8 @@ public:
     }
 
     // modifiers
-    void do_atomic();
-    void do_atomic( const active_mask_t& access_mask );
+    void do_atomic(bool forceDo=false);
+    void do_atomic( const active_mask_t& access_mask, bool forceDo=false );
     void clear() 
     { 
         m_empty=true; 
@@ -670,6 +702,7 @@ public:
         m_cache_hit=false;
         m_empty=false;
     }
+    void completed( unsigned long long cycle ) const;  // stat collection: called when the instruction is completed  
     void set_addr( unsigned n, new_addr_type addr ) 
     {
         if( !m_per_scalar_thread_valid ) {
@@ -684,10 +717,29 @@ public:
             m_per_scalar_thread.resize(m_config->warp_size);
             m_per_scalar_thread_valid=true;
         }
+        assert(num_addrs <= MAX_ACCESSES_PER_INSN_PER_THREAD);
         for(unsigned i=0; i<num_addrs; i++)
             m_per_scalar_thread[n].memreqaddr[i] = addr[i];
     }
+
+    struct transaction_info {
+        std::bitset<4> chunks; // bitmask: 32-byte chunks accessed
+        mem_access_byte_mask_t bytes;
+        active_mask_t active; // threads in this transaction
+
+        bool test_bytes(unsigned start_bit, unsigned end_bit) {
+           for( unsigned i=start_bit; i<=end_bit; i++ )
+              if(bytes.test(i))
+                 return true;
+           return false;
+        }
+    };
+
     void generate_mem_accesses();
+    void memory_coalescing_arch_13( bool is_write, mem_access_type access_type );
+    void memory_coalescing_arch_13_atomic( bool is_write, mem_access_type access_type );
+    void memory_coalescing_arch_13_reduce_and_send( bool is_write, mem_access_type access_type, const transaction_info &info, new_addr_type addr, unsigned segment_size );
+
     void add_callback( unsigned lane_id, 
                        void (*function)(const class inst_t*, class ptx_thread_info*),
                        const inst_t *inst, 
@@ -764,11 +816,11 @@ protected:
 
     struct per_thread_info {
         per_thread_info() {
-            for(unsigned i=0; i<8; i++)
+            for(unsigned i=0; i<MAX_ACCESSES_PER_INSN_PER_THREAD; i++)
                 memreqaddr[i] = 0;
         }
         dram_callback_t callback;
-        new_addr_type memreqaddr[8]; // effective address, upto 8 different requests (to support 32B access in 8 chunks of 4B each)
+        new_addr_type memreqaddr[MAX_ACCESSES_PER_INSN_PER_THREAD]; // effective address, upto 8 different requests (to support 32B access in 8 chunks of 4B each)
     };
     bool m_per_scalar_thread_valid;
     std::vector<per_thread_info> m_per_scalar_thread;
@@ -781,6 +833,30 @@ protected:
 void move_warp( warp_inst_t *&dst, warp_inst_t *&src );
 
 size_t get_kernel_code_size( class function_info *entry );
+
+/*
+ * This abstract class used as a base for functional and performance and simulation, it has basic functional simulation
+ * data structures and procedures. 
+ */
+class core_t {
+    public:
+        virtual ~core_t() {}
+        virtual void warp_exit( unsigned warp_id ) = 0;
+        virtual bool warp_waiting_at_barrier( unsigned warp_id ) const = 0;
+        virtual void checkExecutionStatusAndUpdate(warp_inst_t &inst, unsigned t, unsigned tid)=0;
+        class gpgpu_sim * get_gpu() {return m_gpu;}
+        void execute_warp_inst_t(warp_inst_t &inst, unsigned warpSize, unsigned warpId =(unsigned)-1);
+        bool  ptx_thread_done( unsigned hw_thread_id ) const ;
+        void updateSIMTStack(unsigned warpId, unsigned warpSize, warp_inst_t * inst);
+        void initilizeSIMTStack(unsigned warps, unsigned warpsSize);
+        warp_inst_t getExecuteWarp(unsigned warpId);
+
+    protected:
+        class gpgpu_sim *m_gpu;
+        kernel_info_t *m_kernel;
+        simt_stack  **m_simt_stack; // pdom based reconvergence context for each warp
+        class ptx_thread_info ** m_thread; 
+};
 
 #endif // #ifdef __cplusplus
 
