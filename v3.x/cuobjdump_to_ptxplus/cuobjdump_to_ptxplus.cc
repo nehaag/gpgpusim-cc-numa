@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2011, Jimmy Kwa,
+// Copyright (c) 2009-2012, Jimmy Kwa, Andrew Boktor
 // The University of British Columbia
 // All rights reserved.
 //
@@ -25,29 +25,40 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
 #include <iostream>
-#include "decudaInstList.h"
 #include <stdio.h>
-#include<fstream>
+#include <fstream>
+#include <cassert>
+
+#include "cuobjdumpInstList.h"
 
 using namespace std;
 
-decudaInstList *g_instList = new decudaInstList();
-decudaInstList *g_headerList = new decudaInstList();
+cuobjdumpInstList *g_instList = new cuobjdumpInstList();
+cuobjdumpInstList *g_headerList = new cuobjdumpInstList();
 
-int yyparse();
-extern "C" FILE *yyin;
+int sass_parse();
+extern "C" FILE *sass_in;
 
 int ptx_parse();
 extern "C" FILE *ptx_in;
+
+int elf_parse();
+extern "C" FILE *elf_in;
+
+extern int g_error_detected;
 
 FILE *bin_in;
 FILE *ptxplus_out;
 
 void output(const char * text)
 {
+	printf(text);
 	fprintf(ptxplus_out, text);
+}
+
+void output(const std::string text) {
+	output(text.c_str());
 }
 
 std::string fileToString(const char * fileName) {
@@ -60,56 +71,73 @@ std::string fileToString(const char * fileName) {
 	return text;
 }
 
+std::string extractFilename( const std::string& path )
+{
+	return path.substr( path.find_last_of( '/' ) +1 );
+}
+
 int main(int argc, char* argv[])
 {
 	if(argc != 5)
 	{
-		cout << "Usage: decuda_to_ptxplus [decuda filename] [ptx filename] [bin filename] [ptxplus output filename]\n";
+		cout << "Usage: " << argv[0] << " ptxfile sassfile elffile ptxplusfile(output)\n";
 		return 0;
 	}
 
-	const char *decudaFilename = argv[1];
-	const char *ptxFilename = argv[2];
-	const char *binFilename = argv[3];
-	const char *ptxplusFilename = argv[4];
+	string ptxfile = argv[1];
+	string sassfile = argv[2];
+	string elffile = argv[3];
+	string ptxplusfile = argv[4];
 
-	//header_in = fopen( ptxFilename, "r" );
-	ptx_in = fopen( ptxFilename, "r" );
-	yyin = fopen( decudaFilename, "r" );
-	bin_in = fopen( binFilename, "r" );
-	ptxplus_out = fopen( ptxplusFilename, "w" );
+	sass_in = fopen(sassfile.c_str(), "r" );
+	ptx_in = fopen(ptxfile.c_str(), "r" );
+	elf_in = fopen(elffile.c_str(), "r");
+	ptxplus_out = fopen(ptxplusfile.c_str(), "w" );
 
 
-	fileToString(binFilename);
+	std::string elf = fileToString(elffile.c_str());
 
-	printf("RUNNING decuda2ptxplus ...\n");
+	printf("RUNNING cuobjdump_to_ptxplus ...\n");
 
-	// Parse original ptx
+
+	printf("Parsing .elf file %s\n", elffile.c_str());
+	elf_parse();
+	printf("Finished parsing .elf file %s\n", elffile.c_str());
+
+	//Parse original ptx
+	printf("Parsing .ptx file %s\n", ptxfile.c_str());
 	ptx_parse();
+	if (g_error_detected){
+		assert(0 && "ptx parsing failed");
+	}
+	printf("Finished parsing .ptx file %s\n", ptxfile.c_str());
 
 	// Copy real tex list from ptx to ptxplus instruction list
 	g_instList->setRealTexList(g_headerList->getRealTexList());
 
-	// Insert constant memory from bin file
-	g_instList->readConstMemoryFromBinFile(fileToString(binFilename));
-
 	// Insert global memory from bin file
-	g_instList->readGlobalMemoryFromBinFile(fileToString(binFilename));
+//	g_instList->readGlobalMemoryFromBinFile(fileToString(binFilename));
 
-	// Parse decuda output
-	yyparse();
-	printf("END RUN\n");
+	// Parse cuobjdump output
+	printf("Parsing .sass file %s\n", sassfile.c_str());
+	sass_parse();
+	printf("Finished parsing .sass file %s\n", sassfile.c_str());
 
 	// Print ptxplus
+	output("//HEADER\n");
 	g_headerList->printHeaderInstList();
-	g_instList->printNewPtxList(g_headerList);
+	output("//END HEADER\n\n\n");
+	output("//INSTRUCTIONS\n");
+	g_instList->printCuobjdumpPtxPlusList(g_headerList);
+	output("//END INSTRUCTIONS\n");
 
+	fclose(sass_in);
 	fclose(ptx_in);
-	fclose(yyin);
-	fclose(bin_in);
+
 	fclose(ptxplus_out);
 
 	printf("DONE. \n");
 
 	return 0;
 }
+

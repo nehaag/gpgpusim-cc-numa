@@ -123,8 +123,8 @@ void memory_config::reg_options(class OptionParser * opp)
                  "Burst length of each DRAM request (default = 4 DDR cycle)",
                  "4");
     option_parser_register(opp, "-gpgpu_dram_timing_opt", OPT_CSTR, &gpgpu_dram_timing_opt, 
-                "DRAM timing parameters = {nbk:tCCD:tRRD:tRCD:tRAS:tRP:tRC:CL:WL:tCDLR:tWR}",
-                "4:2:8:12:21:13:34:9:4:5:13");
+                "DRAM timing parameters = {nbk:tCCD:tRRD:tRCD:tRAS:tRP:tRC:CL:WL:tCDLR:tWR:nbkgrp:tCCDL:tRTPL}",
+                "4:2:8:12:21:13:34:9:4:5:13:1:0:0");
     option_parser_register(opp, "-rop_latency", OPT_UINT32, &rop_latency,
                      "ROP queue latency (default 85)",
                      "85");
@@ -245,6 +245,19 @@ void shader_core_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_simt_core_sim_order", OPT_INT32, &simt_core_sim_order,
                             "Select the simulation order of cores in a cluster (0=Fix, 1=Round-Robin)",
                             "1");
+    option_parser_register(opp, "-gpgpu_pipeline_widths", OPT_CSTR, &pipeline_widths_string,
+                            "Pipeline widths "
+    		                "ID_OC_SP,ID_OC_SFU,ID_OC_MEM,OC_EX_SP,OC_EX_SFU,OC_EX_MEM,EX_WB",
+                            "1,1,1,1,1,1,1" );
+    option_parser_register(opp, "-gpgpu_num_sp_units", OPT_INT32, &gpgpu_num_sp_units,
+    		                "Number of SP units (default=1)",
+    		                "1");
+    option_parser_register(opp, "-gpgpu_num_sfu_units", OPT_INT32, &gpgpu_num_sfu_units,
+    		                "Number of SF units (default=1)",
+    		                "1");
+    option_parser_register(opp, "-gpgpu_num_mem_units", OPT_INT32, &gpgpu_num_mem_units,
+    		                "Number if ldst units (default=1) WARNING: not hooked up to anything",
+                             "1");
 }
 
 void gpgpu_sim_config::reg_options(option_parser_t opp)
@@ -515,6 +528,7 @@ void gpgpu_sim::init()
     // run a CUDA grid on the GPU microarchitecture simulator
     gpu_sim_cycle = 0;
     gpu_sim_insn = 0;
+    last_gpu_sim_insn = 0;
     m_total_cta_launched=0;
 
     reinit_clock_domains();
@@ -540,11 +554,14 @@ void gpgpu_sim::init()
        icnt_init_grid(); 
 }
 
-void gpgpu_sim::print_stats()
-{
+void gpgpu_sim::update_stats() {
     m_memory_stats->memlatstat_lat_pw();
     gpu_tot_sim_cycle += gpu_sim_cycle;
     gpu_tot_sim_insn += gpu_sim_insn;
+}
+
+void gpgpu_sim::print_stats()
+{
 
     ptx_file_line_stats_write_file();
     gpu_print_stat();
@@ -602,9 +619,9 @@ void gpgpu_sim::gpu_print_stat() const
    printf("gpu_sim_cycle = %lld\n", gpu_sim_cycle);
    printf("gpu_sim_insn = %lld\n", gpu_sim_insn);
    printf("gpu_ipc = %12.4f\n", (float)gpu_sim_insn / gpu_sim_cycle);
-   printf("gpu_tot_sim_cycle = %lld\n", gpu_tot_sim_cycle);
-   printf("gpu_tot_sim_insn = %lld\n", gpu_tot_sim_insn);
-   printf("gpu_tot_ipc = %12.4f\n", (float)gpu_tot_sim_insn / gpu_tot_sim_cycle);
+   printf("gpu_tot_sim_cycle = %lld\n", gpu_tot_sim_cycle+gpu_sim_cycle);
+   printf("gpu_tot_sim_insn = %lld\n", gpu_tot_sim_insn+gpu_sim_insn);
+   printf("gpu_tot_ipc = %12.4f\n", (float)(gpu_tot_sim_insn+gpu_sim_insn) / (gpu_tot_sim_cycle+gpu_sim_cycle));
    printf("gpu_tot_issued_cta = %lld\n", gpu_tot_issued_cta);
 
    // performance counter for stalls due to congestion.
@@ -848,7 +865,6 @@ void gpgpu_sim::cycle()
       icnt_transfer();
    }
 
-   last_gpu_sim_insn = 0;
    if (clock_mask & CORE) {
       // L1 cache + shader core pipeline stages 
       for (unsigned i=0;i<m_shader_config->n_simt_clusters;i++) {

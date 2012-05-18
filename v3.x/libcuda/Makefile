@@ -60,7 +60,7 @@
 # Vancouver, BC V6T 1Z4
 
 
-CUDART_VERSION:=$(shell nvcc --version | awk '/release/ {print $$5;}' | sed 's/,//' | sed 's/\./ /' | awk '{printf("%02u%02u", 10*int($$1), 10*$$2);}')
+CUDART_VERSION:=$(shell $(CUDA_INSTALL_PATH)/bin/nvcc --version | awk '/release/ {print $$5;}' | sed 's/,//' | sed 's/\./ /' | awk '{printf("%02u%02u", 10*int($$1), 10*$$2);}')
 
 ifeq ($(OPENGL_SUPPORT),1) 
 	GL = -DOPENGL_SUPPORT
@@ -73,35 +73,58 @@ endif
 
 
 CPP = g++ $(SNOW)
-CC = gcc &(SNOW)
+CC = gcc $(SNOW)
 CREATELIBRARY    =  1
 DEBUG ?= 0
 ifeq ($(DEBUG),1)
-	CXXFLAGS +=  -Wall -g -fPIC $(GL)
+	CXXFLAGS +=  -Wall -Wno-unused-function -Wno-sign-compare -g -fPIC $(GL)
+	CCFLAGS += -Wall -Wno-unused-function -Wno-sign-compare -ggdb -fPIC
 else
-	CXXFLAGS += -O3 -g -Wall -fPIC $(GL)
+	CXXFLAGS += -O3 -g -Wall -Wno-unused-function -Wno-sign-compare -fPIC $(GL)
+	CCFLAGS += -Wall -Wno-unused-function -Wno-sign-compare -fPIC
 endif
 
 PROG     =cuda
 
 CXX_SRCS =  cuda_runtime_api.cc
+LEX_SRCS = cuobjdump.l
+YACC_SRCS = cuobjdump.y
 CXXFLAGS += -DCUDART_VERSION=$(CUDART_VERSION)
+LEX			= flex
+LEXFLAGS	= -B 
+YACC		= bison
+YFLAGS		= -t -d -v --report=all
 
 .PHONY: clean
 
 OUTPUT_DIR=../$(SIM_OBJ_FILES_DIR)/libcuda
 
 OBJS = $(CXX_SRCS:%.cc=$(OUTPUT_DIR)/%.o)
-
-
+OBJS += $(LEX_SRCS:%.l=$(OUTPUT_DIR)/%_lexer.o)
+OBJS += $(YACC_SRCS:%.y=$(OUTPUT_DIR)/%_parser.o)
 
 #--- Make rules ---
 lib$(PROG).a: $(OBJS)
+	echo $(OBJS)
 	ar rcs $(OUTPUT_DIR)/lib$(PROG).a $(OBJS)
 
 $(OUTPUT_DIR)/%.o: %.cc
 	$(CPP) $(CXXFLAGS) -I./ -I$(CUDA_INSTALL_PATH)/include  -c $< -o $@
+
+$(OUTPUT_DIR)/%.o: %.c
+	$(CC) $(CCFLAGS) -I./ -I$(CUDA_INSTALL_PATH)/include  -c $< -o $@
+
+cuobjdump_parser.c: cuobjdump.y
+	$(YACC) $(YFLAGS) -p cuobjdump_ -o$@ $<
+
+cuobjdump_lexer.c: cuobjdump.l cuobjdump_parser.h
+	$(LEX) $(LEXFLAGS) -P cuobjdump_ -o$@ $<
 	
+# The next rule means just get parser.c and you will get parser.h with it
+# in other words, get parser.c and do nothing to get parser.h
+%_parser.h: %_parser.c
+	:
+
 depend:
 	makedepend -p$(OUTPUT_DIR)/ $(CXX_SRCS) 2> /dev/null
 
@@ -109,6 +132,9 @@ clean:
 	rm -f $(PROG)
 	rm -f *.o
 	rm -f lib$(PROG).a
+	rm -f *_parser.*
+	rm -f *_lexer.*
+
 # DO NOT DELETE
 
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/stdlib.h
@@ -138,6 +164,7 @@ clean:
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/stdio_lim.h
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/sys_errlist.h
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/string.h
+../build/release/libcuda/cuda_runtime_api.o: /usr/include/xlocale.h
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/assert.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpu-sim/gpu-sim.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/abstract_hardware_model.h
@@ -146,6 +173,10 @@ clean:
 ../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpu-sim/shader.h
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/math.h
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/huge_val.h
+../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/huge_valf.h
+../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/huge_vall.h
+../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/inf.h
+../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/nan.h
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/mathdef.h
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/bits/mathcalls.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/ptx.tab.h
@@ -162,17 +193,19 @@ clean:
 ../build/release/libcuda/cuda_runtime_api.o: /usr/include/getopt.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpu-sim/scoreboard.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpu-sim/mem_fetch.h
+../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpu-sim/mem_fetch_status.tup
 ../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpu-sim/stats.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpu-sim/gpu-cache.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/tr1_hash_map.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/ptx_loader.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/cuda-sim.h
-../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/ptx_ir.h
-../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/ptx.tab.h
+../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpu-sim/shader.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/ptx_sim.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/opcodes.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/opcodes.def
 ../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/memory.h
+../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/ptx_ir.h
+../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/ptx.tab.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/cuda-sim/ptx_parser.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/gpgpusim_entrypoint.h
 ../build/release/libcuda/cuda_runtime_api.o: ../src/abstract_hardware_model.h

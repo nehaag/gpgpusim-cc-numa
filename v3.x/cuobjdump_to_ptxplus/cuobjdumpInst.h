@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2011, Jimmy Kwa,
+// Copyright (c) 2009-2012, Jimmy Kwa, Andrew Boktor
 // The University of British Columbia
 // All rights reserved.
 //
@@ -25,13 +25,21 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifndef _CUOBJDUMPINST_H_
+#define _CUOBJDUMPINST_H_
 
+// External includes
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <list>
+
+// Local includes
+//#include "cuobjdumpInstList.h"
 #include "stringList.h"
-#include <assert.h>
 
-class decudaInst
+class cuobjdumpInst
 {
-
 protected:
 	//instruction data
 	const char* m_label; //instruction label
@@ -41,54 +49,40 @@ protected:
 	stringList* m_typeModifiers; //operand types
 	stringList* m_operands; //operands
 	stringList* m_predicateModifiers; //predicate modifiers
-	
-
-	int m_opPerCycle; // stores operations per cycle count for current instruction
-
-	//next instruction in linked list
-	//direction is m_listStart to m_listEnd
-	decudaInst* m_nextDecudaInst;
-
-	// print instruction unmodified
-	void printDefaultPtx();
-	void printBaseModifiers();
-	void printTypeModifiers();
-	void printOperands();
-	void printLabel();
-	void printPredicate();
 
 public:
-	//constructor
-	decudaInst();
+	//Constructor
+	cuobjdumpInst();
 
 	//accessors
 	const char* getBase();
-	stringList* getOperands();
-	stringList* getBaseModifiers();
-        stringList* getTypeModifiers();
-	decudaInst* getNextDecudaInst();
+	stringList* getTypeModifiers();
 
-   int getOpPerCycle() const { return m_opPerCycle; }
-
-	bool isEntryStart();	// true if start of an entry
-
-	//mutators
+	//Mutators
+	void setLabel(const char* setLabelValue);
+	void setPredicate(const char* setPredicateValue);
+	void addPredicateModifier(const char* addPredicateMod);
 	void setBase(const char* setBaseValue);
 	void addBaseModifier(const char* addBaseMod);
 	void addTypeModifier(const char* addTypeMod);
 	void addOperand(const char* addOp);
-	void setPredicate(const char* setPredicateValue);
-	void addPredicateModifier(const char* addPredicateMod);
-	void setLabel(const char* setLabelValue);
 
-	void setNextDecudaInst(decudaInst* setDecudaInstValue);
+	bool checkCubojdumpLabel(std::list<std::string> labelList, std::string label);
+
+	void printCuobjdumpLabel(std::list<std::string> labelList);
+	void printCuobjdumpPredicate();
+	void printCuobjdumpTypeModifiers();
+	void printCuobjdumpBaseModifiers();
+	void printCuobjdumpOperand(stringListPiece* currentPiece, std::string operandDelimiter, const char* base);
+	void printCuobjdumpOperandlohi(std::string op);
+	void printCuobjdumpOperands();
+
+	void printCuobjdumpPtxPlus(std::list<std::string> labelList, std::list<std::string> texList);
 
 	//print representation
 	bool printHeaderInst();
-	bool printHeaderInst2();
-	void printDecudaInst();
-	void printNewPtx();
+	void printCuobjdumpInst();
 	void printHeaderPtx();
-	//TODO: translate to New PTX and print
-
 };
+
+#endif //_CUOBJDUMPINST_H_

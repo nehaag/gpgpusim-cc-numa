@@ -1,10 +1,9 @@
-GPGPU-Sim Simulator Version 3.0.2 build $Change: 11587 $
+GPGPU-Sim Simulator Version 3.1.0 build $Change: 12656 $
 
-This version of GPGPU-Sim works with CUDA version 3.1 and some earlier
-versions.  It does not (yet) work with CUDA version 4.x. 
+This version of GPGPU-Sim works with CUDA version 3.1 and 4.0.
 
 Please see the copyright notice in the file COPYRIGHT distributed with this
-release in the same directory as this file.  
+release in the same directory as this file.
 
 If you use this simulator in your research please cite:
 
@@ -24,7 +23,8 @@ See Section 2 "INSTALLING, BUILDING and RUNNING GPGPU-Sim" below to get started.
 GPGPU-Sim was created by Tor Aamodt's research group at the University of
 British Columbia.  Many students have contributed including: Wilson W.L. Fung,
 Ali Bakhoda, George Yuan, Ivan Sham, Henry Wong, Henry Tran, Andrew Turner,
-Aaron Ariel, Inderpret Singh, Tim Rogers, Jimmy Kwa, and others.
+Aaron Ariel, Inderpret Singh, Tim Rogers, Jimmy Kwa, Andrew Boktor, Ayub Gubran
+Tayler Hetherington and others.
 
 GPGPU-Sim models the features of a modern graphics processor that are relevant
 to non-graphics applications.  The first version of GPGPU-Sim was used in a
@@ -58,12 +58,12 @@ distribution as long as the following software dependencies are satisfied.
 Step 1: Dependencies
 ====================
 
-Download and install version 3.1 of the CUDA Toolkit.  To use ptxplus (native
-hardware instructions) you must currently use the CUDA Toolkit version 2.3.
-Otherwise use CUDA 3.1.  GPGPU-Sim does not yet support CUDA 4.x.  Note that it
-is possible to have multiple versions of the CUDA toolkit installed on a single
-system -- just install them in different directories and update the
-setup_environment script to point to the version you want to use.
+Download and install the CUDA Toolkit. It is recommended to use version 3.1
+for normal PTX simulation and version 4.0 for cuobjdump support and/or to use
+PTXPlus (Harware instruction set support). Note that it is possible to have
+multiple versions of the CUDA toolkit installed on a single system -- just
+install them in different directories and update the setup_environment script
+to point to the version you want to use.
 
 [Optional] If you want to run OpenCL on the simulator, download and install
 NVIDIA's OpenCL driver from <http://developer.nvidia.com/opencl>.  Update your
@@ -83,30 +83,36 @@ GPGPU-Sim dependencies:
 * bison
 * flex
 * zlib
-* libboost
-* cuda toolkit
+* CUDA Toolkit
 	
 GPGPU-Sim documentation dependencies:
 * doxygen
-* graphviz  
+* graphvi
 
-For CUDA 3.1 we used gcc/g++ version 4.3.2 (if using the CUDA 3.1
-SDK) or 4.5.1 (if not using the CUDA SDK), for CUDA 2.3 we used gcc/g++ version
-4.3.2, for CUDA 1.1 we used gcc/g++ version 4.1.3.  This version of GPGPU-Sim
-does not yet work with CUDA 4.x; We used bison version 2.3, and flex version
-2.5.33.  
+AerialVision dependencies:
+* python-pmw
+* python-ply
+* python-numpy
+* libpng12-dev
+* python-matplotlib
+
+We used gcc/g++ version 4.5.1, bison version 2.4.1, and flex version 2.5.35.
 
 If you are using Ubuntu, the following commands will install all required
 dependencies besides the CUDA Toolkit.
 
-gpgpu-sim dependencies:
-"sudo apt-get install build-essentials xutils-dev bison zlib1g-dev flex
-libboost-all-dev libglu1-mesa-dev"
+GPGPU-Sim dependencies:
+"sudo apt-get install build-essential xutils-dev bison zlib1g-dev flex
+libglu1-mesa-dev"
 
-gpgpu-sim documentation:
+GPGPU-Sim documentation dependencies:
 "sudo apt-get install doxygen graphviz"
 
-cuda sdk dependencies:
+AerialVision dependencies:
+"sudo apt-get install python-pmw python-ply python-numpy libpng12-dev
+python-matplotlib"
+
+CUDA SDK dependencies:
 "sudo apt-get install libxi-dev libxmu-dev libglut3-dev"
 
 
@@ -114,10 +120,10 @@ Step 2: Build
 =============
 
 To build the simulator, you first need to configure how you want it to be
-built. From the root directory if the simulator, do the following:
-	
-cd distribution
-	
+built. From the root directory of the simulator, do the following:
+
+cd v3.x
+
 then open the file 'setup_environment' with your favorite text editor. Read
 the file carefully and modify the environment variables in that file to your
 environment specific paths. In particular, you need to set CUDA_INSTALL_PATH
@@ -126,53 +132,59 @@ instructions in the cuda toolkit installation, setup_environment will detect
 that automatically, in which case, you don't need to change it in
 setup_environment. The setup_environment script is engineered to work with a
 default system setup, so in the general case you will not need to modify it,
-however, you should still read it carefully to figure out of something specific
+however, you should still read it carefully to figure out if something specific
 to your system needs to be changed. After you have edited that file, save it
 and run
-	
+
 source setup_environment <build_type>
-	
+
 replace <build_type> with debug or release. Use release if you need faster
-simulation and debug if you need to run the simulator in gdb.
+simulation and debug if you need to run the simulator in gdb. If nothing is
+specified, release will be used by default.
 
 Now you are ready to build the simulator, just run
-	
+
 make
-	
+
 After make is done, the simulator would be ready to use. To clean the build,
 run
-	
+
 make clean
-	
+
 To build the doxygen generated documentations, run
-	
+
 make docs
-	
+
 to clean the docs run
-	
+
 make cleandocs
 
-The documentation resides at doc/doxygen/html.
+The documentation resides at v3.x/doc/doxygen/html.
 
 Step 3: Run
 ============
 
-Copy gpgpusim.conf and icnt_config_quadro_islip.txt from
-gpgpu-sim/v3.x/configs/QuadroFX5800/ to your application's working directory.
-These files configure the microarchitecture model of GPGPU-Sim to resemble a
-Quadro FX 5800 (GT 200).
+Copy the contents of v3.x/configs/QuadroFX5800/ or v3.x/configs/Fermi/ to your 
+application's working directory.
+These files configure the microarchitecture models to resemble the respective
+GPGPU architectures.
 
-To use ptxplus (native ISA) uncomment the following two lines in
-gpgpusim.config (again, note this requires CUDA toolkit 2.3):
+To use ptxplus (native ISA) change the following options in the configuration
+file to "1" (Note: you need CUDA version 4.0) as follows:
 
-#-gpgpu_ptx_convert_to_ptxplus 1
-#-gpgpu_ptx_save_converted_ptxplus 1
+-gpgpu_ptx_use_cuobjdump 1
+-gpgpu_ptx_convert_to_ptxplus 1
 
 Now To run a CUDA application on the simulator, simply execute
-	
-source setup_environment <built_type>.
-	
-and just launch the executable as you would if it was to run on the hardware.
+
+source setup_environment <build_type>
+
+Use the same <build_type> you used while building the simulator. Then just
+launch the executable as you would if it was to run on the hardware. By
+running "source setup_environment <build_type>" you change your LD_LIBRARY_PATH
+to point to GPGPU-Sim's instead of CUDA or OpenCL runtime so that you do NOT
+need to re-compile your application simply to run it on GPGPU-Sim.
+
 To revert back to running on the hardware, remove GPGPU-Sim from your
 LD_LIBRARY_PATH environment variable.
 
@@ -189,6 +201,59 @@ application.
 If you need to run the set of applications in the NVIDIA CUDA SDK code
 samples then you will need to download, install and build the SDK.
 
-3. Documentation
+3.  (OPTIONAL) Updating GPGPU-Sim (ADVANCED USERS ONLY)
 
-http://gpgpu-sim.ece.ubc.ca/GPGPU-Sim_3.x_Manual
+If you have made modifications to the simulator and wish to incorporate new
+features/bugfixes from subsequent releases the following instructions may help.
+They are meant only as a starting point and only recommended for users
+comfortable with using source control who have experience modifying and
+debugging GPGPU-Sim.
+
+WARNING: Before following the procedure below, back up your modifications to
+GPGPU-Sim. The following procedure may cause you to lose all your changes.  In
+general, merging code changes can require manual intervention and even in the
+case where a merge proceeds automatically it may introduce errors.  If many
+edits have been made the merge process can be a painful manual process.  Hence,
+you will almost certainly want to have a copy of your code as it existed before
+you followed the procedure below in case you need to start over again.  You
+will need to consult the documentation for git in addition to these
+instructions in the case of any complications.
+
+STOP.  BACK UP YOUR CHANGES BEFORE PROCEEDING. YOU HAVE BEEN WARNED. TWICE.
+
+To update GPGPU-Sim you need git to be installed on your system.  Below we
+assume that you ran the following command to get the source code of GPGPU-Sim:
+
+git clone git://dev.ece.ubc.ca/gpgpu-sim
+
+Since running the above command you have made local changes and we have
+published changes to GPGPU-Sim on the above git server. You have looked at the
+changes we made, looking at both the new CHANGES file and probably even the
+source code differences.  You decide you want to incorporate our changes into
+your modified version of GPGPU-Sim.  
+
+Before updating your source code, we recommend you remove any object files:
+
+make clean
+
+Then, run the following command in the root directory of GPGPU-Sim:
+
+git pull
+
+While git is pulling the latest changes, conflicts might arise due to changes
+that you made that conflict with the latest updates. In this case, you need to
+resolved those conflicts manually. You can either edit the conflicting files
+directly using your favorite text editor, or you can use the following command
+to open a graphical merge tool to do the merge:
+
+git mergetool
+
+Now you should test that the merged version "works".  This means following the
+steps for building GPGPU-Sim in the *new* README file (not this version) since
+they may have changed. Assuming the code compiles without errors/warnings the
+next step is to do some regression testing.  At UBC we have an extensive set of
+regression tests we run against our internal development branch when we make
+changes.  In the future we may make this set of regression tests publically
+available. For now, you will want to compile and re-run all of the applications
+you care about before making further changes to identify if any runtime errors
+that occur.

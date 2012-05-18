@@ -49,13 +49,18 @@ void move_warp( warp_inst_t *&dst, warp_inst_t *&src )
 
 void gpgpu_functional_sim_config::reg_options(class OptionParser * opp)
 {
+	option_parser_register(opp, "-gpgpu_ptx_use_cuobjdump", OPT_BOOL,
+                 &m_ptx_use_cuobjdump,
+                 "Use cuobjdump to extract ptx and sass from binaries",
+#if (CUDART_VERSION >= 4000)
+                 "1"
+#else
+                 "0"
+#endif
+                 );
     option_parser_register(opp, "-gpgpu_ptx_convert_to_ptxplus", OPT_BOOL,
                  &m_ptx_convert_to_ptxplus,
-                 "Convert embedded ptx to ptxplus",
-                 "0");
-    option_parser_register(opp, "-gpgpu_ptx_save_converted_ptxplus", OPT_BOOL,
-                 &m_ptx_save_converted_ptxplus,
-                 "Saved converted ptxplus to a file",
+                 "Convert SASS (native ISA) to ptxplus and run ptxplus",
                  "0");
     option_parser_register(opp, "-gpgpu_ptx_force_max_capability", OPT_UINT32,
                  &m_ptx_force_max_capability,
@@ -302,7 +307,7 @@ void warp_inst_t::memory_coalescing_arch_13( bool is_write, mem_access_type acce
 {
     // see the CUDA manual where it discusses coalescing rules before reading this
     unsigned segment_size = 0;
-    unsigned warp_parts = 2;
+    unsigned warp_parts = m_config->mem_warp_parts;
     switch( data_size ) {
     case 1: segment_size = 32; break;
     case 2: segment_size = 64; break;

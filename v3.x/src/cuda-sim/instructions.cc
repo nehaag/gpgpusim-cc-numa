@@ -80,11 +80,12 @@ ptx_reg_t ptx_thread_info::get_reg( const symbol *reg )
       const std::string &name = reg->name();
       unsigned call_uid = m_callstack.back().m_call_uid;
       ptx_reg_t uninit_reg;
-      uninit_reg.u32 = 0xDEADBEEF;
+      uninit_reg.u32 = 0x0;
       set_reg(reg, uninit_reg); // give it a value since we are going to warn the user anyway
       std::string file_loc = get_location();
       if( !unfound_register_warned ) {
-          printf("GPGPU-Sim PTX: WARNING (%s) ** reading undefined register \'%s\' (cuid:%u). Setting to 0XDEADBEEF.\n",
+          printf("GPGPU-Sim PTX: WARNING (%s) ** reading undefined register \'%s\' (cuid:%u). Setting to 0X00000000. This is okay if you are simulating the native ISA"
+        		  "\n",
                  file_loc.c_str(), name.c_str(), call_uid );
           unfound_register_warned = true;
       }
@@ -673,6 +674,77 @@ void abs_impl( const ptx_instruction *pI, ptx_thread_info *thread )
    thread->set_operand_value(dst,d, i_type, thread, pI);
 }
 
+void addp_impl( const ptx_instruction *pI, ptx_thread_info *thread )
+{
+   //PTXPlus add instruction with carry (carry is kept in a predicate) register
+   ptx_reg_t src1_data, src2_data, src3_data, data;
+   int overflow = 0;
+   int carry = 0;
+
+   const operand_info &dst  = pI->dst();  //get operand info of sources and destination
+   const operand_info &src1 = pI->src1(); //use them to determine that they are of type 'register'
+   const operand_info &src2 = pI->src2();
+   const operand_info &src3 = pI->src3();
+
+   unsigned i_type = pI->get_type();
+   src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+   src2_data = thread->get_operand_value(src2, dst, i_type, thread, 1);
+   src3_data = thread->get_operand_value(src3, dst, i_type, thread, 1);
+
+   unsigned rounding_mode = pI->rounding_mode();
+   int orig_rm = fegetround();
+   switch ( rounding_mode ) {
+   case RN_OPTION: break;
+   case RZ_OPTION: fesetround( FE_TOWARDZERO ); break;
+   default: assert(0); break;
+   }
+
+   //performs addition. Sets carry and overflow if needed.
+   //src3_data.pred&0x4 is the carry flag
+   switch ( i_type ) {
+   case S8_TYPE:
+      data.s64 = (src1_data.s64 & 0x0000000FF) + (src2_data.s64 & 0x0000000FF) + (src3_data.pred & 0x4);
+      if(((src1_data.s64 & 0x80)-(src2_data.s64 & 0x80)) == 0) {overflow=((src1_data.s64 & 0x80)-(data.s64 & 0x80))==0?0:1; }
+      carry = (data.u64 & 0x000000100)>>8;
+      break;
+   case S16_TYPE:
+      data.s64 = (src1_data.s64 & 0x00000FFFF) + (src2_data.s64 & 0x00000FFFF) + (src3_data.pred & 0x4);
+      if(((src1_data.s64 & 0x8000)-(src2_data.s64 & 0x8000)) == 0) {overflow=((src1_data.s64 & 0x8000)-(data.s64 & 0x8000))==0?0:1; }
+      carry = (data.u64 & 0x000010000)>>16;
+      break;
+   case S32_TYPE:
+      data.s64 = (src1_data.s64 & 0x0FFFFFFFF) + (src2_data.s64 & 0x0FFFFFFFF) + (src3_data.pred & 0x4);
+      if(((src1_data.s64 & 0x80000000)-(src2_data.s64 & 0x80000000)) == 0) {overflow=((src1_data.s64 & 0x80000000)-(data.s64 & 0x80000000))==0?0:1; }
+      carry = (data.u64 & 0x100000000)>>32;
+      break;
+   case S64_TYPE:
+      data.s64 = src1_data.s64 + src2_data.s64 + (src3_data.pred & 0x4);
+      break;
+   case U8_TYPE:
+      data.u64 = (src1_data.u64 & 0xFF) + (src2_data.u64 & 0xFF) + (src3_data.pred & 0x4);
+      carry = (data.u64 & 0x100)>>8;
+      break;
+   case U16_TYPE:
+      data.u64 = (src1_data.u64 & 0xFFFF) + (src2_data.u64 & 0xFFFF) + (src3_data.pred & 0x4);
+      carry = (data.u64 & 0x10000)>>16;
+      break;
+   case U32_TYPE:
+      data.u64 = (src1_data.u64 & 0xFFFFFFFF) + (src2_data.u64 & 0xFFFFFFFF) + (src3_data.pred & 0x4);
+      carry = (data.u64 & 0x100000000)>>32;
+      break;
+   case U64_TYPE:
+      data.s64 = src1_data.s64 + src2_data.s64 + (src3_data.pred & 0x4);
+      break;
+   case F16_TYPE: assert(0); break;
+   case F32_TYPE: data.f32 = src1_data.f32 + src2_data.f32; break;
+   case F64_TYPE: case FF64_TYPE: data.f64 = src1_data.f64 + src2_data.f64; break;
+   default: assert(0); break;
+   }
+   fesetround( orig_rm );
+
+   thread->set_operand_value(dst, data, i_type, thread, pI, overflow, carry  );
+}
+
 void add_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
 { 
    ptx_reg_t src1_data, src2_data, data;
@@ -818,13 +890,21 @@ void atom_callback( const inst_t* inst, ptx_thread_info* thread )
    const operand_info &src2 = pI->src2();    // b
 
    // Get operand values
-   src1_data = thread->get_operand_value(src1, dst, to_type, thread, 1);      // a
-   src2_data = thread->get_operand_value(src2, dst, to_type, thread, 1);      // b
+   if (dst.get_symbol()->type()){
+	   src1_data = thread->get_operand_value(src1, dst, to_type, thread, 1);      // a
+	   src2_data = thread->get_operand_value(src2, dst, to_type, thread, 1);      // b
+   } else {
+	   //This is the case whent he first argument (dest) is '_'
+	   src1_data = thread->get_operand_value(src1, src1, to_type, thread, 1);      // a
+	   src2_data = thread->get_operand_value(src2, src1, to_type, thread, 1);      // b
+   }
 
    // Copy value pointed to in operand 'a' into register 'd'
    // (i.e. copy src1_data to dst)
    thread->get_global_memory()->read(src1_data.u32,size/8,&data.s64);
-   thread->set_operand_value(dst, data, to_type, thread, pI);                         // Write value into register 'd'
+   if (dst.get_symbol()->type()){
+	   thread->set_operand_value(dst, data, to_type, thread, pI);                         // Write value into register 'd'
+   }
 
    // Get the atomic operation to be performed
    unsigned m_atomic_spec = pI->get_atomic();
@@ -910,12 +990,17 @@ void atom_callback( const inst_t* inst, ptx_thread_info* thread )
             op_result.u32 = MY_CAS_I(data.u32, src2_data.u32, src3_data.u32);
             data_ready = true;
             break;
+         case B64_TYPE:
+         case U64_TYPE:
+            op_result.u64 = MY_CAS_I(data.u64, src2_data.u64, src3_data.u64);
+            data_ready = true;
+            break;
          case S32_TYPE:
             op_result.s32 = MY_CAS_I(data.s32, src2_data.s32, src3_data.s32);
             data_ready = true;
             break;
          default:
-            printf("Execution error: type mismatch (%x) with instruction\natom.CAS only accepts b32\n", to_type);
+            printf("Execution error: type mismatch (%x) with instruction\natom.CAS only accepts b32 and b64\n", to_type);
             assert(0);
             break;
          }
@@ -929,6 +1014,11 @@ void atom_callback( const inst_t* inst, ptx_thread_info* thread )
          case B32_TYPE:
          case U32_TYPE:
             op_result.u32 = MY_EXCH(data.u32, src2_data.u32);
+            data_ready = true;
+            break;
+         case B64_TYPE:
+         case U64_TYPE:
+            op_result.u64 = MY_EXCH(data.u64, src2_data.u64);
             data_ready = true;
             break;
          case S32_TYPE:
@@ -956,8 +1046,16 @@ void atom_callback( const inst_t* inst, ptx_thread_info* thread )
             op_result.s32 = data.s32 + src2_data.s32;
             data_ready = true;
             break;
+         case U64_TYPE: 
+            op_result.u64 = data.u64 + src2_data.u64; 
+            data_ready = true; 
+            break; 
+         case F32_TYPE: 
+            op_result.f32 = data.f32 + src2_data.f32; 
+            data_ready = true; 
+            break; 
          default:
-            printf("Execution error: type mismatch with instruction\natom.ADD only accepts u32 and s32\n");
+            printf("Execution error: type mismatch with instruction\natom.ADD only accepts u32, s32, u64, and f32\n");
             assert(0);
             break;
          }
@@ -1062,7 +1160,12 @@ void atom_impl( const ptx_instruction *pI, ptx_thread_info *thread )
    const operand_info &src1 = pI->src1();
    const operand_info &dst  = pI->dst();
    unsigned i_type = pI->get_type();
-   ptx_reg_t src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+   ptx_reg_t src1_data;
+   if (dst.get_symbol()->type()){
+	   src1_data = thread->get_operand_value(src1, dst, i_type, thread, 1);
+   } else {
+	   src1_data = thread->get_operand_value(src1, src1, i_type, thread, 1);
+   }
 
    memory_space_t space = pI->get_space();
 
@@ -1926,10 +2029,10 @@ void ex2_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 }
 
 void exit_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
-{    
+{
+   thread->set_done();
    thread->exitCore();
    thread->registerExit();
-   thread->set_done();
 }
 
 void mad_def( const ptx_instruction *pI, ptx_thread_info *thread );
@@ -2737,9 +2840,9 @@ void ret_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 { 
    bool empty = thread->callstack_pop();
    if( empty ) {
+   thread->set_done();
    thread->exitCore();
    thread->registerExit();
-   thread->set_done();
    }
 }
 
@@ -2748,9 +2851,9 @@ void retp_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 {
    bool empty = thread->callstack_pop_plus();
    if( empty ) {
+   thread->set_done();
    thread->exitCore();
    thread->registerExit();
-   thread->set_done();
    }
 }
 

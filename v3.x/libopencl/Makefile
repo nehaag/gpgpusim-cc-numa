@@ -60,7 +60,7 @@
 # Vancouver, BC V6T 1Z4
 
 
-CUDART_VERSION:=$(shell nvcc --version | awk '/release/ {print $$5;}' | sed 's/,//' | sed 's/\./ /' | awk '{printf("%02u%02u", 10*int($$1), 10*$$2);}')
+CUDART_VERSION:=$(shell $(CUDA_INSTALL_PATH)/bin/nvcc --version | awk '/release/ {print $$5;}' | sed 's/,//' | sed 's/\./ /' | awk '{printf("%02u%02u", 10*int($$1), 10*$$2);}')
 
 ifeq ($(OPENGL_SUPPORT),1) 
 	GL = -DOPENGL_SUPPORT
@@ -144,26 +144,18 @@ clean:
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/stdio_lim.h
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/sys_errlist.h
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/string.h
+../build/debug/libopencl/opencl_runtime_api.o: /usr/include/xlocale.h
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/assert.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/abstract_hardware_model.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/cuda-sim.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/abstract_hardware_model.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx_loader.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx_ir.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx.tab.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx_sim.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/tr1_hash_map.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/opcodes.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/opcodes.def
-../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/memory.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/option_parser.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpusim_entrypoint.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/abstract_hardware_model.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/gpu-sim.h
-../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/addrdec.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/shader.h
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/math.h
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/huge_val.h
+../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/huge_valf.h
+../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/huge_vall.h
+../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/inf.h
+../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/nan.h
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/mathdef.h
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/mathcalls.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx.tab.h
@@ -180,10 +172,21 @@ clean:
 ../build/debug/libopencl/opencl_runtime_api.o: /usr/include/getopt.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/scoreboard.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/mem_fetch.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/addrdec.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/option_parser.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/mem_fetch_status.tup
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/stats.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/gpu-cache.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/tr1_hash_map.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx_sim.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/opcodes.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/opcodes.def
+../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/memory.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx_loader.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx_ir.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/cuda-sim/ptx.tab.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpusim_entrypoint.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/abstract_hardware_model.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/gpu-sim.h
 ../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/shader.h
-../build/debug/libopencl/opencl_runtime_api.o: /usr/include/CL/cl.h
-../build/debug/libopencl/opencl_runtime_api.o: /usr/include/CL/cl_platform.h
-../build/debug/libopencl/opencl_runtime_api.o: /usr/include/stdint.h
-../build/debug/libopencl/opencl_runtime_api.o: /usr/include/bits/wchar.h
+../build/debug/libopencl/opencl_runtime_api.o: ../src/gpgpu-sim/shader.h

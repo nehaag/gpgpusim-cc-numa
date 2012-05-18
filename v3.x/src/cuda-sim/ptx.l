@@ -27,6 +27,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+%option nounput
 %option noyywrap
 %option yylineno
 %option prefix="ptx_"
@@ -53,6 +54,7 @@ int ptx_error( const char *s );
 
 abs	TC; ptx_lval.int_value = ABS_OP; return OPCODE;
 add	TC; ptx_lval.int_value = ADD_OP; return OPCODE;
+addp	TC; ptx_lval.int_value = ADDP_OP; return OPCODE;
 addc    TC; ptx_lval.int_value = ADDC_OP; return OPCODE;
 and	TC; ptx_lval.int_value = AND_OP; return OPCODE;
 andn	TC; ptx_lval.int_value = ANDN_OP; return OPCODE;
@@ -174,6 +176,7 @@ breakaddr  TC; ptx_lval.int_value = BREAKADDR_OP; return OPCODE;
 \.union  TC; return UNION_DIRECTIVE; /* not in PTX 2.1 */
 \.version TC; return VERSION_DIRECTIVE;
 \.visible TC; return VISIBLE_DIRECTIVE;
+\.address_size TC; return ADDRESS_SIZE_DIRECTIVE;
 
 \.constptr TC; return CONSTPTR_DIRECTIVE; /* Ptx plus directive for pointer to constant memory */
 
@@ -381,8 +384,9 @@ breakaddr  TC; ptx_lval.int_value = BREAKADDR_OP; return OPCODE;
 [^\"]*	TC; ptx_lval.string_value = strdup(yytext); 
 }
 
-<INITIAL,NOT_OPCODE>.  TC; ptx_error((const char*)NULL);
+<*>\t@@DWARF.*\n
 
+<INITIAL,NOT_OPCODE>.  TC; ptx_error((const char*)NULL);
 %%
 
 extern int g_error_detected;

@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2011, Jimmy Kwa,
+// Copyright (c) 2009-2012, Jimmy Kwa, Andrew Boktor
 // The University of British Columbia
 // All rights reserved.
 //
@@ -25,23 +25,29 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#ifndef _CUOBJDUMPINSTLIST_H_
+#define _CUOBJDUMPINSTLIST_H_
 
-#include "decudaInst.h"
+// External includes
 #include <list>
-#include <string>
-#include <cstring>
-#include <stdio.h>
-#include <iostream>
-#include <sstream>
-#include <stdlib.h>
-#include <regex.hpp>
 #include <map>
+#include <string>
+
+// Local includes
+#include "cuobjdumpInst.h"
 
 // Used for entry specific constant memory segments (c1)
 struct constMemory
 {
 	int index;
 	int entryIndex;
+	const char* type;
+	std::list<std::string> m_constMemory;
+};
+
+struct constMemory2
+{
+	const char* kernel;
 	const char* type;
 	std::list<std::string> m_constMemory;
 };
@@ -64,13 +70,11 @@ struct globalMemory
 	std::string name;
 };
 
-
-
-struct decudaEntry
+struct cuobjdumpEntry
 {
 	//char* m_entryName;
 	std::string m_entryName;
-	std::list<decudaInst> m_instList;	// List of decuda instructions
+	std::list<cuobjdumpInst> m_instList;	// List of cuobjdump instructions
 
 	// Register list
 	int m_largestRegIndex;
@@ -88,90 +92,81 @@ struct decudaEntry
 	std::list<std::string> m_labelList;
 
    // Histogram for operation per cycle count
-   std::map<std::string, int> m_opPerCycleHistogram; 
+   std::map<std::string, int> m_opPerCycleHistogram;
 };
 
-
-
-class decudaInstList
+// Used for local memory segments
+struct localMemory
 {
+	int value;
+	int entryIndex;
+};
 
+class cuobjdumpInstList
+{
 protected:
-	// List of decuda entries
-	std::list<decudaEntry> m_entryList;
-
-	// Const memory list
+	std::list<cuobjdumpEntry> m_entryList;
 	std::list<constMemory> m_constMemoryList;
-
-	// Const memory pointers list
-	std::list<constMemoryPtr> m_constMemoryPtrList;
-
-	// Global memory list
+	std::list<constMemory2> m_constMemoryList2;
 	std::list<globalMemory> m_globalMemoryList;
 
-	// Tex list
+	int m_kernelCount;
+	std::map<std::string,int>kernelcmemmap;
+	std::map<std::string,int>kernellmemmap;
+	std::list<localMemory> m_localMemoryList;
 	std::list<std::string>  m_realTexList;	// Stores the real names of tex variables
+	std::list<constMemoryPtr> m_constMemoryPtrList;
 
+	// Functions:
+	std::string parseCuobjdumpPredicate(std::string pred);
+	void printMemory();// Print const memory directives
 	// Print register names
-	void printRegNames(decudaEntry entry);
-	void printOutOfBoundRegisters(decudaEntry entry);
+	void printRegNames(cuobjdumpEntry entry);
+	void printOutOfBoundRegisters(cuobjdumpEntry entry);
 
 	// Print predicate names
-	void printPredNames(decudaEntry entry);
-
-	// Print const memory directives
-	void printMemory();
-
-	// Increment register or predicate offsets
-	std::string parseRegister(std::string reg, bool lo=false, int vectorFlag=0);
-	std::string parsePredicate(std::string pred);
-
+	void printPredNames(cuobjdumpEntry entry);
 public:
-	//constructor
-	decudaInstList();
+	//Constructor
+	cuobjdumpInstList();
 
-	//accessors
-	decudaInst getListEnd();
+	cuobjdumpInst getListEnd();
 
-	//mutator
+	// Functions used by the parser
 	int addEntry(std::string entryName); // creates a new entry
-	void setLastEntryName(std::string entryName); // sets name of last entry
-	void setLastEntryLMemSize(int lMemSize); // sets the local memory size of last entry
-	bool findEntry(std::string entryName, decudaEntry& entry); // find and return entry
-	
-
-	int add(decudaInst* newInst); //add DecudaInst to list
-
-	void addRegister(std::string reg, bool lo=false); //add register
-	void addPredicate(std::string pred); //add predicate
-	void addDoublePredReg(std::string pred, std::string reg, bool lo=false); // add pred|reg double operand
-
-	void addTex(std::string tex);	// add tex operand
-
-	void addVector(char* vector, int vectorSize); // add vector operand
-
-	void addMemoryOperand(std::string mem, int memType); // add memory operand
-
-
-	// Parsing constant memory segments list
-	void addEntryConstMemory(int index); // add entry specific const memory
+	int add(cuobjdumpInst* newInst); //add cuobjdumpInst to list
 	void addConstMemory(int index); // add global const memory
-	void setConstMemoryType(const char* type); // set type of constant memory
-	void addConstMemoryValue(std::string constMemoryValue); // add const memory
+	void addTex(std::string tex);	// add tex operand
+	bool findEntry(std::string entryName, cuobjdumpEntry& entry); // find and return entry
 
+	void setKernelCount(int k);
+	void readConstMemoryFromElfFile(std::string elf);
+	void setLastEntryName(std::string entryName); // sets name of last entry
+	void addCuobjdumpRegister(std::string reg, bool lo=false); //add register
+	void addCuobjdumpMemoryOperand(std::string mem, int memType);
+	std::string parseCuobjdumpRegister(std::string reg, bool lo, int vectorFlag);
+	void addCuobjdumpDoublePredReg(std::string pred, std::string reg, bool lo=false);
+
+	void addCubojdumpLabel(std::string label);
+
+	void addEntryConstMemory(int index, int entryIndex);
+	void addEntryConstMemory2(char* kernel);
+	void setConstMemoryType(const char* type);
+	void setConstMemoryType2(const char* type); // set type of constant memory
+	void addConstMemoryValue(std::string constMemoryValue); // add const memory
+	void addConstMemoryValue2(std::string constMemoryValue); // add const memory
+	void addConstMemoryPtr(const char* bytes, const char* offset, const char* name);
+	void setConstMemoryMap(const char* kernelname, int index);
+	void setLocalMemoryMap(const char* kernelname, int index);
+	void reverseConstMemory();
+	void addEntryLocalMemory(int value, int entryIndex);
+	void readOtherConstMemoryFromBinFile(std::string binString); // read in constant memory from bin file
 	std::list<std::string> getRealTexList(); // get the list of real tex names
 	void setRealTexList(std::list<std::string> realTexList); // set the list of real tex names
-
-	void readConstMemoryFromBinFile(std::string binString); // read in constant memory from bin file
-	void readGlobalMemoryFromBinFile(std::string binString); // read in global memory from bin file
-
-	//print representation
 	void printHeaderInstList();
-	void printDecudaInstList();
-	void printNewPtxList(decudaInstList* headerInfo);
-
-
-	// debug helper methods
-	void printEntryNames();
-
+	void printCuobjdumpLocalMemory();
+	void printCuobjdumpInstList();
+	void printCuobjdumpPtxPlusList(cuobjdumpInstList* headerInfo);
 };
+
+#endif //_CUOBJDUMPINSTLIST_H_

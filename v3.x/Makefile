@@ -60,8 +60,8 @@ else ifeq ($(NVOPENCL_INCDIR),)
 else
 	TARGETS += $(SIM_LIB_DIR)/libOpenCL.so
 endif
-	TARGETS += decuda_to_ptxplus/decuda_to_ptxplus
-	TARGETS += decuda
+#	TARGETS += decuda_to_ptxplus/decuda_to_ptxplus
+	TARGETS += cuobjdump_to_ptxplus/cuobjdump_to_ptxplus
 
 gpgpusim: makedirs $(TARGETS)
 
@@ -75,7 +75,7 @@ $(SIM_LIB_DIR)/libcudart.so: $(LIBS) cudalib
 			$(SIM_OBJ_FILES_DIR)/cuda-sim/decuda_pred_table/*.o \
 			$(SIM_OBJ_FILES_DIR)/gpgpu-sim/*.o \
 			$(SIM_OBJ_FILES_DIR)/intersim/*.o \
-            $(SIM_OBJ_FILES_DIR)/*.o -lm -lz -lGL -pthread \
+			$(SIM_OBJ_FILES_DIR)/*.o -lm -lz -lGL -pthread \
 			-o $(SIM_LIB_DIR)/libcudart.so
 	if [ ! -f $(SIM_LIB_DIR)/libcudart.so.2 ]; then ln -s libcudart.so $(SIM_LIB_DIR)/libcudart.so.2; fi
 	if [ ! -f $(SIM_LIB_DIR)/libcudart.so.3 ]; then ln -s libcudart.so $(SIM_LIB_DIR)/libcudart.so.3; fi
@@ -130,8 +130,10 @@ decuda_to_ptxplus/decuda_to_ptxplus:
 	$(MAKE) -C ./decuda_to_ptxplus/ depend 
 	$(MAKE) -C ./decuda_to_ptxplus/
 
-decuda:
-	./getDecuda/getDecuda.sh
+.PHONY: cuobjdump_to_ptxplus/cuobjdump_to_ptxplus
+cuobjdump_to_ptxplus/cuobjdump_to_ptxplus:
+	$(MAKE) -C ./cuobjdump_to_ptxplus/ depend
+	$(MAKE) -C ./cuobjdump_to_ptxplus/
 
 makedirs:
 	if [ ! -d $(SIM_LIB_DIR) ]; then mkdir -p $(SIM_LIB_DIR); fi;
@@ -164,6 +166,7 @@ endif
 	$(MAKE) clean -C ./src/cuda-sim/
 	$(MAKE) clean -C ./src/gpgpu-sim/
 	$(MAKE) clean -C ./src/
-	$(MAKE) clean -C ./decuda_to_ptxplus/
+#	$(MAKE) clean -C ./decuda_to_ptxplus/
+	$(MAKE) clean -C ./cuobjdump_to_ptxplus/
 	rm -rf $(SIM_LIB_DIR)
 	rm -rf $(SIM_OBJ_FILES_DIR)

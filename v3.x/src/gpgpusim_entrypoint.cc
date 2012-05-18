@@ -68,10 +68,12 @@ void *gpgpu_sim_thread_sequential(void*)
       if( g_the_gpu->get_more_cta_left() ) {
           done = false;
           g_the_gpu->init();
-          while( g_the_gpu->active() )
+          while( g_the_gpu->active() ) {
               g_the_gpu->cycle();
+              g_the_gpu->deadlock_check();
+          }
           g_the_gpu->print_stats();
-          g_the_gpu->deadlock_check();
+          g_the_gpu->update_stats();
           print_simulation_time();
       }
       sem_post(&g_sim_signal_finish);
@@ -109,27 +111,30 @@ void *gpgpu_sim_thread_concurrent(void*)
         do {
             // check if a kernel has completed
             unsigned grid_uid = g_the_gpu->finished_kernel();
-            if( grid_uid )
+            if( grid_uid ){
                 g_stream_manager->register_finished_kernel(grid_uid);
-             
-            // launch operation on device if one is pending and can be run
-            stream_operation op = g_stream_manager->front();
-            op.do_operation(g_the_gpu);
+				g_the_gpu->print_stats();
+            }
+
+			// launch operation on device if one is pending and can be run
+			stream_operation op = g_stream_manager->front();
+			op.do_operation(g_the_gpu);
     
             // simulate a clock cycle on the GPU 
             if( g_the_gpu->active() ) { 
                 g_the_gpu->cycle();
                 sim_cycles = true;
+                g_the_gpu->deadlock_check();
             }
-            g_the_gpu->deadlock_check();
             active = g_the_gpu->active() || !g_stream_manager->empty();
         } while( active );
         if(g_debug_execution >= 3) {
            printf("GPGPU-Sim: ** STOP simulation thread (no work) **\n");
            fflush(stdout);
         }
-        if( sim_cycles ) 
-            g_the_gpu->print_stats();
+		if(sim_cycles) {
+			g_the_gpu->update_stats();
+		}
         pthread_mutex_lock(&g_sim_lock);
         g_sim_active = false;
         pthread_mutex_unlock(&g_sim_lock);
@@ -182,6 +187,7 @@ gpgpu_sim *gpgpu_ptx_sim_init_perf()
    icnt_reg_options(opp);
    g_the_gpu_config.reg_options(opp); // register GPU microrachitecture options
    ptx_reg_options(opp);
+   ptx_opcocde_latency_options(opp);
    option_parser_cmdline(opp, sg_argc, sg_argv); // parse configuration options
    fprintf(stdout, "GPGPU-Sim: Configuration options:\n\n");
    option_parser_print(opp, stdout);
@@ -238,15 +244,8 @@ int gpgpu_opencl_ptx_sim_main_perf( kernel_info_t *grid )
    return 0;
 }
 
-//! Functional simulation of OpenCL
-/*!
- * This function call the CUDA PTX functional simulator
- */
 int gpgpu_opencl_ptx_sim_main_func( kernel_info_t *grid )
 {
-    //calling the CUDA PTX simulator, sending the kernel by reference and a flag set to true,
-    //the flag used by the function to distinguish OpenCL calls from the CUDA simulation calls which
-    //it is needed by the called function to not register the exit the exit of OpenCL kernel as it doesn't register entering in the first place as the CUDA kernels does
-   gpgpu_cuda_ptx_sim_main_func( *grid, true );
-   return 0;
+   printf("GPGPU-Sim PTX API: OpenCL functional-only simulation not yet implemented (use performance simulation)\n");
+   exit(1);
 }
