@@ -38,16 +38,25 @@ extern void output(const char * text);
 extern void output(const std::string text);
 
 //Constructor
-cuobjdumpInst::cuobjdumpInst()
-{
+cuobjdumpInst::cuobjdumpInst() {
 	//initilize everything to empty
 	m_label = "";
-	m_predicate = new stringList();
+	m_predicate = new std::list<std::string>();
 	m_base = "";
-	m_baseModifiers = new stringList();
-	m_typeModifiers = new stringList();
-	m_operands = new stringList();
-	m_predicateModifiers = new stringList();
+	m_baseModifiers = new std::list<std::string>();
+	m_typeModifiers = new std::list<std::string>();
+	m_operands = new std::list<std::string>();
+	m_predicateModifiers = new std::list<std::string>();
+}
+
+cuobjdumpInst::~cuobjdumpInst() {
+	/*
+	delete m_predicate;
+	delete m_baseModifiers;
+	delete m_typeModifiers;
+	delete m_operands;
+	delete m_predicateModifiers;
+	*/
 }
 
 void cuobjdumpInst::printCuobjdumpInst()
@@ -69,33 +78,40 @@ void cuobjdumpInst::printCuobjdumpInst()
 	std::cout << "\n\n";*/
 
 	std::cout << m_base << " ";
-	m_baseModifiers->printStringList();
+	cuobjdumpInst::printStringList(m_baseModifiers);
 	std::cout << " ";
-	m_typeModifiers->printStringList();
+	cuobjdumpInst::printStringList(m_typeModifiers);
 	std::cout << " ";
-	m_operands->printStringList();
+	cuobjdumpInst::printStringList(m_operands);
 	std::cout << "\n";
+}
+
+//static
+void cuobjdumpInst::printStringList(std::list<std::string>* strlist) {
+	for (	std::list<std::string>::iterator iter = strlist->begin();
+			iter != strlist->end();
+			iter++) {
+		std::cout << *iter << " ";
+	}
 }
 
 // Just prints the base and operands
 void cuobjdumpInst::printHeaderPtx()
 {
-	output(m_base); output(" ");
-
-	stringListPiece* currentPiece;
-
-	currentPiece = m_baseModifiers->getListStart();
-	for(int i=0; (i<m_baseModifiers->getSize())&&(currentPiece!=NULL); i++)
-	{
-		output(" "); output(currentPiece->stringText);
-		currentPiece = currentPiece->nextString;
+	output(m_base);
+	output(" ");
+	for (	std::list<std::string>::iterator basemod = m_baseModifiers->begin();
+			basemod != m_baseModifiers->end();
+			basemod++) {
+		output(" ");
+		output(*basemod);
 	}
 
-	currentPiece = m_operands->getListStart();
-	for(int i=0; (i<m_operands->getSize())&&(currentPiece!=NULL); i++)
-	{
-		output(" "); output(currentPiece->stringText);
-		currentPiece = currentPiece->nextString;
+	for (	std::list<std::string>::iterator operand = m_operands->begin();
+			operand != m_operands->end();
+			operand++) {
+		output(" ");
+		output(*operand);
 	}
 }
 
@@ -105,9 +121,9 @@ const char* cuobjdumpInst::getBase()
 	return m_base;
 }
 
-stringList* cuobjdumpInst::getTypeModifiers()
+std::list<std::string>* cuobjdumpInst::getTypeModifiers()
 {
-        return m_typeModifiers;
+	return m_typeModifiers;
 }
 
 //print out .version and .target header lines
@@ -115,31 +131,33 @@ bool cuobjdumpInst::printHeaderInst()
 {
 	if(strcmp(m_base, ".version")==0)
 	{
-		output(m_base); output(" ");
+		output(m_base);
+		output(" ");
 
-		stringListPiece* currentPiece = m_operands->getListStart();
-		output(currentPiece->stringText);
-		currentPiece = currentPiece->nextString;
+		std::list<std::string>::iterator operand = m_operands->begin();
+		output(*operand);
+		operand ++;
 
-		if(currentPiece!=NULL)
-		{
-			output("."); output(currentPiece->stringText);
+		if(operand != m_operands->end()) {
+			output(".");
+			output(*operand);
 		}
       output("+");
 		output("\n");
 	}
 	else if(strcmp(m_base, ".target")==0)
 	{
-		output(m_base); output(" ");
+		output(m_base);
+		output(" ");
 
-		stringListPiece* currentPiece = m_operands->getListStart();
-		output(currentPiece->stringText);
-		currentPiece = currentPiece->nextString;
+		std::list<std::string>::iterator operand = m_operands->begin();
+		output(*operand);
+		operand ++;
 
-		while(currentPiece!=NULL)
-		{
-			output(", "); output(currentPiece->stringText);
-			currentPiece = currentPiece->nextString;
+		while(operand != m_operands->end()) {
+			output(", ");
+			output(*operand);
+			operand++;
 		}
 		output("\n");
 	}
@@ -147,27 +165,25 @@ bool cuobjdumpInst::printHeaderInst()
 	{
 		output(m_base); output(" ");
 
-		stringListPiece* currentPiece;
+		std::list<std::string>::iterator curr = m_baseModifiers->begin();
+		output(*curr);
+		output(" ");
+		curr++;
 
-
-		currentPiece = m_baseModifiers->getListStart();
-		output(currentPiece->stringText); output(" ");
-		currentPiece = currentPiece->nextString;
-
-		while(currentPiece!=NULL)
+		while(curr != m_baseModifiers->end())
 		{
-			output(" "); output(currentPiece->stringText);
-			currentPiece = currentPiece->nextString;
+			output(" ");
+			output(*curr);
 		}
 
-		currentPiece = m_operands->getListStart();
-		output(currentPiece->stringText);
-		currentPiece = currentPiece->nextString;
+		std::list<std::string>::iterator operand = m_operands->begin();
+		output(*operand);
+		operand++;
 
-		while(currentPiece!=NULL)
-		{
-			output(" "); output(currentPiece->stringText);
-			currentPiece = currentPiece->nextString;
+		while(operand != m_operands->end()) {
+			output(", ");
+			output(*operand);
+			operand++;
 		}
 		output(";\n");
 	}
@@ -185,42 +201,32 @@ void cuobjdumpInst::setBase(const char* setBaseValue)
 
 void cuobjdumpInst::addBaseModifier(const char* addBaseMod)
 {
-	stringListPiece* tempPiece = new stringListPiece;
-	tempPiece->stringText = addBaseMod;
-
-	m_baseModifiers->add(tempPiece);
+	m_baseModifiers->push_back(addBaseMod);
 }
 
 void cuobjdumpInst::addTypeModifier(const char* addTypeMod)
 {
-	stringListPiece* tempPiece = new stringListPiece;
-	tempPiece->stringText = addTypeMod;
-
-	m_typeModifiers->add(tempPiece);
+	//We cannot have more than two modifiers, replace the last
+	//This will be the case if we have memory operand modifiers
+	if (m_typeModifiers->size() == 2){
+		m_typeModifiers->pop_back();
+	}
+	m_typeModifiers->push_back(addTypeMod);
 }
 
 void cuobjdumpInst::addOperand(const char* addOp)
 {
-	stringListPiece* tempPiece = new stringListPiece;
-	tempPiece->stringText = addOp;
-
-	m_operands->add(tempPiece);
+	m_operands->push_back(addOp);
 }
 
 void cuobjdumpInst::setPredicate(const char* setPredicateValue)
 {
-	stringListPiece* tempPiece = new stringListPiece;
-	tempPiece->stringText = setPredicateValue;
-
-	m_predicate->add(tempPiece);
+	m_predicate->push_back(setPredicateValue);
 }
 
 void cuobjdumpInst::addPredicateModifier(const char* addPredicateMod)
 {
-	stringListPiece* tempPiece = new stringListPiece;
-	tempPiece->stringText = addPredicateMod;
-
-	m_predicateModifiers->add(tempPiece);
+	m_predicateModifiers->push_back(addPredicateMod);
 }
 
 void cuobjdumpInst::setLabel(const char* setLabelValue)
@@ -254,44 +260,29 @@ void cuobjdumpInst::printCuobjdumpLabel(std::list<std::string> labelList)
 
 void cuobjdumpInst::printCuobjdumpPredicate()
 {
-	stringListPiece* currentPiece = m_predicate->getListStart();
-	if(currentPiece!=NULL)
+	std::list<std::string>::iterator pred = m_predicate->begin();
+	if(pred != m_predicate->end())
 	{
 		output("@$p");
-		char modString[2];
-		modString[0]=currentPiece->stringText[1];
-		modString[1]='\0';
-		output(modString);
+		output((*pred).substr(1,1));
+		for (	std::list<std::string>::iterator predmod = m_predicateModifiers->begin();
+				predmod != m_predicateModifiers->end();
+				predmod++) {
+			std::string modString3 = *predmod;
 
-		stringListPiece* currentPiece2 = m_predicateModifiers->getListStart();
-		for(int i=0; (i<m_predicateModifiers->getSize())&&(currentPiece2!=NULL); i++)
-		{
-			const char* modString2 = currentPiece2->stringText;
-			char* modString3 = new char[strlen(currentPiece2->stringText)+1];
-
-			for(unsigned i=0; i<strlen(modString2); i++)
+			for(unsigned i=0; i<modString3.length(); i++)
 			{
-				if(modString2[i] >= 'A' && modString2[i] <= 'Z')
-					modString3[i] = modString2[i] + 32;
-				else
-					modString3[i] = modString2[i];
+				modString3[i] = tolower(modString3[i]);
 			}
-			modString3[strlen(modString2)]='\0';
-			if( strcmp(modString3, ".not_sign")==0)
-			{
+			if(modString3 ==".not_sign") {
 				output(".nsf");
-			} else if( strcmp(modString3, ".sign")==0)
-			{
+			} else if(modString3 == ".sign") {
 				output(".sf");
-			} else if( strcmp(modString3, ".carry")==0)
-			{
+			} else if(modString3 == ".carry") {
 				output(".cf");
-			}
-			else
-			{
+			} else {
 				output(modString3);
 			}
-			currentPiece = currentPiece2->nextString;
 		}
 		output(" ");
 	}
@@ -299,143 +290,135 @@ void cuobjdumpInst::printCuobjdumpPredicate()
 
 void cuobjdumpInst::printCuobjdumpTypeModifiers()
 {
-	stringListPiece* currentPiece = m_typeModifiers->getListStart();
-	for(int i=0; (i<m_typeModifiers->getSize())&&(currentPiece!=NULL); i++)
-	{
-		const char* modString = currentPiece->stringText;
-		if( strcmp(modString, ".F16")==0 )
+	for (	std::list<std::string>::iterator typemod = m_typeModifiers->begin();
+			typemod != m_typeModifiers->end();
+			typemod++) {
+		if (*typemod ==  ".F16")
 			output(".f16");
-		else if( strcmp(modString, ".F32")==0 )
+		else if(*typemod == ".F32")
 			output(".f32");
-		else if( strcmp(modString, ".F64")==0 ){
+		else if(*typemod == ".F64"){
 			if(		strcmp(m_base, "F2I") == 0||
 					strcmp(m_base, "F2F") == 0)
 				output(".f64");
 			else
 				output(".ff64");
 		}
-		else if( strcmp(modString, ".S8")==0 )
+		else if(*typemod == ".S8")
 			output(".s8");
-		else if( strcmp(modString, ".S16")==0 )
+		else if(*typemod == ".S16")
 			output(".s16");
-		else if( strcmp(modString, ".S32")==0 )
+		else if(*typemod == ".S32")
 			output(".s32");
-		else if( strcmp(modString, ".S64")==0 )
+		else if(*typemod == ".S64")
 			output(".bb64"); //TODO: might have to change to .ss64 in the future.
-		else if( strcmp(modString, ".S128")==0 )
+		else if(*typemod == ".S128")
 			output(".bb128"); //TODO: might have to change to .ss64 in the future.
-		else if( strcmp(modString, ".U8")==0 )
+		else if(*typemod == ".U8")
 			output(".u8");
-		else if( strcmp(modString, ".U16")==0 )
+		else if(*typemod == ".U16")
 			output(".u16");
-		else if( strcmp(modString, ".U32")==0 )
+		else if(*typemod == ".U32")
 			output(".u32");
-		else if( strcmp(modString, ".U64")==0 )
+		else if(*typemod == ".U64")
 			output(".bb64"); //TODO: might have to change to .ss64 in the future.
-		else if( strcmp(modString, ".HI")==0 )
+		else if(*typemod == ".HI")
 			output(".hi");
 		else
 		{
 			printf("Unknown Type: ");
-			printf(modString);
+			printf((*typemod).c_str());
 			printf("\n");
-			output("Unknown Type: "); output(modString);
+			output("Unknown Type: ");
+			output(*typemod);
 			assert(0);
 		}
-
-		currentPiece = currentPiece->nextString;
 	}
 }
 
 void cuobjdumpInst::printCuobjdumpBaseModifiers()
 {
-	stringListPiece* currentPiece = m_baseModifiers->getListStart();
-	for(int i=0; (i<m_baseModifiers->getSize())&&(currentPiece!=NULL); i++)
+	for (	std::list<std::string>::iterator basemod = m_baseModifiers->begin();
+			basemod != m_baseModifiers->end();
+			basemod++)
 	{
-		const char* modString = currentPiece->stringText;
-		if( strcmp(modString, "EQ")==0 )
+		if( *basemod ==  "EQ")
 			output(".eq");
-		else if( strcmp(modString, "EQU")==0 )
+		else if( *basemod == "EQU")
 			output(".equ");
-		else if( strcmp(modString, "GE")==0 )
+		else if( *basemod == "GE")
 			output(".ge");
-		else if( strcmp(modString, "GEU")==0 )
+		else if( *basemod == "GEU")
 			output(".geu");
-		else if( strcmp(modString, "GT")==0 )
+		else if( *basemod == "GT")
 			output(".gt");
-		else if( strcmp(modString, "GTU")==0 )
+		else if( *basemod == "GTU")
 			output(".gtu");
-		else if( strcmp(modString, "LE")==0 )
+		else if( *basemod == "LE")
 			output(".le");
-		else if( strcmp(modString, "LEU")==0 )
+		else if( *basemod == "LEU")
 			output(".leu");
-		else if( strcmp(modString, "LT")==0 )
+		else if( *basemod == "LT")
 			output(".lt");
-		else if( strcmp(modString, "LTU")==0 )
+		else if( *basemod == "LTU")
 			output(".ltu");
-		else if( strcmp(modString, "NE")==0 )
+		else if( *basemod == "NE")
 			output(".ne");
-		else if( strcmp(modString, "NEU")==0 )
+		else if( *basemod == "NEU")
 			output(".neu");
-		else if( strcmp(modString, ".abs")==0 )
+		else if( *basemod == ".abs")
 		{
 			if((strcmp(m_base, "F2F")!=0) && (strcmp(m_base, "I2I")!=0))
 			{
-				output(modString);
+				output(*basemod);
 			}
 		}
-		else if(	strcmp(modString, "ex2")==0 ||
-					strcmp(modString, ".exit")==0 ||
-					strcmp(modString, "sin")==0 ||
-					strcmp(modString, "cos")==0 ||
-					strcmp(modString, ".rz")==0 ||
-					strcmp(modString, ".rp")==0 ||
-					strcmp(modString, ".rm")==0 ||
-					strcmp(modString, ".any")==0 ||
-					strcmp(modString, ".all")==0 )
-				output(modString);
-		else if( strcmp(modString, ".bext")==0 )
+		else if(	(*basemod == "ex2") ||
+					(*basemod == ".exit") ||
+					(*basemod == "sin") ||
+					(*basemod == "cos") ||
+					(*basemod == ".rz") ||
+					(*basemod == ".rp") ||
+					(*basemod == ".rm") ||
+					(*basemod == ".any") ||
+					(*basemod == ".all") )
+				output(*basemod);
+		else if( *basemod == ".bext")
 		{
 			//".bext" is a modifier that indicated u8 to u16 type conversion, I think
 		}
-		else if( strcmp(modString, ".s")==0 )
+		else if( *basemod == ".s")
 		{
 			//".s" is the same as ".join" in cuobjdump.
 		}
-		else if( strcmp(modString, ".sfu")==0 )
+		else if( *basemod == ".sfu")
 		{
 			//".sfu" is an unknown base modifier, TODO: find out what it is
 		}
-		else if( strcmp(modString, ".x")==0 )
+		else if( *basemod == ".x")
 		{
 			//".x" is an unknown base modifier, TODO: find out what it is
-			output(modString);
+			output(*basemod);
 		}
-		else if( strcmp(modString, ".e")==0 )
+		else if( *basemod == ".e")
 		{
 			//".e" is an unknown base modifier, TODO: find out what it is
-			output(modString);
+			output(*basemod);
 		}
-		else if( strcmp(modString, ".ir")==0 )
+		else if( *basemod == ".ir")
 		{
 			//".ir" is an unknown base modifier, TODO: find out what it is
-			output(modString);
+			output(*basemod);
 		}
-		else if(strcmp(modString, "IADD")==0 ||
-				strcmp(modString, "IMIN")==0 ||
-				strcmp(modString, "IMAX")==0
-				//strcmp(modString, "INC")==0 ||
-				//strcmp(modString, "DEC")==0 ||
-				//strcmp(modString, "IAND")==0 ||
-				//strcmp(modString, "IOR")==0 ||
-				//strcmp(modString, "IXOR")==0
-				)
+		else if((*basemod == "IADD") ||
+				(*basemod == "IMIN") ||
+				(*basemod == "IMAX"))
 		{
 			/*
 			 * This is the case of a GRED or GATOM operation
 			 */
 			output(".");
-			std::string modstr = modString;
+			std::string modstr = *basemod;
 			modstr = modstr.substr(1);
 			for (unsigned i=0; i<modstr.length(); i++){
 				modstr[i] = tolower(modstr[i]);
@@ -445,14 +428,12 @@ void cuobjdumpInst::printCuobjdumpBaseModifiers()
 		else
 		{
 			printf("Unknown Base Mod: ");
-			printf(modString);
+			printf((*basemod).c_str());
 			printf("\n");
 			output("Unknown Base Mod: ");
-			output(modString);
+			output(*basemod);
 			assert(0);
 		}
-
-		currentPiece = currentPiece->nextString;
 	}
 }
 
@@ -471,14 +452,14 @@ void cuobjdumpInst::printCuobjdumpOperandlohi(std::string op) {
 	}
 }
 
-void cuobjdumpInst::printCuobjdumpOperand(stringListPiece* currentPiece, std::string operandDelimiter, const char* base)
+void cuobjdumpInst::printCuobjdumpOperand(std::string currentPiece, std::string operandDelimiter, const char* base)
 {
 
-	output(operandDelimiter.c_str());
+	output(operandDelimiter);
 	output(" ");
 
 	//Current piece
-	std::string currp = currentPiece->stringText;
+	std::string currp = currentPiece;
 	std::string mod;
 
 	if(currp[0] == '-') {
@@ -552,8 +533,8 @@ void cuobjdumpInst::printCuobjdumpOperand(stringListPiece* currentPiece, std::st
 		if(	(strcmp(m_base, "DADD")==0) ||
 			(strcmp(m_base, "DMUL")==0) ||
 			(strcmp(m_base, "DFMA")==0) ||
-			(	(m_typeModifiers->getSize()==1) &&
-				(strcmp((m_typeModifiers->getListStart()->stringText), ".S64")==0) &&
+			(	(m_typeModifiers->size()==1) &&
+				(m_typeModifiers->front() == ".S64") &&
 				(	(strcmp(m_base, "G2R")==0) ||
 					(strcmp(m_base, "R2G")==0) ||
 					(strcmp(m_base, "GLD")==0) ||
@@ -564,8 +545,8 @@ void cuobjdumpInst::printCuobjdumpOperand(stringListPiece* currentPiece, std::st
 			std::stringstream temp;
 			temp << "{$r" << (regNumInt) << ",$r"<< (regNumInt+1) << "}";
 			output(temp.str().c_str());
-		} else if(	(m_typeModifiers->getSize()==1) &&
-					(strcmp((m_typeModifiers->getListStart()->stringText), ".S128")==0)) {
+		} else if(	(m_typeModifiers->size()==1) &&
+					(m_typeModifiers->front() == ".S128")) {
 			std::string modsub = mod.substr(1);
 			int regNumInt = atoi(modsub.c_str());
 			std::stringstream temp;
@@ -656,12 +637,12 @@ void cuobjdumpInst::printCuobjdumpOperand(stringListPiece* currentPiece, std::st
 				hexStringConvert << std::hex << modsub2;
 				hexStringConvert >> addrValue;
 				unsigned chunksize = 4;
-				if (	this->m_typeModifiers->getSize()>0 &&
-						(	strcmp((m_typeModifiers->getListStart()->stringText), ".S16")==0 ||
-							strcmp((m_typeModifiers->getListStart()->stringText), ".U16")==0 )) chunksize = 2;
-				if (	this->m_typeModifiers->getSize()>0 &&
-						(	strcmp((m_typeModifiers->getListEnd()->stringText), ".U8")==0 ||
-							strcmp((m_typeModifiers->getListEnd()->stringText), ".S8")==0 )) chunksize = 1;
+				if (	this->m_typeModifiers->size()>0 &&
+						(	m_typeModifiers->back() == ".S16" ||
+							m_typeModifiers->back() == ".U16")) chunksize = 2;
+				if (	this->m_typeModifiers->size()>0 &&
+						(	m_typeModifiers->back() == ".U8" ||
+							m_typeModifiers->back() == ".S8")) chunksize = 1;
 				addrValue = addrValue*chunksize;
 				char outputHex[10];
 				sprintf(outputHex, "%x", addrValue);
@@ -691,9 +672,12 @@ void cuobjdumpInst::printCuobjdumpOperand(stringListPiece* currentPiece, std::st
 				if(localFlag == 0)
 				{
 					unsigned chunksize = 4;
-					if (	this->m_typeModifiers->getSize()>0 &&
-							(strcmp((m_typeModifiers->getListStart()->stringText), ".S16")==0 ||
-									strcmp((m_typeModifiers->getListStart()->stringText), ".U16")==0 )) chunksize = 2;
+					if ( m_typeModifiers->size()>0 &&
+							(	m_typeModifiers->back() == ".S16" ||
+								m_typeModifiers->back() == ".U16")) chunksize = 2;
+					if (	this->m_typeModifiers->size()>0 &&
+							(	m_typeModifiers->back() == ".U8" ||
+								m_typeModifiers->back() == ".S8")) chunksize = 1;
 					addrValue = addrValue*chunksize;
 				}
 				std::stringstream outputhex;
@@ -724,17 +708,15 @@ void cuobjdumpInst::printCuobjdumpOperand(stringListPiece* currentPiece, std::st
 
 void cuobjdumpInst::printCuobjdumpOperands()
 {
-	stringListPiece* currentPiece = m_operands->getListStart();
 	std::string delimiter = "";
-	for(int i=0; (i<m_operands->getSize())&&(currentPiece!=NULL); i++)
-	{
-		if((strcmp(m_base, "LOP.PASS_B")==0 || strcmp(m_base, "LOP.S.PASS_B")==0) && (i==1))
-		{
-			currentPiece = currentPiece->nextString;
+	unsigned i=0;
+	for (	std::list<std::string>::iterator operand = m_operands->begin();
+			operand != m_operands->end();
+			operand++, i++) {
+		if((strcmp(m_base, "LOP.PASS_B")==0 || strcmp(m_base, "LOP.S.PASS_B")==0) && (i==1)) {
 			continue;
 		}
-		printCuobjdumpOperand(currentPiece, delimiter, m_base);
-		currentPiece = currentPiece->nextString;
+		printCuobjdumpOperand(*operand, delimiter, m_base);
 		delimiter = ",";
 	}
 }
@@ -766,7 +748,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("add");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -799,7 +781,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		//output(" //cos");
 		output("cos");
 		printCuobjdumpBaseModifiers();
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -812,7 +794,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("add");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".ff64"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -826,7 +808,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("min");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f64"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -840,7 +822,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("max");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f64"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -857,7 +839,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mad");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".ff64"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -872,7 +854,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mul");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".ff64"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -888,7 +870,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("ex2");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -901,17 +883,16 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		printCuobjdumpPredicate();
 
 		int absFlag = 0;
-		stringListPiece* currentPiece = m_baseModifiers->getListStart();
 
-		while(currentPiece != NULL)
-		{
-			if(strcmp(currentPiece->stringText, ".abs")==0)
+		for (	std::list<std::string>::iterator basemod = m_baseModifiers->begin();
+				basemod != m_baseModifiers->end();
+				basemod++){
+			if( *basemod ==  ".abs")
 			{
 				output("abs");
 				absFlag = 1;
 				break;
 			}
-			currentPiece = currentPiece->nextString;
 		}
 		if(absFlag == 0)
 		{
@@ -948,7 +929,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("add");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -962,7 +943,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("add.half");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -976,7 +957,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mad");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -990,7 +971,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mul");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1004,7 +985,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mul.half");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1018,7 +999,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("set");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 		{
 			output(".f32.f32");
 		}
@@ -1034,7 +1015,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("set");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 		{
 			output(".f64.f64");
 		}
@@ -1050,12 +1031,13 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mov");
 		printCuobjdumpBaseModifiers();
 
-		if( m_typeModifiers->getSize() == 2 ) {
+		if( m_typeModifiers->size() == 2 ) {
 			std::string type1, type2, type;
 			int type1Size, type2Size;
-			stringListPiece* currentPiece = m_typeModifiers->getListStart();
-			type1 = currentPiece->stringText;
-			type2 = currentPiece->nextString->stringText;
+			std::list<std::string>::iterator curr = m_typeModifiers->begin();
+			type1 = (*curr).c_str();
+			curr++;
+			type2 = (*curr).c_str();
 
 			type1Size = atoi(type1.substr(2, type1.size()-2).c_str());
 			type2Size = atoi(type2.substr(2, type2.size()-2).c_str());
@@ -1087,7 +1069,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 				output(".bb64");
 			else
 				output(type.c_str());
-		} else if( m_typeModifiers->getSize() == 1 ) {
+		} else if( m_typeModifiers->size() == 1 ) {
 			printCuobjdumpTypeModifiers();
 		} else {
 			output("Error: unsupported number of type modifiers. ");
@@ -1101,9 +1083,9 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		//output("mov");
 		output("ld.global");
 		printCuobjdumpBaseModifiers();
-		if (strcmp(m_typeModifiers->getListStart()->stringText, ".S128")==0) {
+		if (m_typeModifiers->front() == ".S128") {
 			output(".v4.u32");
-		} else if (strcmp(m_typeModifiers->getListStart()->stringText, ".S64")==0) {
+		} else if (m_typeModifiers->front() == ".S64") {
 			output(".v2.u32");
 		} else {
 			printCuobjdumpTypeModifiers();
@@ -1117,9 +1099,9 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		//output("mov");
 		output("st.global");
 		printCuobjdumpBaseModifiers();
-		if (strcmp(m_typeModifiers->getListStart()->stringText, ".S128")==0) {
+		if (m_typeModifiers->front() == ".S128") {
 			output(".v4.u32");
-		} else if (strcmp(m_typeModifiers->getListStart()->stringText, ".S64")==0) {
+		} else if (m_typeModifiers->front() == ".S64") {
 			output(".v2.u32");
 		} else {
 			printCuobjdumpTypeModifiers();
@@ -1141,23 +1123,16 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		printCuobjdumpPredicate();
 
 		int absFlag = 0;
-		int bextFlag = 0;
-		stringListPiece* currentPiece = m_baseModifiers->getListStart();
 
-		while(currentPiece != NULL)
-		{
-			if(strcmp(currentPiece->stringText, ".abs")==0)
+		for (	std::list<std::string>::iterator basemod = m_baseModifiers->begin();
+				basemod != m_baseModifiers->end();
+				basemod++) {
+			if(*basemod == ".abs")
 			{
 				output("abs");
 				absFlag = 1;
 				break;
 			}
-			if(strcmp(currentPiece->stringText, ".bext")==0)
-			{
-				bextFlag = 1;
-				break;
-			}
-			currentPiece = currentPiece->nextString;
 		}
 		if(absFlag == 0)
 		{
@@ -1166,45 +1141,12 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 
 		printCuobjdumpBaseModifiers();
 
-		currentPiece = this->m_typeModifiers->getListStart();
-		unsigned int maxlength=16;
-		unsigned int currlength = 16;
-		bool issigned = false;
-		std::string tmpstr;
-		while(currentPiece != NULL)
-		{
-			tmpstr = currentPiece->stringText;
-			if(tmpstr[1] == 'S')
-			{
-				issigned = true;
-			}
-			if(tmpstr.substr(2,2) ==  "32") {currlength=32;}
-			if (currlength > maxlength) {maxlength = currlength;}
-			currentPiece = currentPiece->nextString;
-		}
 
-		if(absFlag == 0)
-		{
-			if(bextFlag == 0)
-				printCuobjdumpTypeModifiers();
-			else{
-				output(".");
-				if (issigned) {output("s");}
-				else {output("u");}
-				std::stringstream tmp;
-				tmp << maxlength;
-				output(tmp.str().c_str());
-				output(".");
-				if (issigned) {output("s");}
-				else {output("u");}
-				output("8");
-				//output(".u16.u8");
-			}
-		}
-		else
-		{
+		if(m_typeModifiers->size() == 0 || absFlag)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
-		}
+		else
+			printCuobjdumpTypeModifiers();
+
 
 		printCuobjdumpOperands();
 		output(";");
@@ -1217,7 +1159,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("addp");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1231,7 +1173,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("add");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1245,7 +1187,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("add.half");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".u32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1258,7 +1200,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mad.lo");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1272,7 +1214,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mad.wide");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1286,7 +1228,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("sad");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1301,7 +1243,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mad24.lo");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".u32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1314,7 +1256,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mad24.lo");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".s32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1332,19 +1274,20 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mul24.lo");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 		{
 			output(".u32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		}
-		else if(m_typeModifiers->getSize() == 2)
+		else if(m_typeModifiers->size() == 2)
 		{
 			std::string type1, type2, type;
 			int type1Size, type2Size;
-			stringListPiece* currentPiece = m_typeModifiers->getListStart();
 			char tempString[5];
 
-			type1 = currentPiece->stringText;
-			type2 = currentPiece->nextString->stringText;
+			std::list<std::string>::iterator curr = m_typeModifiers->begin();
+			type1 = (*curr).c_str();
+			curr++;
+			type2 = (*curr).c_str();
 
 			type1Size = atoi(type1.substr(2, type1.size()-2).c_str());
 			type2Size = atoi(type2.substr(2, type2.size()-2).c_str());
@@ -1369,19 +1312,22 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mul.lo");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 		{
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		}
-		else if(m_typeModifiers->getSize() == 2)
+		else if(m_typeModifiers->size() == 2)
 		{
 			std::string type1, type2, type;
 			int type1Size, type2Size;
-			stringListPiece* currentPiece = m_typeModifiers->getListStart();
+
 			char tempString[5];
 
-			type1 = currentPiece->stringText;
-			type2 = currentPiece->nextString->stringText;
+			std::list<std::string>::iterator curr = m_typeModifiers->begin();
+			type1 = (*curr).c_str();
+			curr++;
+			type2 = (*curr).c_str();
+
 
 			type1Size = atoi(type1.substr(2, type1.size()-2).c_str());
 			type2Size = atoi(type2.substr(2, type2.size()-2).c_str());
@@ -1406,15 +1352,16 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mul.half.lo");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 2)
+		if(m_typeModifiers->size() == 2)
 		{
 			std::string type1, type2, type;
 			int type1Size, type2Size;
-			stringListPiece* currentPiece = m_typeModifiers->getListStart();
 			char tempString[5];
 
-			type1 = currentPiece->stringText;
-			type2 = currentPiece->nextString->stringText;
+			std::list<std::string>::iterator curr = m_typeModifiers->begin();
+			type1 = (*curr).c_str();
+			curr++;
+			type2 = (*curr).c_str();
 
 			type1Size = atoi(type1.substr(2, type1.size()-2).c_str());
 			type2Size = atoi(type2.substr(2, type2.size()-2).c_str());
@@ -1439,19 +1386,20 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mul24.half.lo");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 		{
 			output(".u32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		}
-		else if(m_typeModifiers->getSize() == 2)
+		else if(m_typeModifiers->size() == 2)
 		{
 			std::string type1, type2, type;
 			int type1Size, type2Size;
-			stringListPiece* currentPiece = m_typeModifiers->getListStart();
 			char tempString[5];
 
-			type1 = currentPiece->stringText;
-			type2 = currentPiece->nextString->stringText;
+			std::list<std::string>::iterator curr = m_typeModifiers->begin();
+			type1 = (*curr).c_str();
+			curr++;
+			type2 = (*curr).c_str();
 
 			type1Size = atoi(type1.substr(2, type1.size()-2).c_str());
 			type2Size = atoi(type2.substr(2, type2.size()-2).c_str());
@@ -1476,9 +1424,9 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("set");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".u32.u32"); //TODO: setting default type modifier but I'm not sure if this is right.
-		else if(m_typeModifiers->getSize() == 1)
+		else if(m_typeModifiers->size() == 1)
 		{
 			printCuobjdumpTypeModifiers(); printCuobjdumpTypeModifiers();
 		}
@@ -1493,7 +1441,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("lg2");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1510,13 +1458,30 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		printCuobjdumpOperands();
 		output(";");
 	}
-	else if(strcmp(m_base, "MOV")==0 || strcmp(m_base, "MVI")==0 || strcmp(m_base, "MVC")==0)
+	else if(strcmp(m_base, "MVC")==0){
+		printCuobjdumpPredicate();
+		//Use cvt if there is conversion involved (2 modifiers) otherwise mov
+		if(m_typeModifiers->size() < 2)
+			output("mov");
+		else
+			output("cvt");
+
+		printCuobjdumpBaseModifiers();
+
+		if(m_typeModifiers->size() == 0)
+			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
+		else
+			printCuobjdumpTypeModifiers();
+		printCuobjdumpOperands();
+		output(";");
+	}
+	else if(strcmp(m_base, "MOV")==0 || strcmp(m_base, "MVI")==0)
 	{
 		printCuobjdumpPredicate();
 		output("mov");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1529,7 +1494,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mov.half");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".u32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1558,7 +1523,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("and");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".b32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1572,7 +1537,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("or");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".b32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1586,7 +1551,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("not");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".b32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1600,7 +1565,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("xor");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".b32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1614,12 +1579,12 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("shl");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".b32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
 		printCuobjdumpOperands();
-		if(m_operands->getSize() == 2)
+		if(m_operands->size() == 2)
 			output(", 0x0");
 		output(";");
 	}
@@ -1629,11 +1594,12 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		 */
 		printCuobjdumpPredicate();
 		output("mov.u8");
-		stringListPiece* currentPiece = m_operands->getListStart();
+		std::list<std::string>::iterator operand = m_operands->begin();
 		std::string delimiter = "";
-		printCuobjdumpOperand(currentPiece, delimiter, m_base);
+		printCuobjdumpOperand(*operand, delimiter, m_base);
+		operand++;
 		output(", ");
-		std::string curr = currentPiece->nextString->stringText;
+		std::string curr = *operand;
 		curr = curr.substr(1);
 		int regnum;
 		std::istringstream(curr)>>regnum;
@@ -1650,12 +1616,14 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("mov");
 		printCuobjdumpBaseModifiers();
 
-		if( m_typeModifiers->getSize() == 2 ) {
+		if( m_typeModifiers->size() == 2 ) {
 			std::string type1, type2, type;
 			int type1Size, type2Size;
-			stringListPiece* currentPiece = m_typeModifiers->getListStart();
-			type1 = currentPiece->stringText;
-			type2 = currentPiece->nextString->stringText;
+			std::list<std::string>::iterator curr = m_typeModifiers->begin();
+			type1 = (*curr).c_str();
+			curr++;
+			type2 = (*curr).c_str();
+
 
 			type1Size = atoi(type1.substr(2, type1.size()-2).c_str());
 			type2Size = atoi(type2.substr(2, type2.size()-2).c_str());
@@ -1687,7 +1655,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 				output(".bb64");
 			else
 				output(type.c_str());
-		} else if( m_typeModifiers->getSize() == 1 ) {
+		} else if( m_typeModifiers->size() == 1 ) {
 			printCuobjdumpTypeModifiers();
 		} else {
 			output("Error: unsupported number of type modifiers. ");
@@ -1702,7 +1670,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("rcp");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1716,7 +1684,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("rcp.half");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32");
 		else
 			printCuobjdumpTypeModifiers();
@@ -1734,7 +1702,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		printCuobjdumpPredicate();
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1748,7 +1716,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("rsqrt");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1762,7 +1730,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("shl");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1776,7 +1744,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("shr");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1790,7 +1758,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		output("sin");
 		printCuobjdumpBaseModifiers();
 
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1853,7 +1821,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		printCuobjdumpPredicate();
 		output("min");
 		printCuobjdumpBaseModifiers();
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".s32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1863,7 +1831,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		printCuobjdumpPredicate();
 		output("max");
 		printCuobjdumpBaseModifiers();
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(".s32"); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1873,7 +1841,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 			printCuobjdumpPredicate();
 			output("min");
 			printCuobjdumpBaseModifiers();
-			if(m_typeModifiers->getSize() == 0)
+			if(m_typeModifiers->size() == 0)
 				output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 			else
 				printCuobjdumpTypeModifiers();
@@ -1884,7 +1852,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 			printCuobjdumpPredicate();
 			output("max");
 			printCuobjdumpBaseModifiers();
-			if(m_typeModifiers->getSize() == 0)
+			if(m_typeModifiers->size() == 0)
 				output(".f32"); //TODO: setting default type modifier but I'm not sure if this is right.
 			else
 				printCuobjdumpTypeModifiers();
@@ -1895,7 +1863,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		printCuobjdumpPredicate();
 		output("mov");
 		printCuobjdumpBaseModifiers();
-		if(m_typeModifiers->getSize() == 0)
+		if(m_typeModifiers->size() == 0)
 			output(int_default_mod()); //TODO: setting default type modifier but I'm not sure if this is right.
 		else
 			printCuobjdumpTypeModifiers();
@@ -1906,16 +1874,14 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 			(strcmp(m_base, "TEX32")==0)) {
 		printCuobjdumpPredicate();
 		output("tex.1d.v4.f32.s32 ");
-		stringListPiece *currPiece;
-		stringListPiece reg;
 		std::string addrReg, tex_id;
-		currPiece = m_operands->getListStart();
+		std::list<std::string>::iterator operand = m_operands->begin();
 		output("{");
-		printCuobjdumpOperand(currPiece, "", "");
+		printCuobjdumpOperand(*operand, "", "");
 		output(",_,_,_} , ");
-		reg = *currPiece;
-		currPiece = currPiece->nextString;
-		tex_id = currPiece->stringText;
+		std::string reg = *operand;
+		operand++;
+		tex_id = *operand;
 		unsigned int tex_id_int;
 		std::stringstream ss;
 		ss << std::hex << tex_id;
@@ -1927,7 +1893,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		}
 		output((*texIter).c_str());
 		output(",{");
-		printCuobjdumpOperand(&reg, "", "");
+		printCuobjdumpOperand(reg, "", "");
 		output(",_,_,_};");
 	}
 	else if(strcmp(m_base, "EXIT")==0) {
@@ -1956,7 +1922,7 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 		//PKB specifies the target of later BRK (break) instructions
 		// Here we convert it to nop and store the target
 		output("nop;");
-		breaktarget = m_operands->getListStart()->stringText;
+		breaktarget = m_operands->front();
 	} else if(strcmp(m_base, "BRK")==0) {
 		printCuobjdumpPredicate();
 		/*

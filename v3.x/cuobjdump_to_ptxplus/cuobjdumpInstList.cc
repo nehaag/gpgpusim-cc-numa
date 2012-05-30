@@ -30,7 +30,7 @@
 #include <cassert>
 #include "cuobjdumpInstList.h"
 
-#define P_DEBUG 1
+#define P_DEBUG 0
 #define DPRINTF(...) \
    if(P_DEBUG) { \
       printf("(%s:%u) ", __FILE__, __LINE__); \
@@ -340,20 +340,20 @@ void cuobjdumpInstList::addCuobjdumpRegister(std::string reg, bool lo)
 	char * regString;
 	regString = new char [reg.size()+1];
 
-	stringList* typeModifiers = getListEnd().getTypeModifiers();
+	std::list<std::string>* typeModifiers = getListEnd().getTypeModifiers();
 	const char* baseInst = getListEnd().getBase();
 
 	//TODO: support for 64bit vectors and 128bit vectors
 	if((strcmp(baseInst, "DADD")==0) || (strcmp(baseInst, "DMUL")==0) || (strcmp(baseInst, "DFMA")==0) ||
-		((typeModifiers->getSize()==1) &&
-		(strcmp((typeModifiers->getListStart()->stringText), ".S64")==0) &&
+		((typeModifiers->size()==1) &&
+		(typeModifiers->front() == ".S64") &&
 		((strcmp(baseInst, "G2R")==0)||(strcmp(baseInst, "R2G")==0)||
 		(strcmp(baseInst, "GLD")==0)||(strcmp(baseInst, "GST")==0)||
 		(strcmp(baseInst, "LST")==0))))
 	{
 		vectorFlag = 64;
 	}
-	else if((typeModifiers->getSize()==1) && (strcmp((typeModifiers->getListStart()->stringText), ".S128")==0))
+	else if((typeModifiers->size()==1) && (typeModifiers->front() == ".S128"))
 	{
 		vectorFlag = 128;
 	}
@@ -526,8 +526,9 @@ void cuobjdumpInstList::addCuobjdumpDoublePredReg(std::string pred, std::string 
 	else
 		doublePredReg = parsedPred + "|" + parsedReg;
 
-	char* doublePredRegName = new char [strlen(doublePredReg.c_str())];
+	char* doublePredRegName = new char [strlen(doublePredReg.c_str())+1];
 	strcpy(doublePredRegName, doublePredReg.c_str());
+	doublePredRegName[strlen(doublePredReg.c_str())] = '\0';
 	getListEnd().addOperand(doublePredRegName);
 }
 
@@ -571,7 +572,6 @@ void cuobjdumpInstList::setConstMemoryMap(const char* kernelname, int index){
 	std::string kernel = kernelname;
 	kernel = kernel.substr(14, kernel.length()-1);
 	kernel = kernel.substr(0, kernel.find("\t"));
-	printf("Setting kernelcmemmap[%s]=%d\n", kernel.c_str(), index);
 	kernelcmemmap[kernel] = index;
 }
 
@@ -579,7 +579,6 @@ void cuobjdumpInstList::setLocalMemoryMap(const char* kernelname, int index){
 	std::string kernel = kernelname;
 	kernel = kernel.substr(10, kernel.length()-1);
 	kernel = kernel.substr(0, kernel.find("\t"));
-	printf("Setting kernellmemmap[%s]=%d\n", kernel.c_str(), index);
 	kernellmemmap[kernel] = index;
 }
 
@@ -727,6 +726,5 @@ void cuobjdumpInstList::addConstMemoryPtr(const char* offset, const char* size, 
 	ptr.name = name;
 	ptr.destination = "constant0";
 	m_constMemoryPtrList.push_back(ptr);
-	printf("\naddConstMemoryPtr: %s, size: %d, offset: %d\n", ptr.name.c_str(), ptr.bytes, ptr.offset);
 }
 
