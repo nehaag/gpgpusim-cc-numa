@@ -1,8 +1,8 @@
 # see README before running this
 
-# change the following to point to your installation of CUDA Toolkit
 if [ ! -n "$CUDA_INSTALL_PATH" ]; then
-	export CUDA_INSTALL_PATH=$HOME/nvcuda/4.0/cuda
+	echo "ERROR ** Install CUDA Toolkit and set CUDA_INSTALL_PATH.";
+	return;
 fi
 
 # to run the debug build of GPGPU-Sim run:
@@ -38,8 +38,8 @@ fi
 # static link setup in prior GPGPU-Sim releases.
 export LD_LIBRARY_PATH=`echo $LD_LIBRARY_PATH | sed -re 's/.*gpgpu_sim.*(release|debug)://'`
 export LD_LIBRARY_PATH=$GPGPUSIM_ROOT/lib/$GPGPUSIM_CONFIG:$LD_LIBRARY_PATH
-export PATH=`echo $PATH | sed "s#$GPGPUSIM_ROOT/decuda/:$GPGPUSIM_ROOT/bin:$CUDA_INSTALL_PATH/bin:##"`
-export PATH=$GPGPUSIM_ROOT/decuda/:$GPGPUSIM_ROOT/bin:$CUDA_INSTALL_PATH/bin:$PATH
+export PATH=`echo $PATH | sed "s#$GPGPUSIM_ROOT/bin:$CUDA_INSTALL_PATH/bin:##"`
+export PATH=$GPGPUSIM_ROOT/bin:$CUDA_INSTALL_PATH/bin:$PATH
 
 # The following sets OPENCL_REMOTE_GPU_HOST which is used by GPGPU-Sim to
 # SSH to remote node to generate PTX for OpenCL kernels when running on 
