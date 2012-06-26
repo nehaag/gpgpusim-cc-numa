@@ -1,15 +1,32 @@
 CHANGE LOG:
+
 Version 3.1.0+edits (development branch) versus 3.1.0
 - Removed a dependency on an inhouse implementation of a string list in
   cuobjdump_to_ptxplus.
 - Cleaned up the information printed out to stdout/stderr during the operation
   of cuobjdump_to_ptxplus.
+- Change cuobjdump_to_ptxplus to use std::string instead of char*.
 - Bug Fixes:
     - Fixed a couple of memory errors in cuobjdump_to_ptxplus code.
-    - Implemented a better support for handling memory operand type modifier
+    - Implemented better support for handling memory operand type modifier
       in cuobjdump_to_ptxplus
     - Correctly handling MVC instructions in cuobjdump_to_ptxplus; now they can
       map to cvt or mov.
+    - Corrected calculation of average memory latency.  Before this fix, the
+      metric was only reporting the average for memory accesses from the final 
+      AerialVision sampling window.  Now the metric reports average memory 
+      latency for all memory accesses in the entire application run. 
+    - Corrected GDDR5 parameters in Fermi configuration: 
+      - Increased burst length to 8 and changed the address mapping to reflect
+        16 banks as suggested by Jungrae
+      - Decreased DRAM clock to 924MHz from 1848MHz. 
+      - Corrected CAS Latency, Write Latency and other timing constraints. 
+      - Added a new option 'dram_data_command_freq_ratio' to configure the
+        frequency ratio between the DRAM data bus and command bus.  This allows
+        GPGPU-Sim to support both GDDR3 (data rate = 2X command rate) and GDDR5
+        (data rate = 4X command rate). 
+    - Fixed the DRAM performance statistics log to display information properly
+      when there are more than 4 banks in each partition (reported by Jungrae). 
 
 Version 3.1.0 versus 3.0.2
 - Support for CUDA 4.0 for both PTX and PTXPlus.
