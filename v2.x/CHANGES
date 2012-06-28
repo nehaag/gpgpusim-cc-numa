@@ -1,5 +1,32 @@
 CHANGE LOG:
 
+Version 2.1.3b versus 2.1.2b:
+- Fixed parameter offset alignment for complex data types such as vector types
+  and structs.  Before this fix, passing a struct or vector type as a kernel
+  parameter may not work.  
+- Updated the OpenCL function declarations to be compatible with the OpenCL
+  header files distributed via CUDA 3.1 or later.
+- Explicitly enabled some boolean simulator options in the provided Quadro
+  configuration file to clarify the value of those options.  
+- Fixed a bug that broke the number of memory accesses generated per ptx line
+  statistic.
+
+Version 2.1.2b versus 2.1.1b:
+- Better 1D texture support
+- bar.sync timing change for compatibility with NVIDIA hardware
+  (release barrier when all warps reach barrier, irrespective of
+  divergence state). Functional simulation mode disabled to
+  implement the expected barrier behavior under branch divergence
+- Refactored memory stage
+- Limited miss status holding registers
+- Experimental support for running on Mac OS X
+- Register bank conflict modeling (see MICRO-42 tutorial)
+- Changed files to C++
+- Updated makefiles
+- Various improvements to aerialvision
+- Simulation speed improvement
+- Various minor fixes
+
 Version 2.1.1b versus 2.1.0b:
 - Added support for OpenCL (requires OpenCL driver from NVIDIA)
 - Added performance visualizer tool

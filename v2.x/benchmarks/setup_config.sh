@@ -10,7 +10,7 @@ if [ "x$GPGPUSIM_ROOT" = "x" ]; then
     GPGPUSIM_ROOT="$PWD/.."
 fi
 
-BENCHMARKS=`ls CUDA | sed 's/\([^ ]\+\)/\.\/CUDA\/\1/'`
+BENCHMARKS=`ls -1 CUDA | sed 's/\(.\)/\.\/CUDA\/\1/'`
 
 if [ $1 = "--cleanup" ]; then
     echo "Removing existing configs in the following directories:"

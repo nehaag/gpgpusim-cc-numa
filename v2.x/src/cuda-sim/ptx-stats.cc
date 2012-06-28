@@ -221,7 +221,7 @@ void ptx_file_line_stats_add_smem_bank_conflict(void * ptx_thd, unsigned pc, uns
 
 // attribute a non-coalesced mem access to a ptx instruction 
 // counts both the number of warps causing this and the number of memory requests generated
-void ptx_file_line_stats_add_uncoalesced_gmem(void * ptx_thd, unsigned pc, unsigned n_access)
+void ptx_file_line_stats_add_uncoalesced_gmem(unsigned pc, unsigned n_access)
 {
     const ptx_instruction *pInsn = function_info::pc_to_instruction(pc);
     

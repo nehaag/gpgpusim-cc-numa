@@ -941,7 +941,6 @@ void function_info::add_param_data( unsigned argn, struct gpgpu_ptx_sim_arg *arg
 
 void function_info::finalize( memory_space *param_mem, symbol_table *symtab  ) 
 {
-   unsigned param_address = 0;
    for( std::map<unsigned,param_info>::iterator i=m_ptx_param_info.begin(); i!=m_ptx_param_info.end(); i++ ) {
       param_info &p = i->second;
       std::string name = p.get_name();
@@ -953,7 +952,7 @@ void function_info::finalize( memory_space *param_mem, symbol_table *symtab  )
       assert(xtype==(unsigned)type);
       size_t size;
       size = param_value.size; // size of param in bytes
-      assert(param_value.offset == param_address);
+      unsigned param_address = param_value.offset;
       assert(size == p.get_size() / 8);
       // copy the parameter over word-by-word so that parameter that crosses a memory page can be copied over
       const size_t word_size = 4; 
@@ -962,7 +961,6 @@ void function_info::finalize( memory_space *param_mem, symbol_table *symtab  )
          param_mem->write(param_address + idx, word_size, pdata); 
       }
       param->set_address(param_address);
-      param_address += size; 
    }
 }
 
@@ -1443,7 +1441,7 @@ void gpgpu_ptx_sim_init_grid( const char *kernel_key, struct gpgpu_ptx_sim_arg* 
    fflush(stdout);
 }
 
-const char *g_gpgpusim_version_string = "2.1.2b (beta)";
+const char *g_gpgpusim_version_string = "2.1.3b (beta)";
 
 void print_splash()
 {

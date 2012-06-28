@@ -2447,6 +2447,13 @@ void shader_memory_global_process_inst(shader_core_ctx_t * shader, unsigned char
          }
       }
    }
+
+   for (unsigned i=0; i< (unsigned) pipe_simd_width; i++) {
+      if ( shader->pipeline_reg[ EX_MM ][ i ].pc > 0 ) {
+         ptx_file_line_stats_add_uncoalesced_gmem( shader->pipeline_reg[ EX_MM ][ i ].pc, accessq.size() - qbegin );
+         break;
+      }
+   }
 }
       
 

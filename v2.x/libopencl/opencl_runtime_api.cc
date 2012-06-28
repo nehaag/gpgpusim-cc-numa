@@ -641,7 +641,7 @@ void opencl_not_finished( const char* func, unsigned line )
 }
 
 extern CL_API_ENTRY cl_context CL_API_CALL
-clCreateContextFromType(cl_context_properties * properties,
+clCreateContextFromType(const cl_context_properties * properties,
                         cl_device_type          device_type,
                         void (*pfn_notify)(const char *, const void *, size_t, void *),
                         void *                  user_data,

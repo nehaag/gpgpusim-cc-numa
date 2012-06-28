@@ -30,27 +30,6 @@ oclConvolutionSeparable
 oclQuasirandomGenerator
 oclParticles (w/ -qatest)
 
-The following have been run for as long as we had patience, but not run
-to completion:
-
-oclDXTCompression
-oclFDTD3d
-oclSimpleMultiGPU
-
-The following use OpenGL and have only been tested by disabling
-this using the "-qatest" command line option and furthermore 
-have not been run to completion, but rather only as long as we 
-had patience for.
-
-oclMedianFilter		with "-qatest" needs CL_MEM_ALLOC_HOST_PTR
-oclNbody		-qatest 
-oclPostprocessGL
-oclRecursiveGaussian
-oclSimpleGL
-oclSimpleTexture3D
-oclSobelFilter
-oclVolumeRender
-
 The LLVM based PTX compiler in the current OpenCL enabled NVIDIA driver
 (190.29) will occassionally move code in such a way that a barrier becomes
 control dependent upon a branch that can diverge, leading to a deadlock. This
@@ -61,3 +40,4 @@ The following are known to not work currently:
 oclRadixSort		: barrier control dependence deadlock 
 oclScan			: barrier control dependence deadlock
 
+The other benchmarks have not been tested, or not tested to completion.
