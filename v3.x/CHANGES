@@ -8,6 +8,8 @@ Version 3.1.0+edits (development branch) versus 3.1.0
 - Change cuobjdump_to_ptxplus to use std::string instead of char*.
 - Change Fermi configuration folder name to GTX480.
 - Added TeslaC2050 configuration.
+- Added a two level warp scheduler (as presented at ISCA 2012 tutorial).
+- Cleaner makedepend that doesn't interfere with Makefiles
 - Bug Fixes:
     - Fixed a couple of memory errors in cuobjdump_to_ptxplus code.
     - Implemented better support for handling memory operand type modifier
@@ -36,6 +38,7 @@ Version 3.1.0+edits (development branch) versus 3.1.0
       The same thing happened when using a prebuilt ptx file through
       PTX_SIM_USE_PTX_FILE - It always wanted to
       load the same ptx file even though there should have been more than one.
+    - Fixed bug that caused $p3 to be used before it was initialized.
 
 Version 3.1.0 versus 3.0.2
 - Support for CUDA 4.0 for both PTX and PTXPlus.

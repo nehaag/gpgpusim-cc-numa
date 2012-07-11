@@ -721,6 +721,24 @@ void cuobjdumpInst::printCuobjdumpOperands()
 	}
 }
 
+void cuobjdumpInst::printCuobjdumpOutputModifiers(const char* defaultMod)
+{
+	std::list<std::string>::iterator typemod = m_typeModifiers->begin();
+	if (*typemod == ".U16" or *typemod == ".S16") {
+		std::list<std::string>::iterator dest_op = m_operands->begin(); 
+		std::string& destination = *dest_op; 
+		if (destination[destination.length()-1] == 'l') {
+			output(".lo");  // write to the lower 16-bits 
+		} else if (destination[destination.length()-1] == 'h') {
+			output(".hi");  // write to the upper 16-bits 
+		} else {
+			output(".wide");  // write to the whole 32-bits 
+		}
+		return; 
+	}
+	output(defaultMod);  // default output modifier for mul 
+}
+
 std::string int_default_mod () { return ".u32" ;}
 
 
@@ -1210,8 +1228,20 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 	}
 	else if(m_base == "IMAD")
 	{
-		printCuobjdumpPredicate();
-		output("mad.wide");
+		//Patching the C3 problem
+		if(m_predicate->size() > 0 &&
+				m_predicate->front() == "C3" &&
+				m_operands->back()[0] == '-'){
+			m_predicate->clear();
+			std::string op = m_operands->back();
+			m_operands->pop_back();
+			m_operands->push_back(op.substr(1));
+			m_operands->push_back("C1");
+			output("madp.wide");
+		} else {
+			printCuobjdumpPredicate();
+			output("mad.wide");
+		}
 		printCuobjdumpBaseModifiers();
 
 		if(m_typeModifiers->size() == 0)
@@ -1309,7 +1339,8 @@ void cuobjdumpInst::printCuobjdumpPtxPlus(std::list<std::string> labelList, std:
 	else if(m_base == "IMUL" || m_base == "IMUL32I")
 	{
 		printCuobjdumpPredicate();
-		output("mul.lo");
+		output("mul");
+      printCuobjdumpOutputModifiers(".lo"); 
 		printCuobjdumpBaseModifiers();
 
 		if(m_typeModifiers->size() == 0)
