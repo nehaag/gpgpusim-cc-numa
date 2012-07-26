@@ -1,5 +1,7 @@
 # see README before running this
 
+export GPGPUSIM_SETUP_ENVIRONMENT_WAS_RUN=
+
 if [ ! -n "$CUDA_INSTALL_PATH" ]; then
 	echo "ERROR ** Install CUDA Toolkit and set CUDA_INSTALL_PATH.";
 	return;
@@ -7,6 +9,11 @@ fi
 if [ ! -d "$CUDA_INSTALL_PATH" ]; then
 	echo "ERROR ** CUDA_INSTALL_PATH=$CUDA_INSTALL_PATH invalid (directory does not exist)";
 	return;
+fi
+
+# for MacOS X
+if [ `uname` = "Darwin" ]; then
+	echo "Detected MacOS X platform..."
 fi
 
 # to run the debug build of GPGPU-Sim run:
@@ -40,7 +47,11 @@ fi
 # native CUDA and OpenCL applications. GPGPU-Sim is dynamically linked
 # against instead of the CUDA toolkit.  This replaces this cumbersome
 # static link setup in prior GPGPU-Sim releases.
-export LD_LIBRARY_PATH=`echo $LD_LIBRARY_PATH | sed -re 's/.*gpgpu_sim.*(release|debug)://'`
+if [ `uname` = "Darwin" ]; then
+	export LD_LIBRARY_PATH=`echo $LD_LIBRARY_PATH | sed -Ee 's/.*gpgpu_sim.*(release|debug)://'`
+else
+	export LD_LIBRARY_PATH=`echo $LD_LIBRARY_PATH | sed -re 's/.*gpgpu_sim.*(release|debug)://'`
+fi
 export LD_LIBRARY_PATH=$GPGPUSIM_ROOT/lib/$GPGPUSIM_CONFIG:$LD_LIBRARY_PATH
 export PATH=`echo $PATH | sed "s#$GPGPUSIM_ROOT/bin:$CUDA_INSTALL_PATH/bin:##"`
 export PATH=$GPGPUSIM_ROOT/bin:$CUDA_INSTALL_PATH/bin:$PATH
@@ -55,11 +66,24 @@ if [ $? = 1 ]; then
 	return;
 fi
 
+CUDA_VERSION_STRING=`$CUDA_INSTALL_PATH/bin/nvcc --version | awk '/release/ {print $5;}' | sed 's/,//'`;
+CUDA_VERSION_NUMBER=`echo $CUDA_VERSION_STRING | sed 's/\./ /' | awk '{printf("%02u%02u", 10*int($1), 10*$2);}'`
+if [ $CUDA_VERSION_NUMBER -gt 4000 -o $CUDA_VERSION_NUMBER -lt 2030  ]; then
+	GPGPUSIM_VERSION_STRING=`cat version | awk '/Version/ {print $8}'`
+	echo "ERROR ** GPGPU-Sim version $GPGPUSIM_VERSION_STRING not tested with CUDA version $CUDA_VERSION_STRING (please see README)";
+	return;
+fi
+
 # The following sets OPENCL_REMOTE_GPU_HOST which is used by GPGPU-Sim to
 # SSH to remote node to generate PTX for OpenCL kernels when running on 
 # a node that does not have an NVIDIA driver installed.
 # The remote node should have GPGPU-Sim installed at the same path 
-HOSTNAME_DOMAIN=`hostname -d`
+if [ `uname` == "Darwin" ]; then
+	HOSTNAME_PREFIX=`hostname -s`;
+	export HOSTNAME_DOMAIN=`hostname | sed s/$HOSTNAME_PREFIX\.//`;
+else
+	HOSTNAME_DOMAIN=`hostname -d`
+fi
 if [ "x$HOSTNAME_DOMAIN" == "xece.ubc.ca" -a "$OPENCL_REMOTE_GPU_HOST" == "" ]; then
 	export OPENCL_REMOTE_GPU_HOST=aamodt-pc05.ece.ubc.ca
 fi
@@ -67,3 +91,5 @@ HOSTNAME_F=`hostname -f`
 if [ "x$HOSTNAME_F" == "x$OPENCL_REMOTE_GPU_HOST" ]; then
 	unset OPENCL_REMOTE_GPU_HOST
 fi
+
+export GPGPUSIM_SETUP_ENVIRONMENT_WAS_RUN=1
