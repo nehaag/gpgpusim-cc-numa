@@ -36,27 +36,27 @@
 
 // Local includes
 //#include "cuobjdumpInstList.h"
-#include "stringList.h"
 
 class cuobjdumpInst
 {
 protected:
 	//instruction data
-	const char* m_label; //instruction label
-	stringList* m_predicate; //instruction predicate
-	const char* m_base; //instruction mnemonic
-	stringList* m_baseModifiers; //base modifiers
-	stringList* m_typeModifiers; //operand types
-	stringList* m_operands; //operands
-	stringList* m_predicateModifiers; //predicate modifiers
+	std::string m_label; //instruction label
+	std::list<std::string>* m_predicate; //instruction predicate
+	std::string m_base; //instruction mnemonic
+	std::list<std::string>* m_baseModifiers; //base modifiers
+	std::list<std::string>* m_typeModifiers; //operand types
+	std::list<std::string>* m_operands; //operands
+	std::list<std::string>* m_predicateModifiers; //predicate modifiers
 
 public:
 	//Constructor
 	cuobjdumpInst();
+	~cuobjdumpInst();
 
 	//accessors
-	const char* getBase();
-	stringList* getTypeModifiers();
+	const std::string getBase();
+	std::list<std::string>* getTypeModifiers();
 
 	//Mutators
 	void setLabel(const char* setLabelValue);
@@ -72,8 +72,9 @@ public:
 	void printCuobjdumpLabel(std::list<std::string> labelList);
 	void printCuobjdumpPredicate();
 	void printCuobjdumpTypeModifiers();
+	void printCuobjdumpOutputModifiers(const char* defaultMod);
 	void printCuobjdumpBaseModifiers();
-	void printCuobjdumpOperand(stringListPiece* currentPiece, std::string operandDelimiter, const char* base);
+	void printCuobjdumpOperand(std::string currentPiece, std::string operandDelimiter, std::string base);
 	void printCuobjdumpOperandlohi(std::string op);
 	void printCuobjdumpOperands();
 
@@ -83,6 +84,8 @@ public:
 	bool printHeaderInst();
 	void printCuobjdumpInst();
 	void printHeaderPtx();
+
+	static void printStringList(std::list<std::string>* strlist);
 };
 
 #endif //_CUOBJDUMPINST_H_

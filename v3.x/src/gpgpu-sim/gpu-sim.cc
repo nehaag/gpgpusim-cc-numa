@@ -120,8 +120,11 @@ void memory_config::reg_options(class OptionParser * opp)
                  "default = 4 bytes (8 bytes per cycle at DDR)",
                  "4");
     option_parser_register(opp, "-gpgpu_dram_burst_length", OPT_UINT32, &BL, 
-                 "Burst length of each DRAM request (default = 4 DDR cycle)",
+                 "Burst length of each DRAM request (default = 4 data bus cycle)",
                  "4");
+    option_parser_register(opp, "-dram_data_command_freq_ratio", OPT_UINT32, &data_command_freq_ratio, 
+                 "Frequency ratio between DRAM data bus and command bus (default = 2 times, i.e. DDR)",
+                 "2");
     option_parser_register(opp, "-gpgpu_dram_timing_opt", OPT_CSTR, &gpgpu_dram_timing_opt, 
                 "DRAM timing parameters = {nbk:tCCD:tRRD:tRCD:tRAS:tRP:tRC:CL:WL:tCDLR:tWR:nbkgrp:tCCDL:tRTPL}",
                 "4:2:8:12:21:13:34:9:4:5:13:1:0:0");
@@ -258,6 +261,9 @@ void shader_core_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_num_mem_units", OPT_INT32, &gpgpu_num_mem_units,
     		                "Number if ldst units (default=1) WARNING: not hooked up to anything",
                              "1");
+    option_parser_register(opp, "-gpgpu_scheduler", OPT_CSTR, &gpgpu_scheduler_string,
+        		                "Scheduler configuration: lrr|tl:num_active_warps default: lrr",
+                                 "lrr");
 }
 
 void gpgpu_sim_config::reg_options(option_parser_t opp)
@@ -919,8 +925,8 @@ void gpgpu_sim::cycle()
                 (unsigned)days,(unsigned)hrs,(unsigned)minutes,(unsigned)sec,
                 ctime(&curr_time));
          fflush(stdout);
-         m_memory_stats->memlatstat_lat_pw();
          visualizer_printstat();
+         m_memory_stats->memlatstat_lat_pw();
          if (m_config.gpgpu_runtime_stat && (m_config.gpu_runtime_stat_flag != 0) ) {
             if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_BW_STAT) {
                for (unsigned i=0;i<m_memory_config->m_n_mem;i++) 

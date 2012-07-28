@@ -44,7 +44,7 @@
 #define NON_ARRAY_IDENTIFIER 1
 #define ARRAY_IDENTIFIER_NO_DIM 2
 #define ARRAY_IDENTIFIER 3
-#define P_DEBUG 1
+#define P_DEBUG 0
 #define DPRINTF(...) \
    if(P_DEBUG) { \
       printf("(%s:%s:%u) ", __FILE__, __FUNCTION__, __LINE__); \
@@ -134,9 +134,9 @@ void add_function_name( const char *headerInput )
 {
 	DPRINTF("name=%s", headerInput);
 	char* headerInfo = (char*) headerInput;
-	const char* compareString = g_headerList->getListEnd().getBase();
+	std::string compareString = g_headerList->getListEnd().getBase();
 
-	if((strcmp(compareString, ".entry")==0)||(strcmp(compareString, ".func")==0))
+	if((compareString == ".entry")||(compareString == ".func"))
 	{
 		g_headerList->setLastEntryName(headerInfo);
 		g_headerList->getListEnd().addOperand(headerInfo);
@@ -348,7 +348,9 @@ void func_header_info(const char* headerInfo)
 	} else if(inConstDirective){
 
 	} else {
-		printf("Unkown header info: #%s#\n", headerInfo);
+		// This information is supposed to be not needed.
+		// Suppressing printing it
+		// printf("Unkown header info: #%s#\n", headerInfo);
 	}
 
 }
