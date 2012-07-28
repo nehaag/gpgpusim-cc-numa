@@ -90,29 +90,6 @@ struct dim3 {
 };
 #endif
 
-#if 0
-
-// detect gcc 4.3 and use unordered map (part of c++0x)
-// unordered map doesn't play nice with _GLIBCXX_DEBUG, just use a map if its enabled.
-#if  defined( __GNUC__ ) and not defined( _GLIBCXX_DEBUG )
-#if __GNUC__ >= 4 && __GNUC_MINOR__ >= 3
-   #include <unordered_map>
-   #define my_hash_map std::unordered_map
-#else
-   #include <ext/hash_map>
-   namespace std {
-      using namespace __gnu_cxx;
-   }
-   #define my_hash_map std::hash_map
-#endif
-#else
-   #include <map>
-   #define my_hash_map std::map
-   #define USE_MAP
-#endif
-
-#endif
-
 void increment_x_then_y_then_z( dim3 &i, const dim3 &bound);
 
 class kernel_info_t {
@@ -254,6 +231,8 @@ struct simt_stack_entry {
     address_type m_recvg_pc;
     unsigned long long m_branch_div_cycle;
     stack_entry_type m_type;
+    simt_stack_entry() :
+        m_pc(-1), m_calldepth(0), m_active_mask(), m_recvg_pc(-1), m_branch_div_cycle(0), m_type(STACK_ENTRY_TYPE_NORMAL) { };
 };
 
 class simt_stack {
