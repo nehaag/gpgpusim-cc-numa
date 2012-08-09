@@ -31,18 +31,21 @@
 
 include version_detection.mk
 
-ifeq ($(GPGPUSIM_CONFIG), debug)
+ifeq ($(GPGPUSIM_CONFIG), $(CUDART_VERSION)/debug)
 	export DEBUG=1
 else
 	export DEBUG=0
 endif
 
-ifeq ($(DEBUG), 1)
-	export SIM_LIB_DIR=lib/debug
-	export SIM_OBJ_FILES_DIR=build/debug
-else
-	export SIM_LIB_DIR=lib/release
-	export SIM_OBJ_FILES_DIR=build/release
+NVCC_PATH=$(shellwhich nvcc)
+ifneq ($(shell which nvcc), "")
+	ifeq ($(DEBUG), 1)
+		export SIM_LIB_DIR=lib/$(CUDART_VERSION)/debug
+		export SIM_OBJ_FILES_DIR=build/$(CUDART_VERSION)/debug
+	else
+		export SIM_LIB_DIR=lib/$(CUDART_VERSION)/release
+		export SIM_OBJ_FILES_DIR=build/$(CUDART_VERSION)/release
+	endif
 endif
 
 LIBS = cuda-sim gpgpu-sim_uarch intersim gpgpusimlib
@@ -90,7 +93,7 @@ no_opencl_support:
 	@echo "Warning: gpgpu-sim is building without opencl support. Make sure NVOPENCL_LIBDIR and NVOPENCL_INCDIR are set"
 
 $(SIM_LIB_DIR)/libcudart.so: $(LIBS) cudalib
-	g++ $(MACOSX_BUILD_FLAGS) -shared -Wl,-soname,libcudart.so \
+	g++ -shared -Wl,-soname,libcudart.so \
 			$(SIM_OBJ_FILES_DIR)/libcuda/*.o \
 			$(SIM_OBJ_FILES_DIR)/cuda-sim/*.o \
 			$(SIM_OBJ_FILES_DIR)/cuda-sim/decuda_pred_table/*.o \
@@ -103,7 +106,7 @@ $(SIM_LIB_DIR)/libcudart.so: $(LIBS) cudalib
 	if [ ! -f $(SIM_LIB_DIR)/libcudart.so.4 ]; then ln -s libcudart.so $(SIM_LIB_DIR)/libcudart.so.4; fi
 
 $(SIM_LIB_DIR)/libcudart.dylib: $(LIBS) cudalib
-	g++ $(MACOSX_BUILD_FLAGS) -dynamiclib -Wl,-headerpad_max_install_names,-undefined,dynamic_lookup,-compatibility_version,1.1,-current_version,1.1\
+	g++ -dynamiclib -Wl,-headerpad_max_install_names,-undefined,dynamic_lookup,-compatibility_version,1.1,-current_version,1.1\
 			$(SIM_OBJ_FILES_DIR)/libcuda/*.o \
 			$(SIM_OBJ_FILES_DIR)/cuda-sim/*.o \
 			$(SIM_OBJ_FILES_DIR)/cuda-sim/decuda_pred_table/*.o \
@@ -113,7 +116,7 @@ $(SIM_LIB_DIR)/libcudart.dylib: $(LIBS) cudalib
 			-o $(SIM_LIB_DIR)/libcudart.dylib
 
 $(SIM_LIB_DIR)/libOpenCL.so: $(LIBS) opencllib
-	g++ $(MACOSX_BUILD_FLAGS) -shared -Wl,-soname,libOpenCL.so \
+	g++ -shared -Wl,-soname,libOpenCL.so \
 			$(SIM_OBJ_FILES_DIR)/libopencl/*.o \
 			$(SIM_OBJ_FILES_DIR)/cuda-sim/*.o \
 			$(SIM_OBJ_FILES_DIR)/cuda-sim/decuda_pred_table/*.o \
@@ -160,6 +163,7 @@ makedirs:
 	if [ ! -d $(SIM_OBJ_FILES_DIR)/gpgpu-sim ]; then mkdir -p $(SIM_OBJ_FILES_DIR)/gpgpu-sim; fi;
 	if [ ! -d $(SIM_OBJ_FILES_DIR)/libopencl ]; then mkdir -p $(SIM_OBJ_FILES_DIR)/libopencl; fi;
 	if [ ! -d $(SIM_OBJ_FILES_DIR)/intersim ]; then mkdir -p $(SIM_OBJ_FILES_DIR)/intersim; fi;
+	if [ ! -d $(SIM_OBJ_FILES_DIR)/cuobjdump_to_ptxplus ]; then mkdir -p $(SIM_OBJ_FILES_DIR)/cuobjdump_to_ptxplus; fi;
 
 all:
 	$(MAKE) gpgpusim
