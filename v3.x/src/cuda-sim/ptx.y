@@ -259,6 +259,7 @@ directive_statement: variable_declaration SEMI_COLON
 	| FILE_DIRECTIVE INT_OPERAND STRING { add_file($2,$3); } 
 	| LOC_DIRECTIVE INT_OPERAND INT_OPERAND INT_OPERAND 
 	| PRAGMA_DIRECTIVE STRING SEMI_COLON { add_pragma($2); }
+	| function_decl SEMI_COLON {/*Do nothing*/}
 	;
 
 variable_declaration: variable_spec identifier_list { add_variables(); }
@@ -527,6 +528,7 @@ address_expression: IDENTIFIER { add_address_operand($1,0); }
 	| IDENTIFIER LO_OPTION { add_address_operand($1,0); change_operand_lohi(1);}
 	| IDENTIFIER HI_OPTION { add_address_operand($1,0); change_operand_lohi(2); }
 	| IDENTIFIER PLUS INT_OPERAND { add_address_operand($1,$3); }
+	| INT_OPERAND { add_address_operand2($1); }
 	;
 
 %%
