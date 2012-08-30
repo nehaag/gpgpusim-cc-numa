@@ -209,12 +209,17 @@ input:	/* empty */
 	;
 
 function_defn: function_decl { set_symtab($1); func_header(".skip"); } statement_block { end_function(); }
-	| function_decl { set_symtab($1); } block_spec { func_header(".skip"); } statement_block { end_function(); }
+	| function_decl { set_symtab($1); } block_spec_list { func_header(".skip"); } statement_block { end_function(); }
 	;
 
 block_spec: MAXNTID_DIRECTIVE INT_OPERAND COMMA INT_OPERAND COMMA INT_OPERAND {func_header_info_int(".maxntid", $2);
 										func_header_info_int(",", $4);
 										func_header_info_int(",", $6); }
+	| MINNCTAPERSM_DIRECTIVE INT_OPERAND { func_header_info_int(".minnctapersm", $2); printf("GPGPU-Sim: Warning: .minnctapersm ignored. \n"); }
+	;
+
+block_spec_list: block_spec
+	| block_spec_list block_spec
 	;
 
 function_decl: function_decl_header LEFT_PAREN { start_function($1); func_header_info("(");} param_entry RIGHT_PAREN {func_header_info(")");} function_ident_param { $$ = reset_symtab(); }
@@ -493,11 +498,13 @@ operand: IDENTIFIER  { add_scalar_operand( $1 ); }
 vector_operand: LEFT_BRACE IDENTIFIER COMMA IDENTIFIER RIGHT_BRACE { add_2vector_operand($2,$4); }
 		| LEFT_BRACE IDENTIFIER COMMA IDENTIFIER COMMA IDENTIFIER RIGHT_BRACE { add_3vector_operand($2,$4,$6); }
 		| LEFT_BRACE IDENTIFIER COMMA IDENTIFIER COMMA IDENTIFIER COMMA IDENTIFIER RIGHT_BRACE { add_4vector_operand($2,$4,$6,$8); }
+		| LEFT_BRACE IDENTIFIER RIGHT_BRACE { add_1vector_operand($2); }
 	;
 
 tex_operand: LEFT_SQUARE_BRACKET IDENTIFIER COMMA { add_scalar_operand($2); }
 		vector_operand 
 	     RIGHT_SQUARE_BRACKET
+	;
 
 builtin_operand: SPECIAL_REGISTER DIMENSION_MODIFIER { add_builtin_operand($1,$2); }
         | SPECIAL_REGISTER { add_builtin_operand($1,-1); }
