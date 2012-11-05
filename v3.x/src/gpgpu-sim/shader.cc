@@ -1122,7 +1122,7 @@ ldst_unit::ldst_unit( mem_fetch_interface *icnt,
     m_L1C = new read_only_cache(L1C_name,m_config->m_L1C_config,m_sid,get_shader_constant_cache_id(),icnt,IN_L1C_MISS_QUEUE);
     m_L1D = NULL;
     if( !m_config->m_L1D_config.disabled() ) 
-        m_L1D = new data_cache(L1D_name,m_config->m_L1D_config,m_sid,get_shader_normal_cache_id(),m_icnt,m_mf_allocator,IN_L1D_MISS_QUEUE);
+        m_L1D = new l1_cache(L1D_name,m_config->m_L1D_config,m_sid,get_shader_normal_cache_id(),m_icnt,m_mf_allocator,IN_L1D_MISS_QUEUE);
     m_mem_rc = NO_RC_FAIL;
     m_num_writeback_clients=5; // = shared memory, global/local (uncached), L1D, L1T, L1C
     m_writeback_arb = 0;
@@ -1169,6 +1169,10 @@ void ldst_unit::writeback()
         case 0: // shared memory 
             if( !m_pipeline_reg[0]->empty() ) {
                 m_next_wb = *m_pipeline_reg[0];
+                if(m_next_wb.isatomic()) {
+                    m_next_wb.do_atomic();
+                    m_core->decrement_atomic_count(m_next_wb.warp_id(), m_next_wb.active_count());
+                }
                 m_core->dec_inst_in_pipeline(m_pipeline_reg[0]->warp_id());
                 m_pipeline_reg[0]->clear();
                 serviced_client = next_client; 
@@ -2395,6 +2399,8 @@ void simt_core_cluster::icnt_inject_request_packet(class mem_fetch *mf)
     case LOCAL_ACC_W: m_stats->gpgpu_n_mem_write_local++; break;
     case INST_ACC_R: m_stats->gpgpu_n_mem_read_inst++; break;
     case L1_WRBK_ACC: m_stats->gpgpu_n_mem_write_global++; break;
+    case L2_WRBK_ACC: m_stats->gpgpu_n_mem_l2_writeback++; break;
+    case L2_WR_ALLOC_R: m_stats->gpgpu_n_mem_l2_write_allocate++; break;
     default: assert(0);
     }
    unsigned destination = mf->get_tlx_addr().chip;

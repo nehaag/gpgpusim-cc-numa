@@ -207,53 +207,65 @@ void warp_inst_t::generate_mem_accesses()
                 bank_accs[bank][word]++;
             }
 
-            // step 2: look for and select a broadcast bank/word if one occurs
-            bool broadcast_detected = false;
-            new_addr_type broadcast_word=(new_addr_type)-1;
-            unsigned broadcast_bank=(unsigned)-1;
-            std::map<unsigned,std::map<new_addr_type,unsigned> >::iterator b;
-            for( b=bank_accs.begin(); b != bank_accs.end(); b++ ) {
-                unsigned bank = b->first;
-                std::map<new_addr_type,unsigned> &access_set = b->second;
-                std::map<new_addr_type,unsigned>::iterator w;
-                for( w=access_set.begin(); w != access_set.end(); ++w ) {
-                    if( w->second > 1 ) {
-                        // found a broadcast
-                        broadcast_detected=true;
-                        broadcast_bank=bank;
-                        broadcast_word=w->first;
-                        break;
-                    }
-                }
-                if( broadcast_detected ) 
-                    break;
-            }
-
-            // step 3: figure out max bank accesses performed, taking account of broadcast case
-            unsigned max_bank_accesses=0;
-            for( b=bank_accs.begin(); b != bank_accs.end(); b++ ) {
-                unsigned bank_accesses=0;
-                std::map<new_addr_type,unsigned> &access_set = b->second;
-                std::map<new_addr_type,unsigned>::iterator w;
-                for( w=access_set.begin(); w != access_set.end(); ++w ) 
-                    bank_accesses += w->second;
-                if( broadcast_detected && broadcast_bank == b->first ) {
+            if (m_config->shmem_limited_broadcast) {
+                // step 2: look for and select a broadcast bank/word if one occurs
+                bool broadcast_detected = false;
+                new_addr_type broadcast_word=(new_addr_type)-1;
+                unsigned broadcast_bank=(unsigned)-1;
+                std::map<unsigned,std::map<new_addr_type,unsigned> >::iterator b;
+                for( b=bank_accs.begin(); b != bank_accs.end(); b++ ) {
+                    unsigned bank = b->first;
+                    std::map<new_addr_type,unsigned> &access_set = b->second;
+                    std::map<new_addr_type,unsigned>::iterator w;
                     for( w=access_set.begin(); w != access_set.end(); ++w ) {
-                        if( w->first == broadcast_word ) {
-                            unsigned n = w->second;
-                            assert(n > 1); // or this wasn't a broadcast
-                            assert(bank_accesses >= (n-1));
-                            bank_accesses -= (n-1);
+                        if( w->second > 1 ) {
+                            // found a broadcast
+                            broadcast_detected=true;
+                            broadcast_bank=bank;
+                            broadcast_word=w->first;
                             break;
                         }
                     }
+                    if( broadcast_detected ) 
+                        break;
                 }
-                if( bank_accesses > max_bank_accesses ) 
-                    max_bank_accesses = bank_accesses;
-            }
+            
+                // step 3: figure out max bank accesses performed, taking account of broadcast case
+                unsigned max_bank_accesses=0;
+                for( b=bank_accs.begin(); b != bank_accs.end(); b++ ) {
+                    unsigned bank_accesses=0;
+                    std::map<new_addr_type,unsigned> &access_set = b->second;
+                    std::map<new_addr_type,unsigned>::iterator w;
+                    for( w=access_set.begin(); w != access_set.end(); ++w ) 
+                        bank_accesses += w->second;
+                    if( broadcast_detected && broadcast_bank == b->first ) {
+                        for( w=access_set.begin(); w != access_set.end(); ++w ) {
+                            if( w->first == broadcast_word ) {
+                                unsigned n = w->second;
+                                assert(n > 1); // or this wasn't a broadcast
+                                assert(bank_accesses >= (n-1));
+                                bank_accesses -= (n-1);
+                                break;
+                            }
+                        }
+                    }
+                    if( bank_accesses > max_bank_accesses ) 
+                        max_bank_accesses = bank_accesses;
+                }
 
-            // step 4: accumulate
-            total_accesses+= max_bank_accesses;
+                // step 4: accumulate
+                total_accesses+= max_bank_accesses;
+            } else {
+                // step 2: look for the bank with the maximum number of access to different words 
+                unsigned max_bank_accesses=0;
+                std::map<unsigned,std::map<new_addr_type,unsigned> >::iterator b;
+                for( b=bank_accs.begin(); b != bank_accs.end(); b++ ) {
+                    max_bank_accesses = std::max(max_bank_accesses, (unsigned)b->second.size());
+                }
+
+                // step 3: accumulate
+                total_accesses+= max_bank_accesses;
+            }
         }
         assert( total_accesses > 0 && total_accesses <= m_config->warp_size );
         cycles = total_accesses; // shared memory conflicts modeled as larger initiation interval 
@@ -716,16 +728,17 @@ void simt_stack::update( simt_mask_t &thread_done, addr_vector_t &next_pc, addre
     }
 }
 
-void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpSize, unsigned warpId){
+void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpSize, unsigned warpId)
+{
     for ( unsigned t=0; t < warpSize; t++ ) {
         if( inst.active(t) ) {
-        if(warpId==(unsigned (-1)))
-            warpId = inst.warp_id();
-        unsigned tid=warpSize*warpId+t;
-        m_thread[tid]->ptx_exec_inst(inst,t);
-        
-        //virtual function
-        checkExecutionStatusAndUpdate(inst,t,tid);
+            if(warpId==(unsigned (-1)))
+                warpId = inst.warp_id();
+            unsigned tid=warpSize*warpId+t;
+            m_thread[tid]->ptx_exec_inst(inst,t);
+            
+            //virtual function
+            checkExecutionStatusAndUpdate(inst,t,tid);
         }
     } 
 }
@@ -735,25 +748,27 @@ bool  core_t::ptx_thread_done( unsigned hw_thread_id ) const
     return ((m_thread[ hw_thread_id ]==NULL) || m_thread[ hw_thread_id ]->is_done());
 }
   
-void core_t::updateSIMTStack(unsigned warpId, unsigned warpSize, warp_inst_t * inst){
-simt_mask_t thread_done;
-addr_vector_t next_pc;
-unsigned wtid = warpId * warpSize;
-for (unsigned i = 0; i < warpSize; i++) {
-    if( ptx_thread_done(wtid+i) ) {
-         thread_done.set(i);
-         next_pc.push_back( (address_type)-1 );
-     } else {
-         if( inst->reconvergence_pc == RECONVERGE_RETURN_PC ) 
-             inst->reconvergence_pc = get_return_pc(m_thread[wtid+i]);
-         next_pc.push_back( m_thread[wtid+i]->get_pc() );
-     }
-}
-m_simt_stack[warpId]->update(thread_done,next_pc,inst->reconvergence_pc, inst->op);
+void core_t::updateSIMTStack(unsigned warpId, unsigned warpSize, warp_inst_t * inst)
+{
+    simt_mask_t thread_done;
+    addr_vector_t next_pc;
+    unsigned wtid = warpId * warpSize;
+    for (unsigned i = 0; i < warpSize; i++) {
+        if( ptx_thread_done(wtid+i) ) {
+            thread_done.set(i);
+            next_pc.push_back( (address_type)-1 );
+        } else {
+            if( inst->reconvergence_pc == RECONVERGE_RETURN_PC ) 
+                inst->reconvergence_pc = get_return_pc(m_thread[wtid+i]);
+            next_pc.push_back( m_thread[wtid+i]->get_pc() );
+        }
+    }
+    m_simt_stack[warpId]->update(thread_done,next_pc,inst->reconvergence_pc, inst->op);
 }
 
 //! Get the warp to be executed using the data taken form the SIMT stack
-warp_inst_t core_t::getExecuteWarp(unsigned warpId){
+warp_inst_t core_t::getExecuteWarp(unsigned warpId)
+{
     unsigned pc,rpc;
     m_simt_stack[warpId]->get_pdom_stack_top_info(&pc,&rpc);
     warp_inst_t wi= *ptx_fetch_inst(pc);
@@ -763,7 +778,7 @@ warp_inst_t core_t::getExecuteWarp(unsigned warpId){
 
 void core_t::initilizeSIMTStack(unsigned warps, unsigned warpsSize)
 { 
-m_simt_stack = new simt_stack*[warps];
+    m_simt_stack = new simt_stack*[warps];
     for (unsigned i = 0; i < warps; ++i) 
         m_simt_stack[i] = new simt_stack(i,warpsSize);
 }

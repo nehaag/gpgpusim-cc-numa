@@ -1112,6 +1112,9 @@ ptx_instruction::ptx_instruction( int opcode,
       case ALL_OPTION:
          m_vote_mode = vote_all;
          break;
+      case BALLOT_OPTION:
+         m_vote_mode = vote_ballot;
+         break;
       case GLOBAL_OPTION:
          m_membar_level = GLOBAL_OPTION;
          break;
@@ -1148,7 +1151,7 @@ ptx_instruction::ptx_instruction( int opcode,
    }
    m_scalar_type = scalar_type;
    m_space_spec = space_spec;
-   if( ( opcode == ST_OP || opcode == LD_OP ) && (space_spec == undefined_space) ) {
+   if( ( opcode == ST_OP || opcode == LD_OP || opcode == LDU_OP ) && (space_spec == undefined_space) ) {
       m_space_spec = generic_space;
    } 
    for( std::vector<operand_info>::const_iterator i=m_operands.begin(); i!=m_operands.end(); ++i) {

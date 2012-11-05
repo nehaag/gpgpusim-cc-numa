@@ -74,7 +74,7 @@ memory_partition_unit::memory_partition_unit( unsigned partition_id,
     m_mf_allocator = new partition_mf_allocator(config);
 
     if(!m_config->m_L2_config.disabled())
-       m_L2cache = new data_cache(L2c_name,m_config->m_L2_config,-1,-1,m_L2interface,m_mf_allocator,IN_PARTITION_L2_MISS_QUEUE);
+       m_L2cache = new l2_cache(L2c_name,m_config->m_L2_config,-1,-1,m_L2interface,m_mf_allocator,IN_PARTITION_L2_MISS_QUEUE);
 
     unsigned int icnt_L2;
     unsigned int L2_dram;
@@ -105,9 +105,14 @@ void memory_partition_unit::cache_cycle( unsigned cycle )
     if( !m_config->m_L2_config.disabled()) {
        if ( m_L2cache->access_ready() && !m_L2_icnt_queue->full() ) {
            mem_fetch *mf = m_L2cache->next_access();
-           mf->set_reply();
-           mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
-           m_L2_icnt_queue->push(mf);
+           if(mf->get_access_type() != L2_WR_ALLOC_R){ // Don't pass write allocate read request back to upper level cache
+				mf->set_reply();
+				mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
+				m_L2_icnt_queue->push(mf);
+           }else{
+				m_request_tracker.erase(mf);
+				delete mf;
+           }
        }
     }
 

@@ -916,13 +916,13 @@ public:
    unsigned rounding_mode() const { return m_rounding_mode;}
    unsigned saturation_mode() const { return m_saturation_mode;}
    unsigned dimension() const { return m_geom_spec;}
-   enum vote_mode_t { vote_any, vote_all, vote_uni };
+   enum vote_mode_t { vote_any, vote_all, vote_uni, vote_ballot };
    enum vote_mode_t vote_mode() const { return m_vote_mode; }
 
    int membar_level() const { return m_membar_level; }
 
    bool has_memory_read() const {
-      if( m_opcode == LD_OP || m_opcode == TEX_OP ) 
+      if( m_opcode == LD_OP || m_opcode == LDU_OP || m_opcode == TEX_OP ) 
          return true;
       // Check PTXPlus operand type below
       // Source operands are memory operands

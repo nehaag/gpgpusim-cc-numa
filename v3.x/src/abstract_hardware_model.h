@@ -186,6 +186,7 @@ struct core_config {
     { 
         m_valid = false; 
         num_shmem_bank=16; 
+        shmem_limited_broadcast = false; 
     }
     virtual void init() = 0;
 
@@ -196,6 +197,7 @@ struct core_config {
     int gpgpu_coalesce_arch;
 
     // shared memory bank conflict checking parameters
+    bool shmem_limited_broadcast;
     static const address_type WORD_SIZE=4;
     unsigned num_shmem_bank;
     unsigned shmem_bank_func(address_type addr) const
@@ -219,22 +221,6 @@ typedef std::bitset<MAX_WARP_SIZE> active_mask_t;
 typedef std::bitset<MAX_WARP_SIZE_SIMT_STACK> simt_mask_t;
 typedef std::vector<address_type> addr_vector_t;
 
-enum stack_entry_type {
-    STACK_ENTRY_TYPE_NORMAL = 0,
-    STACK_ENTRY_TYPE_CALL
-};
-
-struct simt_stack_entry {
-    address_type m_pc;
-    unsigned int m_calldepth;
-    simt_mask_t m_active_mask;
-    address_type m_recvg_pc;
-    unsigned long long m_branch_div_cycle;
-    stack_entry_type m_type;
-    simt_stack_entry() :
-        m_pc(-1), m_calldepth(0), m_active_mask(), m_recvg_pc(-1), m_branch_div_cycle(0), m_type(STACK_ENTRY_TYPE_NORMAL) { };
-};
-
 class simt_stack {
 public:
     simt_stack( unsigned wid,  unsigned warpSize);
@@ -251,6 +237,22 @@ public:
 protected:
     unsigned m_warp_id;
     unsigned m_warp_size;
+
+    enum stack_entry_type {
+        STACK_ENTRY_TYPE_NORMAL = 0,
+        STACK_ENTRY_TYPE_CALL
+    };
+
+    struct simt_stack_entry {
+        address_type m_pc;
+        unsigned int m_calldepth;
+        simt_mask_t m_active_mask;
+        address_type m_recvg_pc;
+        unsigned long long m_branch_div_cycle;
+        stack_entry_type m_type;
+        simt_stack_entry() :
+            m_pc(-1), m_calldepth(0), m_active_mask(), m_recvg_pc(-1), m_branch_div_cycle(0), m_type(STACK_ENTRY_TYPE_NORMAL) { };
+    };
 
     std::deque<simt_stack_entry> m_stack;
 };
@@ -312,7 +314,7 @@ enum cudaTextureReadMode {
 struct textureReference {
    int                           normalized;
    enum cudaTextureFilterMode    filterMode;
-   enum cudaTextureAddressMode   addressMode[2];
+   enum cudaTextureAddressMode   addressMode[3];
    struct cudaChannelFormatDesc  channelDesc;
 };
 
@@ -495,6 +497,7 @@ enum mem_access_type {
    L1_WRBK_ACC,
    L2_WRBK_ACC, 
    INST_ACC_R,
+   L2_WR_ALLOC_R,
    NUM_MEM_ACCESS_TYPE
 };
 

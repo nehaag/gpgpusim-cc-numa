@@ -99,8 +99,8 @@ void memory_config::reg_options(class OptionParser * opp)
                            "0");
     option_parser_register(opp, "-gpgpu_cache:dl2", OPT_CSTR, &m_L2_config.m_config_string, 
                    "unified banked L2 data cache config "
-                   " {<nsets>:<bsize>:<assoc>:<rep>:<wr>:<alloc>,<mshr>:<N>:<merge>,<mq>}",
-                   "64:128:8:L:R:m,A:16:4,4");
+                   " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<merge>,<mq>}",
+                   "64:128:8,L:B:m:N,A:16:4,4");
     option_parser_register(opp, "-gpgpu_cache:dl2_texture_only", OPT_BOOL, &m_L2_texure_only, 
                            "L2 cache used for texture only",
                            "1");
@@ -147,19 +147,19 @@ void shader_core_config::reg_options(class OptionParser * opp)
                    "1024:32");
     option_parser_register(opp, "-gpgpu_tex_cache:l1", OPT_CSTR, &m_L1T_config.m_config_string, 
                    "per-shader L1 texture cache  (READ-ONLY) config "
-                   " {<nsets>:<bsize>:<assoc>:<rep>:<wr>:<alloc>,<mshr>:<N>:<merge>,<mq>:<rf>}",
-                   "8:128:5:L:R:m,F:128:4,128:2");
+                   " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<merge>,<mq>:<rf>}",
+                   "8:128:5,L:R:m:N,F:128:4,128:2");
     option_parser_register(opp, "-gpgpu_const_cache:l1", OPT_CSTR, &m_L1C_config.m_config_string, 
                    "per-shader L1 constant memory cache  (READ-ONLY) config "
-                   " {<nsets>:<bsize>:<assoc>:<rep>:<wr>:<alloc>,<mshr>:<N>:<merge>,<mq>}",
-                   "64:64:2:L:R:f,A:2:32,4" );
+                   " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<merge>,<mq>} ",
+                   "64:64:2,L:R:f:N,A:2:32,4" );
     option_parser_register(opp, "-gpgpu_cache:il1", OPT_CSTR, &m_L1I_config.m_config_string, 
                    "shader L1 instruction cache config "
-                   " {<nsets>:<bsize>:<assoc>:<rep>:<wr>:<alloc>,<mshr>:<N>:<merge>,<mq>}",
-                   "4:256:4:L:R:f,A:2:32,4" );
+                   " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<merge>,<mq>} ",
+                   "4:256:4,L:R:f:N,A:2:32,4" );
     option_parser_register(opp, "-gpgpu_cache:dl1", OPT_CSTR, &m_L1D_config.m_config_string, 
                    "per-shader L1 data cache config "
-                   " {<nsets>:<bsize>:<assoc>:<rep>:<wr>:<alloc>,<mshr>:<N>:<merge>,<mq>|none}",
+                   " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<merge>,<mq> | none}",
                    "none" );
     option_parser_register(opp, "-gpgpu_perfect_mem", OPT_BOOL, &gpgpu_perfect_mem, 
                  "enable perfect memory mode (no cache miss)",
@@ -185,6 +185,12 @@ void shader_core_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_shmem_size", OPT_UINT32, &gpgpu_shmem_size, 
                  "Size of shared memory per shader core (default 16kB)",
                  "16384");
+    option_parser_register(opp, "-gpgpu_shmem_num_banks", OPT_UINT32, &num_shmem_bank, 
+                 "Number of banks in the shared memory in each shader core (default 16)",
+                 "16");
+    option_parser_register(opp, "-gpgpu_shmem_limited_broadcast", OPT_BOOL, &shmem_limited_broadcast, 
+                 "Limit shared memory to do one broadcast per cycle (default on)",
+                 "1");
     option_parser_register(opp, "-gpgpu_shmem_warp_parts", OPT_INT32, &mem_warp_parts,  
                  "Number of portions a warp is divided into for shared memory bank conflict check ",
                  "2");

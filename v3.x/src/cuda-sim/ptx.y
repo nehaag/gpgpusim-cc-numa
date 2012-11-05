@@ -172,6 +172,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token  FULL_OPTION
 %token  ANY_OPTION
 %token  ALL_OPTION
+%token  BALLOT_OPTION
 %token  GLOBAL_OPTION
 %token  CTA_OPTION
 %token  SYS_OPTION
@@ -375,6 +376,7 @@ opcode_spec: OPCODE { add_opcode($1); } option_list
 
 pred_spec: PRED IDENTIFIER  { add_pred($2,0, -1); }
 	| PRED EXCLAMATION IDENTIFIER { add_pred($3,1, -1); } 
+	| PRED IDENTIFIER LT_OPTION  { add_pred($2,0,1); }
 	| PRED IDENTIFIER EQ_OPTION  { add_pred($2,0,2); }
 	| PRED IDENTIFIER LE_OPTION  { add_pred($2,0,3); }
 	| PRED IDENTIFIER NE_OPTION  { add_pred($2,0,5); }
@@ -398,6 +400,7 @@ option: type_spec
 	| WIDE_OPTION { add_option(WIDE_OPTION); }
 	| ANY_OPTION { add_option(ANY_OPTION); }
 	| ALL_OPTION { add_option(ALL_OPTION); }
+	| BALLOT_OPTION { add_option(BALLOT_OPTION); }
 	| GLOBAL_OPTION { add_option(GLOBAL_OPTION); }
 	| CTA_OPTION { add_option(CTA_OPTION); }
 	| SYS_OPTION { add_option(SYS_OPTION); }

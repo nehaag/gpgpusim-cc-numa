@@ -10,6 +10,21 @@ Version 3.1.1+edits (development branch) versus 3.1.1
 - Experimental support for libraries, currently not working because of
   undocumented functions in the cuda runtime API.
 - Converted loading fat binaries to be done on demand basis
+- Added support for vote.ballot instruction. 
+- Added support for popc instruction. 
+- Changed ssy ptxplus instructions to have their own opcode but they still act
+  as a nop right now.
+- Added support for converting BRX sass instructions to brx ptxplus instructions
+  in cuobjdump_to_ptxplus and started work on getting the brx ptxplus
+  instruction to work in gpgpusim.
+- Modified the cache hierarchy (cache_t -> baseline_cache -> [read_only_cache, data_cache, ...])
+- Enabled configurable cache policies (write-back, write-through) and implemented 
+  a write-allocate policy
+- Added functional execution support for shared memory atomic operations
+- Updated the option parser to support strings delimited by characters such as
+  '=' and ';'.  This allow options with a long string of sub-options (e.g. DRAM
+  timing) to have a more friendly format. 
+- Changed the DRAM timing option to a more reader-friendly format. 
 - Bug Fixes:
     - Fixed a compile error that happens with newer gcc/g++ versions (4.7.1)
     - Fixed a bug with the association between cuobjdump output and cubin
@@ -27,7 +42,26 @@ Version 3.1.1+edits (development branch) versus 3.1.1
       are counted into gpu_sim_insn regardless of predication outcome.  (Bug
       #15 external)
     - Added support for cudaReadModeNormalizedFloat (a texture read mode). 
-    - Fixed mult-element texel access (e.g. texel with RGBA components).  
+    - Fixed texture fetching for 1D texture with non-normalized coordinates. 
+    - Fixed mult-element texel fetching (e.g. texel with RGBA components).  
+    - Fixed bug where Global variables were not being declared in ptxplus.
+    - Fixed bug with IADD.CARRY sass instruction conversion to addp ptxplus
+      instruction.
+    - Fixed bug with .half ptxplus instruction modifier showing up on the wrong
+      instruction or not showing up at all. This should correct a bug where the
+      instruction addresses in ptxplus are different than sass. They need to be
+      the same for the brx ptxplus instruction to work.
+    - Fixed a bug where the L2 cache was modelling write-back for local writes
+      and write-evict for global writes - Should be write-back for all writes.
+    - Fixed bug that was causing undetermistic kernel end detection inside the 
+      simulation thread.
+    - Fixed clCreateProgramWithSource to accept NULL or 0 as string length parameter
+    - Fixed replacement of printf modifiers when compiling OpenCL code (e.g. '%f')
+    - Fixed the shared memory bank conflict model for GTX 480 and Tesla C2050.
+      Added options to configure the number of shared memory banks per shader
+      core and to allow a more flexible broadcast mechanism. 
+    - Fixed the timing model for LDU instruction, before it was not recognized
+      as a memory instruction in the timing model.
 
 Version 3.1.1 versus 3.1.0
 - Add checks to top level makefile to ensure setup_environment is run and checks to

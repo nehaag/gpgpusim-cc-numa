@@ -899,18 +899,33 @@ void atom_callback( const inst_t* inst, ptx_thread_info* thread )
 
    // Check state space
    addr_t effective_address = src1_data.u64;  
-   memory_space_t space = pI->get_space(); 
+   memory_space_t space = pI->get_space();
    if (space == undefined_space) {
-      // generic space - determine space via address 
-      space = whichspace(effective_address); 
-      assert( space == global_space ); 
-      effective_address = generic_to_global(effective_address); 
+      // generic space - determine space via address
+      if( whichspace(effective_address) == global_space ) {
+         effective_address = generic_to_global(effective_address);
+         space = global_space;
+      } else if( whichspace(effective_address) == shared_space ) {
+         unsigned smid = thread->get_hw_sid();
+         effective_address = generic_to_shared(smid,effective_address);
+         space = shared_space;
+      } else {
+         abort();
+      }
    } 
-   assert( space == global_space );
+   assert( space == global_space || space == shared_space );
+
+   memory_space *mem = NULL;
+   if(space == global_space)
+       mem = thread->get_global_memory();
+   else if(space == shared_space)
+       mem = thread->m_shared_mem;
+   else
+       abort();
 
    // Copy value pointed to in operand 'a' into register 'd'
    // (i.e. copy src1_data to dst)
-   thread->get_global_memory()->read(effective_address,size/8,&data.s64);
+   mem->read(effective_address,size/8,&data.s64);
    if (dst.get_symbol()->type()){
 	   thread->set_operand_value(dst, data, to_type, thread, pI);                         // Write value into register 'd'
    }
@@ -1151,9 +1166,9 @@ void atom_callback( const inst_t* inst, ptx_thread_info* thread )
       }
    }
 
-   // Write operation result into global memory
+   // Write operation result into  memory
    // (i.e. copy src1_data to dst)
-   thread->get_global_memory()->write(effective_address,size/8,&op_result.s64,thread,pI);
+   mem->write(effective_address,size/8,&op_result.s64,thread,pI);
 }
 
 // atom_impl will now result in a callback being called in mem_ctrl_pop (gpu-sim.c)
@@ -1177,16 +1192,23 @@ void atom_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 
    // handle generic memory space by converting it to global 
    if ( space == undefined_space ) {
-      assert( whichspace(effective_address) == global_space ); 
-      effective_address_final = generic_to_global(effective_address); 
-      space = global_space; 
+      if( whichspace(effective_address) == global_space ) {
+         effective_address_final = generic_to_global(effective_address);
+         space = global_space;
+      } else if( whichspace(effective_address) == shared_space ) {
+         unsigned smid = thread->get_hw_sid();
+         effective_address_final = generic_to_shared(smid,effective_address);
+         space = shared_space;
+      } else {
+         abort();
+      }
    } else {
-      assert( space == global_space ); 
+      assert( space == global_space || space == shared_space );
       effective_address_final = effective_address; 
    }
 
    // Check state space
-   assert( space == global_space );
+   assert( space == global_space || space == shared_space );
 
    thread->m_last_effective_address = effective_address_final;
    thread->m_last_memory_space = space;
@@ -1206,6 +1228,15 @@ void bfi_impl( const ptx_instruction *pI, ptx_thread_info *thread ) { inst_not_i
 void bfind_impl( const ptx_instruction *pI, ptx_thread_info *thread ) { inst_not_implemented(pI); }
 
 void bra_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
+{
+   const operand_info &target  = pI->dst();
+   ptx_reg_t target_pc = thread->get_operand_value(target, target, U32_TYPE, thread, 1);
+
+   thread->m_branch_taken = true;
+   thread->set_npc(target_pc);
+}
+
+void brx_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
 {
    const operand_info &target  = pI->dst();
    ptx_reg_t target_pc = thread->get_operand_value(target, target, U32_TYPE, thread, 1);
@@ -2824,7 +2855,32 @@ void orn_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 }
 
 void pmevent_impl( const ptx_instruction *pI, ptx_thread_info *thread ) { inst_not_implemented(pI); }
-void popc_impl( const ptx_instruction *pI, ptx_thread_info *thread ) { inst_not_implemented(pI); }
+void popc_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
+{ 
+   ptx_reg_t src_data, data;
+   const operand_info &dst  = pI->dst();
+   const operand_info &src = pI->src1();
+
+   unsigned i_type = pI->get_type();
+   src_data = thread->get_operand_value(src, dst, i_type, thread, 1);
+
+   switch ( i_type ) {
+   case B32_TYPE: {
+      std::bitset<32> mask(src_data.u32); 
+      data.u32 = mask.count(); 
+      } break;
+   case B64_TYPE: {
+      std::bitset<64> mask(src_data.u64); 
+      data.u32 = mask.count();
+      } break;
+   default:
+      printf("Execution error: type mismatch with instruction\n");
+      assert(0); 
+      break;
+   }
+
+   thread->set_operand_value(dst,data, i_type, thread, pI);
+}
 void prefetch_impl( const ptx_instruction *pI, ptx_thread_info *thread ) { inst_not_implemented(pI); }
 void prefetchu_impl( const ptx_instruction *pI, ptx_thread_info *thread ) { inst_not_implemented(pI); }
 void prmt_impl( const ptx_instruction *pI, ptx_thread_info *thread ) { inst_not_implemented(pI); }
@@ -3460,6 +3516,12 @@ void sqrt_impl( const ptx_instruction *pI, ptx_thread_info *thread )
    thread->set_operand_value(dst,d, i_type, thread, pI);
 }
 
+void ssy_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
+{
+   //printf("Execution Warning: unimplemented ssy instruction is treated as a nop\n");
+   // TODO: add implementation
+}
+
 void st_impl( const ptx_instruction *pI, ptx_thread_info *thread ) 
 {
    const operand_info &dst = pI->dst();
@@ -3695,6 +3757,7 @@ void tex_impl( const ptx_instruction *pI, ptx_thread_info *thread )
 
    std::string texname = src1.name();
    unsigned to_type = pI->get_type();
+   unsigned c_type = pI->get_type2();
    fflush(stdout);
    ptx_reg_t data1, data2, data3, data4;
    if (!ptx_tex_regs) ptx_tex_regs = new ptx_reg_t[4];
@@ -3728,6 +3791,7 @@ void tex_impl( const ptx_instruction *pI, ptx_thread_info *thread )
       width = cuArray->width;
       height = cuArray->height;
       if (texref->normalized) {
+         assert(c_type == F32_TYPE); 
          x_f32 = ptx_tex_regs[0].f32;
          if (texref->addressMode[0] == cudaAddressModeClamp) {
             x_f32 = (x_f32 > 1.0)? 1.0 : x_f32;
@@ -3749,7 +3813,25 @@ void tex_impl( const ptx_instruction *pI, ptx_thread_info *thread )
             y = 0;
          }
       } else {
-         x = ptx_tex_regs[0].u64;
+         switch ( c_type ) {
+         case S32_TYPE: 
+            x = ptx_tex_regs[0].s32; 
+            assert(texref->filterMode == cudaFilterModePoint); 
+            break; 
+         case F32_TYPE: 
+            x_f32 = ptx_tex_regs[0].f32; 
+            alpha = x_f32 - floor(x_f32); // offset into subtexel (for linear sampling)
+            x = (int) x_f32; 
+            break; 
+         default: assert(0 && "Unsupported texture coordinate type."); 
+         }
+         // handle texture fetch that exceeded boundaries
+         if (texref->addressMode[0] == cudaAddressModeClamp) {
+            x = (x > width - 1)? (width - 1) : x;
+            x = (x < 0)? 0 : x;
+         } else if (texref->addressMode[0] == cudaAddressModeWrap) {
+            x = x % width;
+         }
       }
       width *= (cuArray->desc.w+cuArray->desc.x+cuArray->desc.y+cuArray->desc.z)/8;
       x *= (cuArray->desc.w+cuArray->desc.x+cuArray->desc.y+cuArray->desc.z)/8;
@@ -3956,6 +4038,7 @@ void vote_impl( const ptx_instruction *pI, ptx_thread_info *thread )
    static bool first_in_warp = true;
    static bool and_all;
    static bool or_all;
+   static unsigned int ballot_result;
    static std::list<ptx_thread_info*> threads_in_warp;
    static unsigned last_tid;
 
@@ -3964,6 +4047,7 @@ void vote_impl( const ptx_instruction *pI, ptx_thread_info *thread )
       threads_in_warp.clear();
       and_all = true;
       or_all = false;
+      ballot_result = 0;
       int offset=31;
       while( (offset>=0) && !pI->active(offset) ) 
          offset--;
@@ -3984,22 +4068,36 @@ void vote_impl( const ptx_instruction *pI, ptx_thread_info *thread )
    and_all &= (invert ^ pred_value);
    or_all |= (invert ^ pred_value);
 
+   // vote.ballot
+   if (invert ^ pred_value) {
+      int lane_id = thread->get_hw_tid() % pI->warp_size(); 
+      ballot_result |= (1 << lane_id); 
+   }
+
    if( thread->get_hw_tid() == last_tid ) {
-      bool pred_value = false; 
+      if (pI->vote_mode() == ptx_instruction::vote_ballot) {
+         ptx_reg_t data = ballot_result; 
+         for( std::list<ptx_thread_info*>::iterator t=threads_in_warp.begin(); t!=threads_in_warp.end(); ++t ) {
+            const operand_info &dst = pI->dst();
+            (*t)->set_operand_value(dst,data, pI->get_type(), (*t), pI);
+         }
+      } else {
+         bool pred_value = false; 
 
-      switch( pI->vote_mode() ) {
-      case ptx_instruction::vote_any: pred_value = or_all; break;
-      case ptx_instruction::vote_all: pred_value = and_all; break;
-      case ptx_instruction::vote_uni: pred_value = (or_all ^ and_all); break;
-      default:
-         abort();
-      }
-      ptx_reg_t data;
-      data.pred = pred_value?0:1; //the way ptxplus handles the zero flag, 1 = false and 0 = true
+         switch( pI->vote_mode() ) {
+         case ptx_instruction::vote_any: pred_value = or_all; break;
+         case ptx_instruction::vote_all: pred_value = and_all; break;
+         case ptx_instruction::vote_uni: pred_value = (or_all ^ and_all); break;
+         default:
+            abort();
+         }
+         ptx_reg_t data;
+         data.pred = pred_value?0:1; //the way ptxplus handles the zero flag, 1 = false and 0 = true
 
-      for( std::list<ptx_thread_info*>::iterator t=threads_in_warp.begin(); t!=threads_in_warp.end(); ++t ) {
-         const operand_info &dst = pI->dst();
-         (*t)->set_operand_value(dst,data, PRED_TYPE, (*t), pI);
+         for( std::list<ptx_thread_info*>::iterator t=threads_in_warp.begin(); t!=threads_in_warp.end(); ++t ) {
+            const operand_info &dst = pI->dst();
+            (*t)->set_operand_value(dst,data, PRED_TYPE, (*t), pI);
+         }
       }
       first_in_warp = true;
    }
