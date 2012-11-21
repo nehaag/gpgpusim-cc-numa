@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token  CALLTARGETS_DIRECTIVE
 %token  <int_value> CONST_DIRECTIVE
 %token  CONSTPTR_DIRECTIVE
+%token  PTR_DIRECTIVE
 %token  ENTRY_DIRECTIVE
 %token  EXTERN_DIRECTIVE
 %token  FILE_DIRECTIVE
@@ -217,6 +218,7 @@ block_spec: MAXNTID_DIRECTIVE INT_OPERAND COMMA INT_OPERAND COMMA INT_OPERAND {f
 										func_header_info_int(",", $4);
 										func_header_info_int(",", $6); }
 	| MINNCTAPERSM_DIRECTIVE INT_OPERAND { func_header_info_int(".minnctapersm", $2); printf("GPGPU-Sim: Warning: .minnctapersm ignored. \n"); }
+	| MAXNCTAPERSM_DIRECTIVE INT_OPERAND { func_header_info_int(".maxnctapersm", $2); printf("GPGPU-Sim: Warning: .maxnctapersm ignored. \n"); }
 	;
 
 block_spec_list: block_spec
@@ -242,8 +244,18 @@ param_list: /*empty*/
 	| param_entry { add_directive(); }
 	| param_list COMMA {func_header_info(",");} param_entry { add_directive(); }
 
-param_entry: PARAM_DIRECTIVE { add_space_spec(param_space_unclassified,0); } variable_spec identifier_spec { add_function_arg(); }
+param_entry: PARAM_DIRECTIVE { add_space_spec(param_space_unclassified,0); } variable_spec ptr_spec identifier_spec { add_function_arg(); }
 	| REG_DIRECTIVE { add_space_spec(reg_space,0); } variable_spec identifier_spec { add_function_arg(); }
+
+ptr_spec: /*empty*/
+        | PTR_DIRECTIVE ptr_space_spec ptr_align_spec
+        | PTR_DIRECTIVE ptr_align_spec
+
+ptr_space_spec: GLOBAL_DIRECTIVE { add_ptr_spec(global_space); }
+              | LOCAL_DIRECTIVE  { add_ptr_spec(local_space); }
+              | SHARED_DIRECTIVE { add_ptr_spec(shared_space); }
+
+ptr_align_spec: ALIGN_DIRECTIVE INT_OPERAND
 
 statement_block: LEFT_BRACE statement_list RIGHT_BRACE 
 
