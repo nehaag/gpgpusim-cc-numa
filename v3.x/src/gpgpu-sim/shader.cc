@@ -983,7 +983,7 @@ void ldst_unit::set_icnt_power_stats(unsigned &simt_to_mem) const{
 	simt_to_mem = n_simt_to_mem+l1d+tex+l1c; // All components that push packets into the interconnect
 }
 
-void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst, bool memory)
+void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst)
 {
    #if 0
       printf("[warp_inst_complete] uid=%u core=%u warp=%u pc=%#x @ time=%llu issued@%llu\n", 
@@ -996,30 +996,21 @@ void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst, bool memory)
   else if(inst.op4==MEM__OP)
 	  m_stats->m_num_mem_committed[m_sid]++;
 
-  	  if(memory==0){
-  		  m_stats->m_num_sim_insn[m_sid] += inst.active_count();
-  		  m_stats->m_num_sim_winsn[m_sid]++;
-  	  }
-   m_gpu->gpu_sim_insn += inst.active_count();
-   inst.completed(gpu_tot_sim_cycle + gpu_sim_cycle);
+  if(m_config->gpgpu_clock_gated_lanes==false)
+	  m_stats->m_num_sim_insn[m_sid] += m_config->warp_size;
+  else
+	  m_stats->m_num_sim_insn[m_sid] += inst.active_count();
+
+  m_stats->m_num_sim_winsn[m_sid]++;
+  m_gpu->gpu_sim_insn += inst.active_count();
+  inst.completed(gpu_tot_sim_cycle + gpu_sim_cycle);
 }
 
 void shader_core_ctx::writeback()
 {
-	 if(m_config->gpgpu_clock_gated_lanes==false){
-	   m_stats->m_pipeline_duty_cycle[m_sid]=roundUp((m_stats->m_num_sim_insn[m_sid]-m_stats->m_last_num_sim_insn[m_sid])/(64.0));
-	 }	else {
-	   m_stats->m_pipeline_duty_cycle[m_sid]=(m_stats->m_num_sim_insn[m_sid]-m_stats->m_last_num_sim_insn[m_sid])/(64.0);
-	 }
 
-    //assert(m_stats->m_pipeline_duty_cycle[m_sid]<=4*32);
-    if((m_stats->m_num_sim_winsn[m_sid]-m_stats->m_last_num_sim_winsn[m_sid])<5){
-    	m_stats->inst_per_cycle[(m_stats->m_num_sim_winsn[m_sid]-m_stats->m_last_num_sim_winsn[m_sid])][m_sid]++;
-    }
-    else{
-    	m_stats->inst_per_cycle[5][m_sid]++;
-    }
-
+	unsigned max_committed_thread_instructions=m_config->warp_size * (m_config->pipe_widths[EX_WB]); //from the functional units
+	m_stats->m_pipeline_duty_cycle[m_sid]=((float)(m_stats->m_num_sim_insn[m_sid]-m_stats->m_last_num_sim_insn[m_sid]))/max_committed_thread_instructions;
 
     m_stats->m_last_num_sim_insn[m_sid]=m_stats->m_num_sim_insn[m_sid];
     m_stats->m_last_num_sim_winsn[m_sid]=m_stats->m_num_sim_winsn[m_sid];
@@ -1047,7 +1038,7 @@ void shader_core_ctx::writeback()
         unsigned warp_id = pipe_reg->warp_id();
         m_scoreboard->releaseRegisters( pipe_reg );
         m_warp[warp_id].dec_inst_in_pipeline();
-        warp_inst_complete(*pipe_reg,0);
+        warp_inst_complete(*pipe_reg);
         m_gpu->gpu_sim_insn_last_update_sid = m_sid;
         m_gpu->gpu_sim_insn_last_update = gpu_sim_cycle;
         m_last_inst_gpu_sim_cycle = gpu_sim_cycle;
@@ -1338,6 +1329,7 @@ ldst_unit::ldst_unit( mem_fetch_interface *icnt,
     m_mem_rc = NO_RC_FAIL;
     m_num_writeback_clients=5; // = shared memory, global/local (uncached), L1D, L1T, L1C
     m_writeback_arb = 0;
+    n_simt_to_mem = 0;
     m_next_global=NULL;
     m_last_inst_gpu_sim_cycle=0;
     m_last_inst_gpu_tot_sim_cycle=0;
@@ -1392,7 +1384,7 @@ void ldst_unit::writeback()
                 }
             }
             if( insn_completed ) {
-                m_core->warp_inst_complete(m_next_wb, 1); 
+                m_core->warp_inst_complete(m_next_wb);
             }
             m_next_wb.clear();
             m_last_inst_gpu_sim_cycle = gpu_sim_cycle;
@@ -1537,6 +1529,8 @@ void ldst_unit::cycle()
    done &= texture_cycle(pipe_reg, rc_fail, type);
    done &= memory_cycle(pipe_reg, rc_fail, type);
    m_mem_rc = rc_fail;
+   set_stats(); // Sets stats in m_stats object
+
    if (!done) { // log stall types and return
       assert(rc_fail != NO_RC_FAIL);
       m_stats->gpgpu_n_stall_shd_mem++;
@@ -1575,7 +1569,7 @@ void ldst_unit::cycle()
                    }
                }
                if( !pending_requests ) {
-                   m_core->warp_inst_complete(*m_dispatch_reg, 1); 
+                   m_core->warp_inst_complete(*m_dispatch_reg);
                    m_scoreboard->releaseRegisters(m_dispatch_reg);
                }
                m_core->dec_inst_in_pipeline(warp_id);
@@ -1585,12 +1579,10 @@ void ldst_unit::cycle()
            // stores exit pipeline here
            m_core->dec_inst_in_pipeline(warp_id);
            m_core->get_gpu()->gpu_sim_insn += m_dispatch_reg->active_count();
-           m_core->warp_inst_complete(*m_dispatch_reg,1); 
+           m_core->warp_inst_complete(*m_dispatch_reg);
            m_dispatch_reg->clear();
        }
    }
-   // Sets stats in m_stats object
-   set_stats();
 }
 
 void shader_core_ctx::register_cta_thread_exit( unsigned cta_num )
@@ -2332,8 +2324,9 @@ void shader_core_ctx::get_cache_stats(unsigned &read_accesses, unsigned &write_a
 
 void shader_core_ctx::set_icnt_power_stats(unsigned &n_simt_to_mem) const{
 	unsigned l1i=0;
-
-	m_L1I->set_icnt_power_stats(l1i);
+	if( m_L1I ){
+		m_L1I->set_icnt_power_stats(l1i);
+	}
 	m_ldst_unit->set_icnt_power_stats(n_simt_to_mem);
 
 	n_simt_to_mem+=l1i; // l1i + l1d + l1c + l1t + any non-cached access

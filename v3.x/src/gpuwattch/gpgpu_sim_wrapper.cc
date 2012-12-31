@@ -31,42 +31,7 @@
 #define NUM_COMPONENTS_MODELLED 18
 #define NUM_PERFORMANCE_COUNTERS 30
 
-static const char * perf_count_label[] = {"TOT_INST,", "FP_INT,", "IC_H,", "IC_M,", "DC_RH,", "DC_RM,", "DC_WH,", "DC_WM,",
-								"TC_H,", "TC_M,", "CC_H,", "CC_M,", "SHRD_ACC,", "REG_RD,", "REG_WR,", "NON_REG_OPs,",
-								"SP_ACC,", "SFU_ACC,", "FPU_ACC,", "MEM_RD,","MEM_WR,", "MEM_PRE,", "L2_RH,", "L2_RM,", "L2_WH,",
-								"L2_WM,", "NOC_A,", "PIPE_A,", "IDLE_CORE_N,", "CONST_DYNAMICN"};
-enum perf_count_t {
-   TOT_INST=0,
-   FP_INT,
-   IC_H,
-   IC_M,
-   DC_RH,
-   DC_RM,
-   DC_WH,
-   DC_WM,
-   TC_H,
-   TC_M,
-   CC_H,
-   CC_M,
-   SHRD_ACC,
-   REG_RD,
-   REG_WR,
-   NON_REG_OPs,
-   SP_ACC,
-   SFU_ACC,
-   FPU_ACC,
-   MEM_RD,
-   MEM_WR,
-   MEM_PRE,
-   L2_RH,
-   L2_RM,
-   L2_WH,
-   L2_WM,
-   NOC_A,
-   PIPE_A,
-   IDLE_CORE_N,
-   CONST_DYNAMICN
-};
+
 
 static const char * pwr_cmp_label[] = {"IBP,", "ICP,", "DCP,", "TCP,", "CCP,", "SHRDP,", "RFP,", "SPP,",
 								"SFUP,", "FPUP,", "SCHEDP,", "L2CP,", "MCP,", "NOCP,", "DRAMP,",
@@ -94,7 +59,7 @@ enum pwr_cmp_t {
 };
 
 
-gpgpu_sim_wrapper::gpgpu_sim_wrapper() {
+gpgpu_sim_wrapper::gpgpu_sim_wrapper( bool power_simulation_enabled, char* xmlfile) {
 	   count=0;
 	   gcount=0;
 
@@ -107,26 +72,59 @@ gpgpu_sim_wrapper::gpgpu_sim_wrapper() {
 	   num_pwr_cmps=NUM_COMPONENTS_MODELLED;
 	   num_per_counts=NUM_PERFORMANCE_COUNTERS;
 	   pavg=0;
-	   perf_count=(double *)calloc(100,sizeof(double));
-	   initpower_coeff=(double *)calloc(100,sizeof(double));
-	   effpower_coeff=(double *)calloc(100,sizeof(double));
-	   pwr_cmp=(double *)calloc(100,sizeof(double));
-	   pwr_cmp_avg=(double *)calloc(100,sizeof(double));
-	   pwr_cmp_min=(double *)calloc(100,sizeof(double));
-	   pwr_cmp_max=(double *)calloc(100,sizeof(double));
-	   perf_count_avg=(double *)calloc(100,sizeof(double));
-	   perf_count_min=(double *)calloc(100,sizeof(double));
-	   perf_count_max=(double *)calloc(100,sizeof(double));
+	   perf_count=(double *)calloc(num_per_counts,sizeof(double));
+	   initpower_coeff=(double *)calloc(num_per_counts,sizeof(double));
+	   effpower_coeff=(double *)calloc(num_per_counts,sizeof(double));
+	   perf_count_avg=(double *)calloc(num_per_counts,sizeof(double));
+	   perf_count_min=(double *)calloc(num_per_counts,sizeof(double));
+	   perf_count_max=(double *)calloc(num_per_counts,sizeof(double));
+	   pwr_cmp=(double *)calloc(num_pwr_cmps,sizeof(double));
+	   pwr_cmp_avg=(double *)calloc(num_pwr_cmps,sizeof(double));
+	   pwr_cmp_min=(double *)calloc(num_pwr_cmps,sizeof(double));
+	   pwr_cmp_max=(double *)calloc(num_pwr_cmps,sizeof(double));
 	   const_dynamic_power=0;
 	   gpu_min_power=0;
 	   gpu_tot_min_power=0;
+	   proc_power=0;
 
+	   g_power_filename = NULL;
+	   g_power_trace_filename = NULL;
+	   g_metric_trace_filename = NULL;
+	   g_steady_state_tracking_filename = NULL;
+	   xml_filename= xmlfile;
+	   g_power_simulation_enabled= power_simulation_enabled;
+	   g_power_trace_enabled= false;
+	   g_steady_power_levels_enabled= false;
+	   g_power_trace_zlevel= 0;
+	   g_power_per_cycle_dump= false;
+	   gpu_steady_power_deviation= 0;
+	   gpu_steady_min_period= 0;
+
+	   gpu_stat_sample_freq=0;
+	   p=new ParseXML();
+	   if (g_power_simulation_enabled){
+	       p->parse(xml_filename);
+	   }
+	   proc = new Processor(p);
+	   power_trace_file = NULL;
+	   metric_trace_file = NULL;
+	   steady_state_tacking_file = NULL;
+	   has_written_avg=false;
+	   init_inst_val=false;
 
 }
 
 gpgpu_sim_wrapper::~gpgpu_sim_wrapper() { }
 
+bool gpgpu_sim_wrapper::sanity_check(double a, double b)
+{
+	if (b == 0)
+		return (abs(a-b)<0.00001);
+	else
+		return (abs(a-b)/abs(b)<0.00001);
 
+	return false;
+}
 void gpgpu_sim_wrapper::init_mcpat(char* xmlfile, char* powerfilename, char* power_trace_filename,char* metric_trace_filename,
 								   char * steady_state_filename, bool power_sim_enabled,bool trace_enabled,
 								   bool steady_state_enabled,bool power_per_cycle_dump,double steady_power_deviation,
@@ -138,12 +136,6 @@ void gpgpu_sim_wrapper::init_mcpat(char* xmlfile, char* powerfilename, char* pow
     gpu_max_power=0;
 
     pavg=0;
-    pwr_cmp_avg=(double *)calloc(100,sizeof(double));
-    pwr_cmp_min=(double *)calloc(100,sizeof(double));
-    pwr_cmp_max=(double *)calloc(100,sizeof(double));
-    perf_count_avg=(double *)calloc(100,sizeof(double));
-    perf_count_min=(double *)calloc(100,sizeof(double));
-    perf_count_max=(double *)calloc(100,sizeof(double));
     gpu_min_power=0;
 
    static bool mcpat_init=true;
@@ -176,10 +168,6 @@ void gpgpu_sim_wrapper::init_mcpat(char* xmlfile, char* powerfilename, char* pow
 
 	   gpu_stat_sample_freq=stat_sample_freq;
 
-
-	   p=new ParseXML();
-	   p->parse(xml_filename);
-	   proc = new Processor(p);
 	   //p->sys.total_cycles=gpu_stat_sample_freq*4;
 	   p->sys.total_cycles=gpu_stat_sample_freq;
 	   power_trace_file = NULL;
@@ -382,21 +370,8 @@ void gpgpu_sim_wrapper::set_NoC_power(double noc_tot_reads,double noc_tot_writes
 {
 	p->sys.NoC[0].total_accesses = noc_tot_reads * p->sys.scaling_coefficients[NOC_A] + noc_tot_writes * p->sys.scaling_coefficients[NOC_A];
 	perf_count[NOC_A]=noc_tot_reads+noc_tot_writes;
-
-
 }
 
-bool gpgpu_sim_wrapper::sanity_check(double a, double b)
-{
-	if (b == 0) 
-		return (abs(a-b)<0.00001);
-	else if(abs(a-b)/abs(b)<0.00001) {
-		return true;
-	}
-
-	printf("a = %f, b = %f a-b = %f\n", a,b,a-b);
-	return false;
-}
 
 void gpgpu_sim_wrapper::power_metrics_calculations()
 {
@@ -591,6 +566,7 @@ void gpgpu_sim_wrapper::update_components_power()
 	pwr_cmp[IDLE_COREP]=proc->cores[0]->IdleCoreEnergy/(proc->cores[0]->executionTime);
 
 	//this constant dynamic part is estimated via regression model
+	pwr_cmp[CONST_DYNAMICP]=0;
 	pwr_cmp[CONST_DYNAMICP]=p->sys.scaling_coefficients[CONST_DYNAMICN]-proc->get_const_dynamic_power()/(proc->cores[0]->executionTime);
 	pwr_cmp[CONST_DYNAMICP]= (pwr_cmp[CONST_DYNAMICP]>0)? pwr_cmp[CONST_DYNAMICP]:0;
 
@@ -600,7 +576,9 @@ void gpgpu_sim_wrapper::update_components_power()
 	for(unsigned i=0; i<num_pwr_cmps; i++){
 		sum_pwr_cmp+=pwr_cmp[i];
 	}
-	assert("Total Power does not equal the sum of the components\n" && sanity_check(sum_pwr_cmp,proc_power));
+	bool check=false;
+	check=sanity_check(sum_pwr_cmp,proc_power);
+	assert("Total Power does not equal the sum of the components\n" && (check));
 
 }
 

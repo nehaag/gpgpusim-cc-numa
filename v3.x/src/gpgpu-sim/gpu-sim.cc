@@ -64,6 +64,8 @@
 
 #ifdef GPGPUSIM_POWER_MODEL
 #include "power_interface.h"
+#else
+class  gpgpu_sim_wrapper {};
 #endif
 
 #include <stdio.h>
@@ -101,9 +103,9 @@ void power_config::reg_options(class OptionParser * opp)
 {
 
 
-	  option_parser_register(opp, "-mcpat_xml_file", OPT_CSTR,
-			  	  	  	  	 &g_power_config_name,"McPAT XML file",
-	                   "mcpat.xml");
+	  option_parser_register(opp, "-gpuwattch_xml_file", OPT_CSTR,
+			  	  	  	  	 &g_power_config_name,"GPUWattch XML file",
+	                   "gpuwattch.xml");
 
 	   option_parser_register(opp, "-power_simulation_enabled", OPT_BOOL,
 	                          &g_power_simulation_enabled, "Turn on power simulator (1=On, 0=Off)",
@@ -487,7 +489,7 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
     ptx_file_line_stats_create_exposed_latency_tracker(m_config.num_shader());
 
 #ifdef GPGPUSIM_POWER_MODEL
-    m_gpgpusim_wrapper = new gpgpu_sim_wrapper();
+        m_gpgpusim_wrapper = new gpgpu_sim_wrapper(config.g_power_simulation_enabled,config.g_power_config_name);
 #endif
 
     m_shader_stats = new shader_core_stats(m_shader_config);
