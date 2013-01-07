@@ -255,14 +255,15 @@ private:
     friend class l2_cache;
 };
 
+
 class tag_array {
 public:
-    tag_array( const cache_config &config, int core_id, int type_id ); 
+    tag_array( const cache_config &config, int core_id, int type_id );
     ~tag_array();
 
     enum cache_request_status probe( new_addr_type addr, unsigned &idx ) const;
     enum cache_request_status access( new_addr_type addr, unsigned time, unsigned &idx );
-    enum cache_request_status access( new_addr_type addr, unsigned time, unsigned &idx, bool &wb, cache_block_t &evicted ); 
+    enum cache_request_status access( new_addr_type addr, unsigned time, unsigned &idx, bool &wb, cache_block_t &evicted );
 
     void fill( new_addr_type addr, unsigned time );
     void fill( unsigned idx, unsigned time );
@@ -270,11 +271,12 @@ public:
     unsigned size() const { return m_config.get_num_lines();}
     cache_block_t &get_block(unsigned idx) { return m_lines[idx];}
 
-    void flush(); // flash invalidate all entries 
+    void flush(); // flash invalidate all entries
     void new_window();
 
     void print( FILE *stream, unsigned &total_access, unsigned &total_misses ) const;
     float windowed_miss_rate( ) const;
+    void get_stats(unsigned &total_access, unsigned &total_misses) const;
 
 protected:
 
@@ -289,11 +291,12 @@ protected:
     // performance counters for calculating the amount of misses within a time window
     unsigned m_prev_snapshot_access;
     unsigned m_prev_snapshot_miss;
-    unsigned m_prev_snapshot_pending_hit; 
+    unsigned m_prev_snapshot_pending_hit;
 
     int m_core_id; // which shader core is using this
     int m_type_id; // what kind of cache is this (normal, texture, constant)
 };
+
 
 class mshr_table {
 public:
@@ -366,6 +369,11 @@ public:
         assert(config.m_mshr_type == ASSOC);
         m_memport=memport;
         m_miss_queue_status = status;
+        m_read_access=0;
+        m_write_access=0;
+        m_read_miss=0;
+        m_write_miss=0;
+        n_simt_to_mem=0;
     }
 
     virtual enum cache_request_status access( new_addr_type addr, mem_fetch *mf, unsigned time, std::list<cache_event> &events ) =  0;
@@ -383,6 +391,21 @@ public:
     void flush(){m_tag_array.flush();}
     void print(FILE *fp, unsigned &accesses, unsigned &misses) const;
     void display_state( FILE *fp ) const;
+
+    virtual void get_data_stats(unsigned &read_access, unsigned &read_misses,unsigned &write_access,  unsigned &write_misses) const {
+    	read_access = m_read_access;
+    	write_access = m_write_access;
+    	read_misses = m_read_miss;
+    	write_misses = m_write_miss;
+    }
+
+    void get_stats(unsigned &accesses, unsigned &misses) const {
+    	m_tag_array.get_stats(accesses, misses);
+    }
+
+    void set_icnt_power_stats(unsigned &simt_to_mem) const{
+    	simt_to_mem = n_simt_to_mem;
+    }
 
     protected:
     std::string m_name;
@@ -422,6 +445,14 @@ public:
     /// Read miss handler. Check MSHR hit or MSHR available
     void send_read_request(new_addr_type addr, new_addr_type block_addr, unsigned cache_index, mem_fetch *mf,
     		unsigned time, bool &do_miss, bool &wb, cache_block_t &evicted, std::list<cache_event> &events, bool read_only, bool wa);
+
+    // Power stats
+    unsigned m_read_access;
+    unsigned m_write_access;
+    unsigned m_read_miss;
+    unsigned m_write_miss;
+
+    unsigned n_simt_to_mem; // Interconnect power stats
 };
 
 /// Read only cache
@@ -557,6 +588,7 @@ public:
         m_cache = new data_block[ config.get_num_lines() ];
         m_request_queue_status = request_status;
         m_rob_status = rob_status;
+        n_simt_to_mem=0;
     }
 
     /// Access function for tex_cache
@@ -573,6 +605,14 @@ public:
     /// Pop next ready access (includes both accesses that "HIT" and those that "MISS")
     mem_fetch *next_access(){return m_result_fifo.pop();}
     void display_state( FILE *fp ) const;
+
+    void get_stats(unsigned &accesses, unsigned &misses) const{
+    	m_tags.get_stats(accesses, misses);
+    }
+
+    void set_icnt_power_stats(unsigned &simt_to_mem) const{
+    	simt_to_mem = n_simt_to_mem;
+    }
 
     private:
     std::string m_name;
@@ -700,6 +740,9 @@ public:
     typedef std::map<mem_fetch*,extra_mf_fields> extra_mf_fields_lookup;
 
     extra_mf_fields_lookup m_extra_mf_fields;
+
+    // Interconnect power stats
+    unsigned n_simt_to_mem;
 };
 
 #endif
