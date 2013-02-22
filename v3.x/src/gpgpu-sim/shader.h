@@ -108,10 +108,15 @@ public:
         m_last_fetch=0;
         m_next=0;
     }
-    void init( address_type start_pc, unsigned cta_id, unsigned wid, const std::bitset<MAX_WARP_SIZE> &active )
+    void init( address_type start_pc,
+               unsigned cta_id,
+               unsigned wid,
+               const std::bitset<MAX_WARP_SIZE> &active,
+               unsigned dynamic_warp_id )
     {
         m_cta_id=cta_id;
         m_warp_id=wid;
+        m_dynamic_warp_id=dynamic_warp_id;
         m_next_pc=start_pc;
         assert( n_completed >= active.count() );
         assert( n_completed <= m_warp_size);
@@ -204,12 +209,16 @@ public:
 
     unsigned get_cta_id() const { return m_cta_id; }
 
+    unsigned get_dynamic_warp_id() const { return m_dynamic_warp_id; }
+    unsigned get_warp_id() const { return m_warp_id; }
+
 private:
     static const unsigned IBUFFER_SIZE=2;
     class shader_core_ctx *m_shader;
     unsigned m_cta_id;
     unsigned m_warp_id;
     unsigned m_warp_size;
+    unsigned m_dynamic_warp_id;
 
     address_type m_next_pc;
     unsigned n_completed;          // number of threads in warp completed
@@ -250,6 +259,27 @@ class shader_core_ctx;
 class shader_core_config;
 class shader_core_stats;
 
+enum scheduler_prioritization_type
+{
+    SCHEDULER_PRIORITIZATION_LRR = 0, // Loose Round Robin
+    SCHEDULER_PRIORITIZATION_SRR, // Strict Round Robin
+    SCHEDULER_PRIORITIZATION_GTO, // Greedy Then Oldest
+    SCHEDULER_PRIORITIZATION_GTLRR, // Greedy Then Loose Round Robin
+    SCHEDULER_PRIORITIZATION_GTY, // Greedy Then Youngest
+    SCHEDULER_PRIORITIZATION_OLDEST, // Oldest First
+    SCHEDULER_PRIORITIZATION_YOUNGEST, // Youngest First
+};
+
+// Each of these corresponds to a string value in the gpgpsim.config file
+// For example - to specify the LRR scheudler the config must contain lrr
+enum concrete_scheduler
+{
+    CONCRETE_SCHEDULER_LRR = 0,
+    CONCRETE_SCHEDULER_GTO,
+    CONCRETE_SCHEDULER_TWO_LEVEL_ACTIVE,
+    NUM_CONCRETE_SCHEDULERS
+};
+
 class scheduler_unit { //this can be copied freely, so can be used in std containers.
 public:
     scheduler_unit(shader_core_stats* stats, shader_core_ctx* shader, 
@@ -257,21 +287,74 @@ public:
                    std::vector<shd_warp_t>* warp, 
                    register_set* sp_out,
                    register_set* sfu_out,
-                   register_set* mem_out) 
-        : supervised_warps(), m_last_sup_id_issued(0), m_stats(stats), m_shader(shader),
+                   register_set* mem_out,
+                   int id) 
+        : m_supervised_warps(), m_stats(stats), m_shader(shader),
         m_scoreboard(scoreboard), m_simt_stack(simt), /*m_pipeline_reg(pipe_regs),*/ m_warp(warp),
-        m_sp_out(sp_out),m_sfu_out(sfu_out),m_mem_out(mem_out){}
+        m_sp_out(sp_out),m_sfu_out(sfu_out),m_mem_out(mem_out), m_id(id){}
     virtual ~scheduler_unit(){}
     virtual void add_supervised_warp_id(int i) {
-        supervised_warps.push_back(i);
+        m_supervised_warps.push_back(&warp(i));
+    }
+    virtual void done_adding_supervised_warps() {
+        m_last_supervised_issued = m_supervised_warps.end();
     }
 
-    virtual void cycle()=0;
+
+    // The core scheduler cycle method is meant to be common between
+    // all the derived schedulers.  The scheduler's behaviour can be
+    // modified by changing the contents of the m_next_cycle_prioritized_warps list.
+    void cycle();
+
+    // These are some common ordering fucntions that the
+    // higher order schedulers can take advantage of
+    template < typename T >
+    void order_lrr( typename std::vector< T >& result_list,
+                    const typename std::vector< T >& input_list,
+                    const typename std::vector< T >::const_iterator& last_issued_from_input,
+                    unsigned num_warps_to_add );
+    
+    enum OrderingType 
+    {
+        // The item that issued last is prioritized first then the sorted result
+        // of the priority_function
+        ORDERING_GREEDY_THEN_PRIORITY_FUNC = 0,
+        // No greedy scheduling based on last to issue. Only the priority function determines
+        // priority
+        ORDERED_PRIORITY_FUNC_ONLY,
+        NUM_ORDERING,
+    };
+    template < typename U >
+    void order_by_priority( std::vector< U >& result_list,
+                            const typename std::vector< U >& input_list,
+                            const typename std::vector< U >::const_iterator& last_issued_from_input,
+                            unsigned num_warps_to_add,
+                            OrderingType age_ordering,
+                            bool (*priority_func)(U lhs, U rhs) );
+    static bool sort_warps_by_oldest_dynamic_id(shd_warp_t* lhs, shd_warp_t* rhs);
+
+    // Derived classes can override this function to populate
+    // m_supervised_warps with their scheduling policies
+    virtual void order_warps() = 0;
+
+protected:
+    virtual void do_on_warp_issued( unsigned warp_id,
+                                    unsigned num_issued,
+                                    const std::vector< shd_warp_t* >::const_iterator& prioritized_iter );
+    inline int get_sid() const;
 protected:
     shd_warp_t& warp(int i);
 
-    std::vector<int> supervised_warps;
-    int m_last_sup_id_issued;
+    // This is the prioritized warp list that is looped over each cycle to determine
+    // which warp gets to issue.
+    std::vector< shd_warp_t* > m_next_cycle_prioritized_warps;
+    // The m_supervised_warps list is all the warps this scheduler is supposed to
+    // arbitrate between.  This is useful in systems where there is more than
+    // one warp scheduler. In a single scheduler system, this is simply all
+    // the warps assigned to this core.
+    std::vector< shd_warp_t* > m_supervised_warps;
+    // This is the iterator pointer to the last supervised warp you issued
+    std::vector< shd_warp_t* >::const_iterator m_last_supervised_issued;
     shader_core_stats *m_stats;
     shader_core_ctx* m_shader;
     // these things should become accessors: but would need a bigger rearchitect of how shader_core_ctx interacts with its parts.
@@ -282,45 +365,89 @@ protected:
     register_set* m_sp_out;
     register_set* m_sfu_out;
     register_set* m_mem_out;
+
+    int m_id;
 };
 
-class LooseRoundRobbinScheduler : public scheduler_unit {
+class lrr_scheduler : public scheduler_unit {
 public:
-	LooseRoundRobbinScheduler (shader_core_stats* stats, shader_core_ctx* shader,
-            Scoreboard* scoreboard, simt_stack** simt,
-            std::vector<shd_warp_t>* warp,
-            register_set* sp_out,
-            register_set* sfu_out,
-            register_set* mem_out)
-	: scheduler_unit (stats, shader, scoreboard, simt, warp, sp_out, sfu_out, mem_out){}
-	virtual ~LooseRoundRobbinScheduler () {}
-	virtual void cycle ();
+	lrr_scheduler ( shader_core_stats* stats, shader_core_ctx* shader,
+                    Scoreboard* scoreboard, simt_stack** simt,
+                    std::vector<shd_warp_t>* warp,
+                    register_set* sp_out,
+                    register_set* sfu_out,
+                    register_set* mem_out,
+                    int id )
+	: scheduler_unit ( stats, shader, scoreboard, simt, warp, sp_out, sfu_out, mem_out, id ){}
+	virtual ~lrr_scheduler () {}
+	virtual void order_warps ();
+    virtual void done_adding_supervised_warps() {
+        m_last_supervised_issued = m_supervised_warps.end();
+    }
+};
+
+class gto_scheduler : public scheduler_unit {
+public:
+	gto_scheduler ( shader_core_stats* stats, shader_core_ctx* shader,
+                    Scoreboard* scoreboard, simt_stack** simt,
+                    std::vector<shd_warp_t>* warp,
+                    register_set* sp_out,
+                    register_set* sfu_out,
+                    register_set* mem_out,
+                    int id )
+	: scheduler_unit ( stats, shader, scoreboard, simt, warp, sp_out, sfu_out, mem_out, id ){}
+	virtual ~gto_scheduler () {}
+	virtual void order_warps ();
+    virtual void done_adding_supervised_warps() {
+        m_last_supervised_issued = m_supervised_warps.begin();
+    }
+
 };
 
 
-class TwoLevelScheduler : public scheduler_unit {
+class two_level_active_scheduler : public scheduler_unit {
 public:
-	TwoLevelScheduler (shader_core_stats* stats, shader_core_ctx* shader,
-            Scoreboard* scoreboard, simt_stack** simt,
-            std::vector<shd_warp_t>* warp,
-            register_set* sp_out,
-            register_set* sfu_out,
-            register_set* mem_out,
-            unsigned maw)
-	: scheduler_unit (stats, shader, scoreboard, simt, warp, sp_out, sfu_out, mem_out),
-	  activeWarps(),
-	  pendingWarps(){
-		maxActiveWarps = maw;
+	two_level_active_scheduler ( shader_core_stats* stats, shader_core_ctx* shader,
+                          Scoreboard* scoreboard, simt_stack** simt,
+                          std::vector<shd_warp_t>* warp,
+                          register_set* sp_out,
+                          register_set* sfu_out,
+                          register_set* mem_out,
+                          int id,
+                          char* config_str )
+	: scheduler_unit ( stats, shader, scoreboard, simt, warp, sp_out, sfu_out, mem_out, id ),
+	  m_pending_warps()
+    {
+        int ret = sscanf( config_str,
+                          "two_level_active:%d:%d:%d",
+                          &m_max_active_warps,
+                          (int*)&m_inner_level_prioritization,
+                          (int*)&m_outer_level_prioritization );
+        assert( 3 == ret );
+    }
+	virtual ~two_level_active_scheduler () {}
+    virtual void order_warps();
+	void add_supervised_warp_id(int i) {
+        if ( m_next_cycle_prioritized_warps.size() < m_max_active_warps ) {
+            m_next_cycle_prioritized_warps.push_back( &warp(i) );
+        } else {
+		    m_pending_warps.push_back(&warp(i));
+        }
 	}
-	virtual ~TwoLevelScheduler () {}
-	virtual void cycle ();
-	virtual void add_supervised_warp_id(int i) {
-		pendingWarps.push_back(i);
-	}
+    virtual void done_adding_supervised_warps() {
+        m_last_supervised_issued = m_supervised_warps.begin();
+    }
+
+protected:
+    virtual void do_on_warp_issued( unsigned warp_id,
+                                    unsigned num_issued,
+                                    const std::vector< shd_warp_t* >::const_iterator& prioritized_iter );
+
 private:
-	unsigned maxActiveWarps;
-	std::list<int> activeWarps;
-	std::list<int> pendingWarps;
+	std::deque< shd_warp_t* > m_pending_warps; 
+    scheduler_prioritization_type m_inner_level_prioritization;
+    scheduler_prioritization_type m_outer_level_prioritization;
+	unsigned m_max_active_warps;
 };
 
 
@@ -956,12 +1083,41 @@ public:
 
     void set_icnt_power_stats(unsigned &simt_to_mem) const;
 
-private:
+protected:
+    ldst_unit( mem_fetch_interface *icnt,
+               shader_core_mem_fetch_allocator *mf_allocator,
+               shader_core_ctx *core, 
+               opndcoll_rfu_t *operand_collector,
+               Scoreboard *scoreboard,
+               const shader_core_config *config,
+               const memory_config *mem_config,  
+               shader_core_stats *stats,
+               unsigned sid,
+               unsigned tpc,
+               l1_cache* new_l1d_cache );
+    void init( mem_fetch_interface *icnt,
+               shader_core_mem_fetch_allocator *mf_allocator,
+               shader_core_ctx *core, 
+               opndcoll_rfu_t *operand_collector,
+               Scoreboard *scoreboard,
+               const shader_core_config *config,
+               const memory_config *mem_config,  
+               shader_core_stats *stats,
+               unsigned sid,
+               unsigned tpc );
+
+protected:
    bool shared_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type);
    bool constant_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type);
    bool texture_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type);
    bool memory_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail, mem_stage_access_type &fail_type);
 
+   virtual mem_stage_stall_type process_cache_access( cache_t* cache,
+                                                      new_addr_type address,
+                                                      warp_inst_t &inst,
+                                                      std::list<cache_event>& events,
+                                                      mem_fetch *mf,
+                                                      enum cache_request_status status );
    mem_stage_stall_type process_memory_access_queue( cache_t *cache, warp_inst_t &inst );
 
    const memory_config *m_memory_config;
@@ -1120,6 +1276,7 @@ struct shader_core_config : public core_config
     //Shader core resources
     unsigned gpgpu_shader_registers;
     int gpgpu_warpdistro_shader;
+    int gpgpu_warp_issue_shader;
     unsigned gpgpu_num_reg_banks;
     bool gpgpu_reg_bank_use_warp_id;
     bool gpgpu_local_mem_map;
@@ -1139,6 +1296,7 @@ struct shader_core_config : public core_config
 
 struct shader_core_stats_pod {
 
+	void* shader_core_stats_pod_start[]; // DO NOT MOVE FROM THE TOP - spaceless pointer to the start of this structure
 	unsigned long long *shader_cycles;
     unsigned *m_num_sim_insn; // number of scalar thread instructions committed by this shader core
     unsigned *m_num_sim_winsn; // number of warp instructions committed by this shader core
@@ -1228,7 +1386,7 @@ public:
     shader_core_stats( const shader_core_config *config )
     {
         m_config = config;
-        shader_core_stats_pod *pod = this;
+        shader_core_stats_pod *pod = reinterpret_cast< shader_core_stats_pod * > ( this->shader_core_stats_pod_start );
         memset(pod,0,sizeof(shader_core_stats_pod));
         shader_cycles=(unsigned long long *) calloc(config->num_shader(),sizeof(unsigned long long ));
         m_num_sim_insn = (unsigned*) calloc(config->num_shader(),sizeof(unsigned));
@@ -1284,17 +1442,37 @@ public:
 
         gpgpu_n_shmem_bank_access = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
+        m_shader_dynamic_warp_issue_distro.resize( config->num_shader() );
+        m_shader_warp_slot_issue_distro.resize( config->num_shader() );
     }
+
     void new_grid()
     {
     }
+
+    void event_warp_issued( unsigned s_id, unsigned warp_id, unsigned num_issued, unsigned dynamic_warp_id );
 
     void visualizer_print( gzFile visualizer_file );
 
     void print( FILE *fout ) const;
 
+    const std::vector< std::vector<unsigned> >& get_dynamic_warp_issue() const
+    {
+        return m_shader_dynamic_warp_issue_distro;
+    }
+
+    const std::vector< std::vector<unsigned> >& get_warp_slot_issue() const
+    {
+        return m_shader_warp_slot_issue_distro;
+    }
+
 private:
     const shader_core_config *m_config;
+    // Counts the instructions issued for each dynamic warp.
+    std::vector< std::vector<unsigned> > m_shader_dynamic_warp_issue_distro;
+    std::vector<unsigned> m_last_shader_dynamic_warp_issue_distro;
+    std::vector< std::vector<unsigned> > m_shader_warp_slot_issue_distro;
+    std::vector<unsigned> m_last_shader_warp_slot_issue_distro;
 
     friend class power_stat_t;
     friend class shader_core_ctx;
@@ -1603,6 +1781,11 @@ private:
     // used for local address mapping with single kernel launch
     unsigned kernel_max_cta_per_shader;
     unsigned kernel_padded_threads_per_cta;
+    // Used for handing out dynamic warp_ids to new warps.
+    // the differnece between a warp_id and a dynamic_warp_id
+    // is that the dynamic_warp_id is a running number unique to every warp
+    // run on this shader, where the warp_id is the static warp slot.
+    unsigned m_dynamic_warp_id;
 };
 
 class simt_core_cluster {
@@ -1693,5 +1876,8 @@ private:
     shader_core_ctx *m_core;
     simt_core_cluster *m_cluster;
 };
+
+
+inline int scheduler_unit::get_sid() const { return m_shader->get_sid(); }
 
 #endif /* SHADER_H */

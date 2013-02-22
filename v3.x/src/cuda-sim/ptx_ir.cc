@@ -35,8 +35,11 @@
 #include <list>
 #include <assert.h>
 #include <algorithm>
+#include "assert.h"
 
 #include "cuda-sim.h"
+
+#define STR_SIZE 1024
 
 unsigned symbol::sm_next_uid = 1;
 
@@ -188,8 +191,23 @@ bool symbol_table::add_function_decl( const char *name, int entry_point, functio
    } else {
       assert( !prior_decl );
       *sym_table = new symbol_table( "", entry_point, this );
-      symbol *null_reg = (*sym_table)->add_variable("_",NULL,0,"",0); 
+      
+      // Initial setup code to support a register represented as "_".
+      // This register is used when an instruction operand is
+      // not read or written.  However, the parser must recognize it
+      // as a legitimate register but we do not want to pass
+      // it to the micro-architectural register to the performance simulator.
+      // For this purpose we add a symbol to the symbol table but
+      // mark it as a non_arch_reg so it does not effect the performance sim.
+      type_info_key null_key( reg_space, 0, 0, 0, 0, 0 );
+      null_key.set_is_non_arch_reg();
+      // First param is null - which is bad.
+      // However, the first parameter is actually unread in the constructor...
+      // TODO - remove the symbol_table* from type_info
+      type_info* null_type_info = new type_info( NULL, null_key );
+      symbol *null_reg = (*sym_table)->add_variable( "_", null_type_info, 0, "", 0 ); 
       null_reg->set_regno(0, 0);
+      
       (*sym_table)->set_name(name);
       (*func_info)->set_symtab(*sym_table);
       m_function_symtab_lookup[key] = *sym_table;
@@ -1188,14 +1206,26 @@ void ptx_instruction::print_insn() const
 
 void ptx_instruction::print_insn( FILE *fp ) const
 {
-   char buf[1024], *p;
-   snprintf(buf,1024,"%s", m_source.c_str());
-   p = strtok(buf,";");
-   if( !is_label() ) 
-      fprintf(fp," PC=0x%03x ", m_PC );
-   else
-      fprintf(fp,"                " );
-   fprintf(fp,"(%s:%u) %s", m_source_file.c_str(), m_source_line, p );
+    fprintf( fp, to_string().c_str() );
+}
+
+std::string ptx_instruction::to_string() const
+{
+   std::string result( m_source );
+   unsigned semi_c_pos = result.find(";");
+   assert( semi_c_pos != std::string::npos );
+   if( !is_label() ) {
+      char buf[ STR_SIZE ];
+      buf[ STR_SIZE - 1 ] = '\0';
+      snprintf( buf, STR_SIZE, " PC=0x%03x ", m_PC );
+      result += std::string( buf );
+   } else
+      result += std::string("                ");
+   char buf[STR_SIZE];
+   buf[STR_SIZE - 1] = '\0';
+   snprintf( buf, STR_SIZE,
+            "(%s:%d) %s", m_source_file.c_str(), m_source_line, m_source.c_str() + semi_c_pos );
+   return result;
 }
 
 unsigned function_info::sm_next_uid = 1;
@@ -1238,6 +1268,26 @@ unsigned function_info::print_insn( unsigned pc, FILE * fp ) const
    }
    pclose(p);
    return inst_size;
+}
+
+std::string function_info::get_insn_str( unsigned pc ) const
+{
+   unsigned index = pc - m_start_PC;
+   if ( index >= m_instr_mem_size ) {
+      char buff[STR_SIZE];
+      buff[STR_SIZE-1] = '\0';
+      snprintf(buff, STR_SIZE, "<past last instruction (max pc=%u)>", m_start_PC + m_instr_mem_size - 1 );
+      return std::string(buff);
+   } else {
+      if ( m_instr_mem[index] != NULL ) {
+         return m_instr_mem[index]->to_string();
+      } else {
+         char buff[STR_SIZE];
+         buff[STR_SIZE-1] = '\0';
+         snprintf(buff, STR_SIZE, "<no instruction at pc = %u>", pc );
+         return std::string(buff);
+      }
+   }
 }
 
 void gpgpu_ptx_assemble( std::string kname, void *kinfo )
