@@ -47,10 +47,12 @@ class type_info_key {
 public:
    type_info_key()
    {
+      m_is_non_arch_reg = false;
       m_init = false;
    }
    type_info_key( memory_space_t space_spec, int scalar_type_spec, int vector_spec, int alignment_spec, int extern_spec, int array_dim )
    {
+      m_is_non_arch_reg = false;
       m_init = true;
       m_space_spec = space_spec; 
       m_scalar_type_spec = scalar_type_spec;
@@ -75,7 +77,9 @@ public:
 
    void set_array_dim( int array_dim ) { m_array_dim = array_dim; }
    int get_array_dim() const { assert(m_init); return m_array_dim; }
+   void set_is_non_arch_reg() { m_is_non_arch_reg = true;  }
 
+   bool is_non_arch_reg() const { return m_is_non_arch_reg; }
    bool is_reg() const { return m_space_spec == reg_space;} 
    bool is_param_kernel() const { return m_space_spec == param_space_kernel;}
    bool is_param_local() const { return m_space_spec == param_space_local; }
@@ -99,6 +103,7 @@ private:
    int m_extern_spec;
    int m_array_dim;
    int m_is_function;
+   bool m_is_non_arch_reg;
 
    friend class type_info_key_compare;
 };
@@ -137,7 +142,7 @@ private:
 enum operand_type {
    reg_t, vector_t, builtin_t, address_t, memory_t, float_op_t, double_op_t, int_t, 
    unsigned_t, symbolic_t, label_t, v_reg_t, v_float_op_t, v_double_op_t,
-   v_int_t, v_unsigned_t
+   v_int_t, v_unsigned_t, undef_t
 };
 
 class operand_info;
@@ -162,6 +167,10 @@ public:
       m_is_func_addr = false;
       m_reg_num_valid = false;
       m_function = NULL;
+      m_reg_num=(unsigned)-1;
+      m_arch_reg_num=(unsigned)-1;
+      m_address=(unsigned)-1;
+      m_initializer.clear();
       if ( type ) m_is_shared = type->get_key().is_shared();
       if ( type ) m_is_const = type->get_key().is_const();
       if ( type ) m_is_global = type->get_key().is_global();
@@ -219,10 +228,19 @@ public:
    bool is_param_local() const { return m_is_param_local; }
    bool is_tex() const { return m_is_tex;}
    bool is_func_addr() const { return m_is_func_addr; }
-   bool is_reg() const {
-      if( m_type == NULL ) 
-         return false;
+   bool is_reg() const
+   {
+       if ( m_type == NULL ) {
+           return false;
+       }
       return m_type->get_key().is_reg(); 
+   }
+   bool is_non_arch_reg() const
+   {
+       if ( m_type == NULL ) {
+           return false;
+       }
+      return m_type->get_key().is_non_arch_reg(); 
    }
 
    void add_initializer( const std::list<operand_info> &init );
@@ -335,6 +353,8 @@ class operand_info {
 public:
    operand_info()
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -343,9 +363,13 @@ public:
       m_uid = get_uid();
       m_valid = false;
       m_immediate_address=false;
+      m_addr_offset = 0;
+      m_value.m_symbolic=NULL;
    }
    operand_info( const symbol *addr )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -369,9 +393,13 @@ public:
          m_type = symbolic_t;
       } else if ( addr->is_func_addr() ) {
          m_type = symbolic_t;
+      } else if ( !addr->is_reg() ) {
+         m_type = symbolic_t;
       } else {
          m_type = reg_t;
       }
+      
+      m_is_non_arch_reg = addr->is_non_arch_reg();
       m_value.m_symbolic = addr;
       m_addr_offset = 0;
       m_vector = false;
@@ -381,6 +409,8 @@ public:
    }
    operand_info( const symbol *addr1, const symbol *addr2 )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -402,6 +432,8 @@ public:
    }
    operand_info( int builtin_id, int dim_mod )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -419,6 +451,8 @@ public:
    }
    operand_info( const symbol *addr, int offset )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -436,6 +470,8 @@ public:
    }
    operand_info( unsigned x )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -453,6 +489,8 @@ public:
    }
    operand_info( int x )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -470,6 +508,8 @@ public:
    }
    operand_info( float x )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -487,6 +527,8 @@ public:
    }
    operand_info( double x )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -504,6 +546,8 @@ public:
    }
    operand_info( const symbol *s1, const symbol *s2, const symbol *s3, const symbol *s4 )
    {
+      init();
+      m_is_non_arch_reg = false;
       m_addr_space = undefined_space;
       m_operand_lohi = 0;
       m_double_operand_type = 0;
@@ -523,7 +567,36 @@ public:
       m_is_return_var = false;
       m_immediate_address=false;
    }
+   void init()
+   {
+       m_uid=(unsigned)-1;
+       m_valid=false;
+       m_vector=false;
+       m_type=undef_t;
+       m_immediate_address=false;
+       m_addr_space=undefined_space;
+       m_operand_lohi=0;
+       m_double_operand_type=0;
+       m_operand_neg=false;
+       m_const_mem_offset=(unsigned)-1;
+       m_value.m_int=0;
+       m_value.m_unsigned=(unsigned)-1;
+       m_value.m_float=0;
+       m_value.m_double=0;
+       for(unsigned i=0; i<4; i++){
+           m_value.m_vint[i]=0;
+           m_value.m_vunsigned[i]=0;
+           m_value.m_vfloat[i]=0;
+           m_value.m_vdouble[i]=0;
+       }
+       m_value.m_symbolic=NULL;
+       m_value.m_vector_symbolic=NULL;
+       m_addr_offset=0;
+       m_neg_pred=0;
+       m_is_return_var=0;
+       m_is_non_arch_reg=0;
 
+   }
    void make_memory_operand() { m_type = memory_t;}
    void set_return() { m_is_return_var = true; }
    void set_immediate_addr() {m_immediate_address=true;}
@@ -686,6 +759,7 @@ public:
    bool get_operand_neg() const { return m_operand_neg; }
    void set_const_mem_offset(addr_t set_value) { m_const_mem_offset = set_value; }
    addr_t get_const_mem_offset() const { return m_const_mem_offset; }
+   bool is_non_arch_reg() const { return m_is_non_arch_reg; }
 
 private:
    unsigned m_uid;
@@ -715,6 +789,7 @@ private:
 
    bool m_neg_pred;
    bool m_is_return_var;
+   bool m_is_non_arch_reg;
 
    static unsigned sm_next_uid;
    unsigned get_uid();
@@ -784,6 +859,7 @@ public:
 
    void print_insn() const;
    virtual void print_insn( FILE *fp ) const;
+   std::string to_string() const;
    unsigned inst_size() const { return m_inst_size; }
    unsigned uid() const { return m_uid;}
    int get_opcode() const { return m_opcode;}
@@ -1050,6 +1126,7 @@ public:
       return m_name;
    }
    unsigned print_insn( unsigned pc, FILE * fp ) const;
+    std::string get_insn_str( unsigned pc ) const;
    void add_inst( const std::list<ptx_instruction*> &instructions )
    {
       m_instructions = instructions;
@@ -1216,6 +1293,7 @@ public:
       m_is_reg=false;
       m_is_param=false;
       m_param_value=NULL;
+      m_reg_value=ptx_reg_t();
    }
    arg_buffer_t( const arg_buffer_t &another )
    {
@@ -1246,6 +1324,7 @@ public:
    arg_buffer_t( const symbol *dst_sym, const operand_info &src_op, ptx_reg_t source_value ) : m_src_op(src_op)
    {
       m_dst = dst_sym;
+      m_reg_value=ptx_reg_t();
       if( dst_sym->is_reg() ) {
          m_is_reg = true;
          m_is_param = false;

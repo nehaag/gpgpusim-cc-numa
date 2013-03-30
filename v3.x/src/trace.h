@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2011, Tor M. Aamodt, Ahmed El-Shafiey, Tayler Hetherington
+// Copyright (c) 2009-2013, Tor M. Aamodt, Timothy Rogers,
 // The University of British Columbia
 // All rights reserved.
 //
@@ -25,19 +25,55 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef POWER_INTERFACE_H_
-#define POWER_INTERFACE_H_
+// This file is inspired by the trace system in gem5.
+// This is a highly simplified version adpated for gpgpusim
 
-#include "gpu-sim.h"
-#include "power_stat.h"
-#include "shader.h"
+#ifndef __TRACE_H__
+#define __TRACE_H__
+
+extern unsigned long long  gpu_sim_cycle;
+extern unsigned long long  gpu_tot_sim_cycle;
+
+namespace Trace {
+
+#define TS_TUP_BEGIN(X) enum X {
+#define TS_TUP(X) X
+#define TS_TUP_END(X) };
+#include "trace_streams.tup"
+#undef TS_TUP_BEGIN
+#undef TS_TUP
+#undef TS_TUP_END
+
+    extern bool enabled;
+    extern int sampling_core;
+    extern const char* trace_streams_str[];
+    extern bool trace_streams_enabled[NUM_TRACE_STREAMS];
+    extern const char* config_str;
+
+    void init();
+
+} // namespace Trace
 
 
-#include "gpgpu_sim_wrapper.h"
+#if TRACING_ON
 
-void init_mcpat(const gpgpu_sim_config &config, class gpgpu_sim_wrapper *wrapper, unsigned stat_sample_freq, unsigned tot_inst, unsigned inst);
-void mcpat_cycle(const gpgpu_sim_config &config, const struct shader_core_config *shdr_config, class gpgpu_sim_wrapper *wrapper, class power_stat_t *power_stats,
-unsigned stat_sample_freq, unsigned tot_cycle, unsigned cycle, unsigned tot_inst, unsigned inst);
-void mcpat_reset_perf_count(class gpgpu_sim_wrapper *wrapper, bool do_print);
+#define SIM_PRINT_STR "GPGPU-Sim Cycle %llu: %s - "
+#define DTRACE(x) ((Trace::trace_streams_enabled[Trace::x]) && Trace::enabled)
+#define DPRINTF(x, ...) do {\
+    if (DTRACE(x)) {\
+        printf( SIM_PRINT_STR,\
+                gpu_sim_cycle + gpu_tot_sim_cycle,\
+                Trace::trace_streams_str[Trace::x] );\
+        printf(__VA_ARGS__);\
+    }\
+} while (0)
 
-#endif /* POWER_INTERFACE_H_ */
+
+#else 
+
+#define DTRACE(x) (false)
+#define DPRINTF(x, ...) do {} while (0)
+
+#endif  
+
+#endif 

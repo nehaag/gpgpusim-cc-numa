@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2011, Tor M. Aamodt, Ahmed El-Shafiey, Tayler Hetherington
+// Copyright (c) 2009-2013, Tor M. Aamodt, Timothy Rogers,
 // The University of British Columbia
 // All rights reserved.
 //
@@ -25,19 +25,31 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef POWER_INTERFACE_H_
-#define POWER_INTERFACE_H_
+#include "trace.h"
+#include "string.h"
 
-#include "gpu-sim.h"
-#include "power_stat.h"
-#include "shader.h"
+namespace Trace {
 
 
-#include "gpgpu_sim_wrapper.h"
+#define TS_TUP_BEGIN(X) const char* trace_streams_str[] = {
+#define TS_TUP(X) #X
+#define TS_TUP_END(X) };
+#include "trace_streams.tup"
+#undef TS_TUP_BEGIN
+#undef TS_TUP
+#undef TS_TUP_END
 
-void init_mcpat(const gpgpu_sim_config &config, class gpgpu_sim_wrapper *wrapper, unsigned stat_sample_freq, unsigned tot_inst, unsigned inst);
-void mcpat_cycle(const gpgpu_sim_config &config, const struct shader_core_config *shdr_config, class gpgpu_sim_wrapper *wrapper, class power_stat_t *power_stats,
-unsigned stat_sample_freq, unsigned tot_cycle, unsigned cycle, unsigned tot_inst, unsigned inst);
-void mcpat_reset_perf_count(class gpgpu_sim_wrapper *wrapper, bool do_print);
+    bool enabled = false;
+    int sampling_core = 0;
+    bool trace_streams_enabled[NUM_TRACE_STREAMS] = {false};
+    const char* config_str;
 
-#endif /* POWER_INTERFACE_H_ */
+    void init()
+    {
+        for ( unsigned i = 0; i < NUM_TRACE_STREAMS; ++i ) {
+            if ( strstr( config_str, trace_streams_str[i] ) != NULL ) {
+                trace_streams_enabled[ i ] = true;
+            }
+        }
+    }
+} 

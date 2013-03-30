@@ -50,6 +50,7 @@ public:
     const bool islongop(unsigned warp_id, unsigned regnum);
 private:
     void reserveRegister(unsigned wid, unsigned regnum);
+    int get_sid() const { return m_sid; }
 
     unsigned m_sid;
 

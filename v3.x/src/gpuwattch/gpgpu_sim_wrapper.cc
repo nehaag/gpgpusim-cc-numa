@@ -151,7 +151,6 @@ void gpgpu_sim_wrapper::init_mcpat(char* xmlfile, char* powerfilename, char* pow
        s++;
    }
 
-
    if(mcpat_init){
 	   g_power_filename = powerfilename;
 	   g_power_trace_filename =power_trace_filename;
@@ -174,9 +173,10 @@ void gpgpu_sim_wrapper::init_mcpat(char* xmlfile, char* powerfilename, char* pow
 	   metric_trace_file = NULL;
 	   steady_state_tacking_file = NULL;
 
+
 	   if (g_power_trace_enabled ){
-		   power_trace_file = gzopen(g_power_trace_filename, (mcpat_init)? "w" : "a");
-		   metric_trace_file = gzopen(g_metric_trace_filename, (mcpat_init)? "w" : "a");
+		   power_trace_file = gzopen(g_power_trace_filename, "w");
+		   metric_trace_file = gzopen(g_metric_trace_filename, "w");
 		   if ((power_trace_file == NULL) || (metric_trace_file == NULL)) {
 			   printf("error - could not open trace files \n");
 			   exit(1);
@@ -199,7 +199,7 @@ void gpgpu_sim_wrapper::init_mcpat(char* xmlfile, char* powerfilename, char* pow
 		   gzclose(metric_trace_file);
 	   }
 	   if(g_steady_power_levels_enabled){
-		   steady_state_tacking_file = gzopen(g_steady_state_tracking_filename, (mcpat_init)? "w" : "a");
+		   steady_state_tacking_file = gzopen(g_steady_state_tracking_filename, "w");
 		   if ((steady_state_tacking_file == NULL)) {
 			   printf("error - could not open trace files \n");
 			   exit(1);
@@ -222,6 +222,40 @@ void gpgpu_sim_wrapper::init_mcpat(char* xmlfile, char* powerfilename, char* pow
    sample_val = 0;
    init_inst_val=init_val;//gpu_tot_sim_insn+gpu_sim_insn;
 
+}
+
+void gpgpu_sim_wrapper::reset_counters(bool do_print){
+	if(do_print)
+		print_trace_files();
+
+	for(unsigned i=0; i<num_per_counts; ++i){
+		perf_count[i] = 0;
+	}
+	for(unsigned i=0; i<num_pwr_cmps; ++i){
+		pwr_cmp_avg[i]= 0;
+	}
+
+	for(unsigned i=0; i<num_pwr_cmps; ++i){
+		pwr_cmp_max[i]= 0;
+	}
+
+	for(unsigned i=0; i<num_pwr_cmps; ++i){
+		pwr_cmp_min[i]= 0;
+	}
+
+	for(unsigned i=0; i<num_per_counts; ++i){
+		perf_count_avg[i]= 0;
+	}
+
+	for(unsigned i=0; i<num_per_counts; ++i){
+		perf_count_min[i]= 0;
+	}
+
+	for(unsigned i=0; i<num_per_counts; ++i){
+		perf_count_max[i]= 0;
+	}
+	count=0;
+	return;
 }
 
 void gpgpu_sim_wrapper::set_inst_power(bool clk_gated_lanes, double tot_cycles, double busy_cycles, double tot_inst, double int_inst, double fp_inst, double load_inst, double store_inst, double committed_inst)
@@ -275,7 +309,7 @@ void gpgpu_sim_wrapper::set_ccache_power(double hits, double misses)
 void gpgpu_sim_wrapper::set_tcache_power(double hits, double misses)
 {
 	p->sys.core[0].tcache.read_accesses = hits * p->sys.scaling_coefficients[TC_H]+misses * p->sys.scaling_coefficients[TC_M];
-	p->sys.core[0].tcache.read_misses = misses;
+	p->sys.core[0].tcache.read_misses = misses* p->sys.scaling_coefficients[TC_M];
 	perf_count[TC_H]=hits;
 	perf_count[TC_M]=misses;
 	// TODO: coalescing logic is counted as part of the caches power (this is not valid for no-caches architectures)
@@ -586,10 +620,11 @@ void gpgpu_sim_wrapper::compute()
 {
 	proc->compute();
 }
-void gpgpu_sim_wrapper::print_power_kernel_stats(double gpu_sim_cycle, double gpu_tot_sim_cycle, double init_value)
+void gpgpu_sim_wrapper::print_power_kernel_stats(double gpu_sim_cycle, double gpu_tot_sim_cycle, double init_value, const std::string & kernel_info_string)
 {
 	   detect_print_steady_state(1,init_value);
 	   if(g_power_simulation_enabled){
+         powerfile<<kernel_info_string<<std::endl; 
 		   powerfile<<"Kernel Average Power Data:"<<std::endl;
 		   powerfile<<"gpu_avg_power = "<< gpu_avg_power/ count<<std::endl;
 
@@ -633,16 +668,38 @@ void gpgpu_sim_wrapper::dump()
 		proc->displayEnergy(2,5);
 }
 
+void gpgpu_sim_wrapper::print_steady_state(int position, double init_val){
+	double temp_avg = sample_val / (double)samples.size() ;
+	double temp_ipc = (init_val-init_inst_val)/ (double) (samples.size()*gpu_stat_sample_freq);
+
+	if((samples.size() > gpu_steady_min_period)){ // If steady state occurred for some time, print to file
+		has_written_avg=true;
+		gzprintf(steady_state_tacking_file,"%u,%d,%f,%f,",sample_start,gcount,temp_avg,temp_ipc);
+		for(unsigned i=0; i<num_per_counts; ++i){
+			gzprintf(steady_state_tacking_file,"%f,", samples_counter.at(i)/((double)samples.size()));
+		}
+		gzprintf(steady_state_tacking_file,"\n");
+	}else{
+		if(!has_written_avg && position)
+			gzprintf(steady_state_tacking_file,"ERROR! Not enough steady state points to generate average\n");
+	}
+
+	sample_start = 0;
+	sample_val = 0;
+	init_inst_val=init_val;//gpu_tot_sim_insn+gpu_sim_insn;
+	samples.clear();
+	samples_counter.clear();
+	pwr_counter.clear();
+	assert(samples.size() == 0);
+}
+
 void gpgpu_sim_wrapper::detect_print_steady_state(int position, double init_val)
 {
-    if(g_steady_power_levels_enabled)
-        steady_state_tacking_file = gzopen(g_steady_state_tracking_filename,"a");
-
 	// Calculating Average
-	if(position==0){
-		if(g_steady_power_levels_enabled){
-
-		    if(samples.size() == 0){
+    if(g_power_simulation_enabled && g_steady_power_levels_enabled){
+    	steady_state_tacking_file = gzopen(g_steady_state_tracking_filename,"a");
+		if(position==0){
+			if(samples.size() == 0){
 				// First sample
 				sample_start = gcount;
 				sample_val = proc->rt_power.readOp.dynamic;
@@ -677,55 +734,14 @@ void gpgpu_sim_wrapper::detect_print_steady_state(int position, double init_val)
 					}
 
 				}else{	// Value exceeds threshold, not considered steady state
-
-					if(samples.size() > gpu_steady_min_period){ // If steady state occurred for some time, print to file
-						has_written_avg = true;
-						gzprintf(steady_state_tacking_file,"%u,%d,%f,%f,",sample_start,gcount,temp_avg,temp_ipc);
-						for(unsigned i=0; i<num_per_counts; ++i){
-							gzprintf(steady_state_tacking_file,"%f,", samples_counter.at(i)/((double)samples.size()));
-						}
-						gzprintf(steady_state_tacking_file,"\n");
-					}
-
-					// Clear state
-					sample_start = 0;
-					sample_val = 0;
-					init_inst_val=init_val;//gpu_tot_sim_insn+gpu_sim_insn;
-					samples.clear();
-					samples_counter.clear();
-					pwr_counter.clear();
-					assert(samples.size() == 0);
+					print_steady_state(position, init_val);
 				}
 			}
+		}else{
+			print_steady_state(position, init_val);
 		}
-	}else{
-		   if(g_power_simulation_enabled && g_steady_power_levels_enabled){
-			  double temp_avg = sample_val / (double)samples.size() ;
-			  double temp_ipc = (init_val-init_inst_val)/ (double) (samples.size()*gpu_stat_sample_freq);
-		  	  if((samples.size() > gpu_steady_min_period)){ // If steady state occurred for some time, print to file
-		  		gzprintf(steady_state_tacking_file,"%u,%d,%f,%f,",sample_start,gcount,temp_avg,temp_ipc);
-				for(unsigned i=0; i<num_per_counts; ++i){
-					gzprintf(steady_state_tacking_file,"%f,", samples_counter.at(i)/((double)samples.size()));
-				}
-				gzprintf(steady_state_tacking_file,"\n");
-		  	  }else{
-		  	    if(!has_written_avg)
-		  	        gzprintf(steady_state_tacking_file,"ERROR! Not enough steady state points to generate averag\n");
-		  	  }
-				sample_start = 0;
-				sample_val = 0;
-				init_inst_val=init_val;//gpu_tot_sim_insn+gpu_sim_insn;
-				samples.clear();
-				samples_counter.clear();
-				pwr_counter.clear();
-				assert(samples.size() == 0);
-		   }
-
-	}
-
-	if(g_steady_power_levels_enabled)
-	    gzclose(steady_state_tacking_file);
-
+		gzclose(steady_state_tacking_file);
+    }
 }
 
 void gpgpu_sim_wrapper::open_files()

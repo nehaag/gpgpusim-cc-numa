@@ -57,6 +57,7 @@
 #include "../debug.h"
 #include "../gpgpusim_entrypoint.h"
 #include "../cuda-sim/cuda-sim.h"
+#include "../trace.h"
 #include "mem_latency_stat.h"
 #include "power_stat.h"
 #include "visualizer.h"
@@ -70,6 +71,9 @@ class  gpgpu_sim_wrapper {};
 
 #include <stdio.h>
 #include <string.h>
+#include <iostream>
+#include <sstream>
+#include <string>
 
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
@@ -161,7 +165,10 @@ void memory_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_memlatency_stat", OPT_INT32, &gpgpu_memlatency_stat, 
                 "track and display latency statistics 0x2 enables MC, 0x4 enables queue logs",
                 "0");
-    option_parser_register(opp, "-gpgpu_dram_sched_queue_size", OPT_INT32, &gpgpu_dram_sched_queue_size, 
+    option_parser_register(opp, "-gpgpu_frfcfs_dram_sched_queue_size", OPT_INT32, &gpgpu_frfcfs_dram_sched_queue_size, 
+                "0 = unlimited (default); # entries per chip",
+                "0");
+    option_parser_register(opp, "-gpgpu_dram_return_queue_size", OPT_INT32, &gpgpu_dram_return_queue_size, 
                 "0 = unlimited (default); # entries per chip",
                 "0");
     option_parser_register(opp, "-gpgpu_dram_buswidth", OPT_UINT32, &busW, 
@@ -254,6 +261,9 @@ void shader_core_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_warpdistro_shader", OPT_INT32, &gpgpu_warpdistro_shader, 
                 "Specify which shader core to collect the warp size distribution from", 
                 "-1");
+    option_parser_register(opp, "-gpgpu_warp_issue_shader", OPT_INT32, &gpgpu_warp_issue_shader, 
+                "Specify which shader core to collect the warp issue distribution from", 
+                "0");
     option_parser_register(opp, "-gpgpu_local_mem_map", OPT_BOOL, &gpgpu_local_mem_map, 
                 "Mapping from local memory space address to simulated GPU physical address space (default = enabled)", 
                 "1");
@@ -325,8 +335,11 @@ void shader_core_config::reg_options(class OptionParser * opp)
                             "Number if ldst units (default=1) WARNING: not hooked up to anything",
                              "1");
     option_parser_register(opp, "-gpgpu_scheduler", OPT_CSTR, &gpgpu_scheduler_string,
-                                "Scheduler configuration: lrr|tl:num_active_warps default: lrr",
-                                 "lrr");
+                                "Scheduler configuration: < lrr | gto | two_level_active > "
+                                "If two_level_active:<num_active_warps>:<inner_prioritization>:<outer_prioritization>"
+                                "For complete list of prioritization values see shader.h enum scheduler_prioritization_type"
+                                "Default: gto",
+                                 "gto");
 }
 
 void gpgpu_sim_config::reg_options(option_parser_t opp)
@@ -381,6 +394,17 @@ void gpgpu_sim_config::reg_options(option_parser_t opp)
    option_parser_register(opp, "-visualizer_zlevel", OPT_INT32,
                           &g_visualizer_zlevel, "Compression level of the visualizer output log (0=no comp, 9=highest)",
                           "6");
+    option_parser_register(opp, "-trace_enabled", OPT_BOOL, 
+                          &Trace::enabled, "Turn on traces",
+                          "0");
+    option_parser_register(opp, "-trace_components", OPT_CSTR, 
+                          &Trace::config_str, "comma seperated list of traces to enable. "
+                          "Complete list found in trace_streams.tup. "
+                          "Default none",
+                          "none");
+    option_parser_register(opp, "-trace_sampling_core", OPT_INT32, 
+                          &Trace::sampling_core, "The core which is printed using CORE_DPRINTF. Default 0",
+                          "0");
    ptx_file_line_stats_options(opp);
 }
 
@@ -449,6 +473,14 @@ kernel_info_t *gpgpu_sim::select_kernel()
         unsigned idx = (n+m_last_issued_kernel+1)%m_config.max_concurrent_kernel;
         if( m_running_kernels[idx] && !m_running_kernels[idx]->no_more_ctas_to_run() ) {
             m_last_issued_kernel=idx;
+
+            // record this kernel for stat print if it is the first time this kernel is selected for execution  
+            unsigned launch_uid = m_running_kernels[idx]->get_uid(); 
+            if (std::find(m_executed_kernel_uids.begin(), m_executed_kernel_uids.end(), launch_uid) == m_executed_kernel_uids.end()) {
+               m_executed_kernel_uids.push_back(launch_uid); 
+               m_executed_kernel_names.push_back(m_running_kernels[idx]->name()); 
+            }
+
             return m_running_kernels[idx];
         }
     }
@@ -704,8 +736,38 @@ void gpgpu_sim::deadlock_check()
    }
 }
 
+/// printing the names and uids of a set of executed kernels (usually there is only one)
+std::string gpgpu_sim::executed_kernel_info_string() 
+{
+   std::stringstream statout; 
+
+   statout << "kernel_name = "; 
+   for (unsigned int k = 0; k < m_executed_kernel_names.size(); k++) {
+      statout << m_executed_kernel_names[k] << " "; 
+   }
+   statout << std::endl; 
+   statout << "kernel_launch_uid = ";
+   for (unsigned int k = 0; k < m_executed_kernel_uids.size(); k++) {
+      statout << m_executed_kernel_uids[k] << " "; 
+   }
+   statout << std::endl; 
+
+   return statout.str(); 
+}
+
+void gpgpu_sim::clear_executed_kernel_info()
+{
+   m_executed_kernel_names.clear(); 
+   m_executed_kernel_uids.clear(); 
+}
+
 void gpgpu_sim::gpu_print_stat() 
 {  
+   FILE *statfout = stdout; 
+
+   std::string kernel_info_str = executed_kernel_info_string(); 
+   fprintf(statfout, "%s", kernel_info_str.c_str()); 
+
    printf("gpu_sim_cycle = %lld\n", gpu_sim_cycle);
    printf("gpu_sim_insn = %lld\n", gpu_sim_insn);
    printf("gpu_ipc = %12.4f\n", (float)gpu_sim_insn / gpu_sim_cycle);
@@ -726,11 +788,13 @@ void gpgpu_sim::gpu_print_stat()
    printf( "gpu_total_sim_rate=%u\n", (unsigned)( ( gpu_tot_sim_insn + gpu_sim_insn ) / elapsed_time ) );
 
    shader_print_l1_miss_stat( stdout );
+   shader_print_scheduler_stat( stdout, true );
 
    m_shader_stats->print(stdout);
 #ifdef GPGPUSIM_POWER_MODEL
    if(m_config.g_power_simulation_enabled){
-       m_gpgpusim_wrapper->print_power_kernel_stats(gpu_sim_cycle,gpu_tot_sim_cycle,gpu_tot_sim_insn + gpu_sim_insn );
+	   m_gpgpusim_wrapper->print_power_kernel_stats(gpu_sim_cycle, gpu_tot_sim_cycle, gpu_tot_sim_insn + gpu_sim_insn, kernel_info_str );
+	   mcpat_reset_perf_count(m_gpgpusim_wrapper, true);
    }
 #endif
 
@@ -776,9 +840,7 @@ void gpgpu_sim::gpu_print_stat()
    time_vector_print();
    fflush(stdout);
 
-
-
-
+   clear_executed_kernel_info(); 
 }
 
 
@@ -1099,6 +1161,8 @@ void gpgpu_sim::cycle()
                shader_print_runtime_stat( stdout );
             if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_L1MISS) 
                shader_print_l1_miss_stat( stdout );
+            if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_SCHED) 
+               shader_print_scheduler_stat( stdout, false );
          }
       }
 

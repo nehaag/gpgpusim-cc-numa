@@ -30,6 +30,7 @@
 
 #include "../option_parser.h"
 #include "../abstract_hardware_model.h"
+#include "../trace.h"
 #include "addrdec.h"
 #include "shader.h"
 #include <iostream>
@@ -202,20 +203,21 @@ struct memory_config {
       tWTP = (WL+(BL/data_command_freq_ratio)+tWR);
       dram_atom_size = BL * busW * gpu_n_mem_per_ctrlr; // burst length x bus width x # chips per partition 
       m_address_mapping.init(m_n_mem);
-      m_L2_config.init();
+      m_L2_config.init(&m_address_mapping);
       m_valid = true;
       icnt_flit_size = 32; // Default 32
    }
    void reg_options(class OptionParser * opp);
 
    bool m_valid;
-   cache_config m_L2_config;
+   l2_cache_config m_L2_config;
    bool m_L2_texure_only;
 
    char *gpgpu_dram_timing_opt;
    char *gpgpu_L2_queue_config;
    bool l2_ideal;
-   unsigned gpgpu_dram_sched_queue_size;
+   unsigned gpgpu_frfcfs_dram_sched_queue_size;
+   unsigned gpgpu_dram_return_queue_size;
    enum dram_ctrl_t scheduler_type;
    bool gpgpu_memlatency_stat;
    unsigned m_n_mem;
@@ -279,6 +281,7 @@ public:
         m_memory_config.init();
         init_clock_domains(); 
         power_config::init();
+        Trace::init();
 
 
         // initialize file name if it is not set 
@@ -327,7 +330,7 @@ private:
     bool  gpgpu_flush_l1_cache;
     bool  gpgpu_flush_l2_cache;
     bool  gpu_deadlock_detect;
-    int   gpgpu_dram_sched_queue_size; 
+    int   gpgpu_frfcfs_dram_sched_queue_size; 
     int   gpgpu_cflog_interval;
     char * gpgpu_clock_domains;
     unsigned max_concurrent_kernel;
@@ -415,6 +418,7 @@ private:
    void L2c_print_cache_stat() const;
    void shader_print_runtime_stat( FILE *fout );
    void shader_print_l1_miss_stat( FILE *fout ) const;
+   void shader_print_scheduler_stat( FILE* fout, bool print_dynamic_info ) const;
    void visualizer_printstat();
    void print_shader_cycle_distro( FILE *fout ) const;
 
@@ -457,8 +461,10 @@ private:
    unsigned long long  gpu_tot_issued_cta;
    unsigned long long  last_gpu_sim_insn;
 
-
-
+   std::vector<std::string> m_executed_kernel_names; //< names of kernel for stat printout 
+   std::vector<unsigned> m_executed_kernel_uids; //< uids of kernel launches for stat printout
+   std::string executed_kernel_info_string(); //< format the kernel information into a string for stat printout
+   void clear_executed_kernel_info(); //< clear the kernel information after stat printout
 
 public:
    unsigned long long  gpu_sim_insn;

@@ -1,4 +1,5 @@
-// Copyright (c) 2009-2011, Tor M. Aamodt, Ahmed El-Shafiey, Tayler Hetherington
+// Copyright (c) 2009-2011, Tor M. Aamodt, Tim Rogers
+// George L. Yuan, Andrew Turner, Inderpreet Singh 
 // The University of British Columbia
 // All rights reserved.
 //
@@ -25,19 +26,49 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef POWER_INTERFACE_H_
-#define POWER_INTERFACE_H_
+#ifndef __SHADER_TRACE_H__
+#define __SHADER_TRACE_H__
 
-#include "gpu-sim.h"
-#include "power_stat.h"
-#include "shader.h"
+#include "../trace.h"
 
 
-#include "gpgpu_sim_wrapper.h"
+#if TRACING_ON
 
-void init_mcpat(const gpgpu_sim_config &config, class gpgpu_sim_wrapper *wrapper, unsigned stat_sample_freq, unsigned tot_inst, unsigned inst);
-void mcpat_cycle(const gpgpu_sim_config &config, const struct shader_core_config *shdr_config, class gpgpu_sim_wrapper *wrapper, class power_stat_t *power_stats,
-unsigned stat_sample_freq, unsigned tot_cycle, unsigned cycle, unsigned tot_inst, unsigned inst);
-void mcpat_reset_perf_count(class gpgpu_sim_wrapper *wrapper, bool do_print);
+#define SHADER_PRINT_STR SIM_PRINT_STR "Core %d - "
+#define SCHED_PRINT_STR SHADER_PRINT_STR "Scheduler %d - "
+#define SHADER_DTRACE(x)  (DTRACE(x) && Trace::sampling_core == get_sid())
 
-#endif /* POWER_INTERFACE_H_ */
+// Intended to be called from inside components of a shader core.
+// Depends on a get_sid() function
+#define SHADER_DPRINTF(x, ...) do {\
+    if (SHADER_DTRACE(x)) {\
+        printf( SHADER_PRINT_STR,\
+                gpu_sim_cycle + gpu_tot_sim_cycle,\
+                Trace::trace_streams_str[Trace::x],\
+                get_sid() );\
+        printf(__VA_ARGS__);\
+    }\
+} while (0)
+
+// Intended to be called from inside a scheduler_unit.
+// Depends on a m_id member
+#define SCHED_DPRINTF(...) do {\
+    if (SHADER_DTRACE(WARP_SCHEDULER)) {\
+        printf( SCHED_PRINT_STR,\
+                gpu_sim_cycle + gpu_tot_sim_cycle,\
+                Trace::trace_streams_str[Trace::WARP_SCHEDULER],\
+                get_sid(),\
+                m_id );\
+        printf(__VA_ARGS__);\
+    }\
+} while (0)
+
+#else
+
+#define SHADER_DTRACE(x)  (false)
+#define SHADER_DPRINTF(x, ...) do {} while (0)
+#define SCHED_DPRINTF(x, ...) do {} while (0)
+
+#endif
+
+#endif

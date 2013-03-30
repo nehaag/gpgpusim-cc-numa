@@ -441,7 +441,6 @@ void gpgpu_t::gpu_memset( size_t dst_start_addr, int c, size_t count )
 
 void ptx_print_insn( address_type pc, FILE *fp )
 {
-   static unsigned size=1;
    std::map<unsigned,function_info*>::iterator f = g_pc_to_finfo.find(pc);
    if( f == g_pc_to_finfo.end() ) {
        fprintf(fp,"<no instruction at address 0x%x>", pc );
@@ -449,8 +448,24 @@ void ptx_print_insn( address_type pc, FILE *fp )
    }
    function_info *finfo = f->second;
    assert( finfo );
-   size = finfo->print_insn(pc,fp);
+   finfo->print_insn(pc,fp);
 }
+
+std::string ptx_get_insn_str( address_type pc )
+{
+   std::map<unsigned,function_info*>::iterator f = g_pc_to_finfo.find(pc);
+   if( f == g_pc_to_finfo.end() ) {
+       #define STR_SIZE 255
+       char buff[STR_SIZE];
+       buff[STR_SIZE - 1] = '\0';
+       snprintf(buff, STR_SIZE,"<no instruction at address 0x%x>", pc );
+       return std::string(buff);
+   }
+   function_info *finfo = f->second;
+   assert( finfo );
+   return finfo->get_insn_str(pc);
+}
+
 void ptx_instruction::set_fp_or_int_archop(){
 	op2=UN_OP;
 	if((m_opcode == MEMBAR_OP)||(m_opcode == SSY_OP )||(m_opcode == BRA_OP) || (m_opcode == BAR_OP) || (m_opcode == RET_OP) || (m_opcode == RETP_OP) || (m_opcode == NOP_OP) || (m_opcode == EXIT_OP) || (m_opcode == CALLP_OP) || (m_opcode == CALL_OP)){
@@ -829,7 +844,8 @@ void ptx_instruction::pre_decode()
    for ( ; opr != op_iter_end(); opr++, n++ ) { //process operands
       const operand_info &o = *opr;
       if ( has_dst && n==0 ) {
-         if ( o.is_reg() ) {
+         // Do not set the null register "_" as an architectural register
+         if ( o.is_reg() && !o.is_non_arch_reg() ) {
             out[0] = o.reg_num();
             arch_reg.dst[0] = o.arch_reg_num();
          } else if ( o.is_vector() ) {
@@ -843,7 +859,7 @@ void ptx_instruction::pre_decode()
                arch_reg.dst[i] = o.arch_reg_num(i);
          }
       } else {
-         if ( o.is_reg() ) {
+         if ( o.is_reg() && !o.is_non_arch_reg() ) {
             int reg_num = o.reg_num();
             arch_reg.src[m] = o.arch_reg_num();
             switch ( m ) {
@@ -883,6 +899,8 @@ void ptx_instruction::pre_decode()
          const operand_info &o = *op;
 
          if(o.is_memory_operand()) {
+             // We do not support the null register as a memory operand
+             assert( !o.is_non_arch_reg() );
 
             // Check PTXPlus-type operand
             // memory operand with addressing (ex. s[0x4] or g[$r1])
@@ -1110,8 +1128,9 @@ void init_inst_classification_stat()
    if( init.find(g_ptx_kernel_count) != init.end() ) 
       return;
    init.insert(g_ptx_kernel_count);
-   char kernelname[256] ="";
-#define MAX_CLASS_KER 1024
+
+   #define MAX_CLASS_KER 1024
+   char kernelname[MAX_CLASS_KER] ="";
    if (!g_inst_classification_stat) g_inst_classification_stat = (void**)calloc(MAX_CLASS_KER, sizeof(void*));
    snprintf(kernelname, MAX_CLASS_KER, "Kernel %d Classification\n",g_ptx_kernel_count  );         
    assert( g_ptx_kernel_count < MAX_CLASS_KER ) ; // a static limit on number of kernels increase it if it fails! 
@@ -1206,8 +1225,6 @@ void ptx_thread_info::ptx_exec_inst( warp_inst_t &inst, unsigned lane_id)
    // Output instruction information to file and stdout
    if( config.get_ptx_inst_debug_to_file() != 0 && 
         (config.get_ptx_inst_debug_thread_uid() == 0 || config.get_ptx_inst_debug_thread_uid() == get_uid()) ) {
-      dim3 ctaid = get_ctaid();
-      dim3 tid = get_tid();
       fprintf(m_gpu->get_ptx_inst_debug_file(),
              "[thd=%u] : (%s:%u - %s)\n",
              get_uid(),
@@ -1586,7 +1603,7 @@ void gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t co
    switch (mem_region.get_type()) {
    case const_space:
       mem = gpu->get_global_memory();
-      mem_name = "global";
+      mem_name = "const";
       break;
    case global_space:
       mem = gpu->get_global_memory();
@@ -1595,8 +1612,8 @@ void gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t co
    default:
       abort();
    }
-   printf("GPGPU-Sim PTX: gpgpu_ptx_sim_memcpy_symbol: copying %zu bytes %s symbol %s+%zu @0x%x ...\n", 
-          count, (to?" to ":"from"), sym_name.c_str(), offset, dst );
+   printf("GPGPU-Sim PTX: gpgpu_ptx_sim_memcpy_symbol: copying %s memory %zu bytes %s symbol %s+%zu @0x%x ...\n", 
+          mem_name, count, (to?" to ":"from"), sym_name.c_str(), offset, dst );
    for ( unsigned n=0; n < count; n++ ) {
       if( to ) mem->write(dst+n,1,((char*)src)+n,NULL,NULL); 
       else mem->read(dst+n,1,((char*)src)+n); 
