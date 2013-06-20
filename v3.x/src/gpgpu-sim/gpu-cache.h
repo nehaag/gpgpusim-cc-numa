@@ -45,10 +45,11 @@ enum cache_block_state {
 };
 
 enum cache_request_status {
-    HIT,
+    HIT = 0,
     HIT_RESERVED,
     MISS,
-    RESERVATION_FAIL
+    RESERVATION_FAIL, 
+    NUM_CACHE_REQUEST_STATUS
 };
 
 enum cache_event {
@@ -56,6 +57,8 @@ enum cache_event {
     READ_REQUEST_SENT,
     WRITE_REQUEST_SENT
 };
+
+const char * cache_request_status_str(enum cache_request_status status); 
 
 struct cache_block_t {
     cache_block_t()
@@ -128,19 +131,22 @@ public:
         m_valid = false; 
         m_disabled = false;
         m_config_string = NULL; // set by option parser
+        m_config_stringPrefL1 = NULL;
+        m_config_stringPrefShared = NULL;
     }
-    void init()
+    void init(char * config, FuncCache status)
     {
-        assert( m_config_string );
+    	cache_status= status;
+        assert( config );
         char rp, wp, ap, mshr_type, wap;
 
-        int ntok = sscanf(m_config_string,"%u:%u:%u,%c:%c:%c:%c,%c:%u:%u,%u:%u",
+        int ntok = sscanf(config,"%u:%u:%u,%c:%c:%c:%c,%c:%u:%u,%u:%u",
                           &m_nset, &m_line_sz, &m_assoc, &rp, &wp, &ap, &wap,
                           &mshr_type, &m_mshr_entries,&m_mshr_max_merge,
                           &m_miss_queue_size,&m_result_fifo_entries);
 
-        if ( ntok < 10 ) {
-            if ( !strcmp(m_config_string,"none") ) {
+        if ( ntok < 11 ) {
+            if ( !strcmp(config,"none") ) {
                 m_disabled = true;
                 return;
             }
@@ -230,8 +236,11 @@ public:
     {
         return addr & ~(m_line_sz-1);
     }
-
+    FuncCache get_cache_status() {return cache_status;}
     char *m_config_string;
+    char *m_config_stringPrefL1;
+    char *m_config_stringPrefShared;
+    FuncCache cache_status;
 
 protected:
     void exit_parse_error()
@@ -292,7 +301,7 @@ private:
 class tag_array {
 public:
     // Use this constructor
-    tag_array( const cache_config &config, int core_id, int type_id );
+    tag_array(cache_config &config, int core_id, int type_id );
     ~tag_array();
 
     enum cache_request_status probe( new_addr_type addr, unsigned &idx ) const;
@@ -310,13 +319,14 @@ public:
 
     void print( FILE *stream, unsigned &total_access, unsigned &total_misses ) const;
     float windowed_miss_rate( ) const;
-    void get_stats(unsigned &total_access, unsigned &total_misses) const;
+    void get_stats(unsigned &total_access, unsigned &total_misses, unsigned &total_hit_res, unsigned &total_res_fail) const;
 
+	void update_cache_parameters(cache_config &config);
 protected:
     // This constructor is intended for use only from derived classes that wish to
     // avoid unnecessary memory allocation that takes place in the
     // other tag_array constructor
-    tag_array( const cache_config &config,
+    tag_array( cache_config &config,
                int core_id,
                int type_id,
                cache_block_t* new_lines );
@@ -324,13 +334,14 @@ protected:
 
 protected:
 
-    const cache_config &m_config;
+    cache_config &m_config;
 
     cache_block_t *m_lines; /* nbanks x nset x assoc lines in total */
 
     unsigned m_access;
     unsigned m_miss;
     unsigned m_pending_hit; // number of cache miss that hit a line that is allocated but not filled
+    unsigned m_res_fail;
 
     // performance counters for calculating the amount of misses within a time window
     unsigned m_prev_snapshot_access;
@@ -369,6 +380,12 @@ public:
     mem_fetch *next_access();
     void display( FILE *fp ) const;
 
+    void check_mshr_parameters( unsigned num_entries, unsigned max_merged )
+    {
+    	assert(m_num_entries==num_entries && "Change of MSHR parameters between kernels is not allowed");
+    	assert(m_max_merged==max_merged && "Change of MSHR parameters between kernels is not allowed");
+    }
+
 private:
 
     // finite sized, fully associative table, with a finite maximum number of merged requests
@@ -390,6 +407,74 @@ private:
 
 
 /***************************************************************** Caches *****************************************************************/
+///
+/// Simple struct to maintain cache accesses, misses, pending hits, and reservation fails.
+///
+struct cache_sub_stats{
+    unsigned accesses;
+    unsigned misses;
+    unsigned pending_hits;
+    unsigned res_fails;
+
+    cache_sub_stats(){
+        clear();
+    }
+    void clear(){
+        accesses = 0;
+        misses = 0;
+        pending_hits = 0;
+        res_fails = 0;
+    }
+    cache_sub_stats &operator+=(const cache_sub_stats &css){
+        ///
+        /// Overloading += operator to easily accumulate stats
+        ///
+        accesses += css.accesses;
+        misses += css.misses;
+        pending_hits += css.pending_hits;
+        res_fails += css.res_fails;
+        return *this;
+    }
+
+    cache_sub_stats operator+(const cache_sub_stats &cs){
+        ///
+        /// Overloading + operator to easily accumulate stats
+        ///
+        cache_sub_stats ret;
+        ret.accesses = accesses + cs.accesses;
+        ret.misses = misses + cs.misses;
+        ret.pending_hits = pending_hits + cs.pending_hits;
+        ret.res_fails = res_fails + cs.res_fails;
+        return ret;
+    }
+};
+
+///
+/// Cache_stats
+/// Used to record statistics for each cache.
+/// Maintains a record of every 'mem_access_type' and its resulting
+/// 'cache_request_status' : [mem_access_type][cache_request_status]
+///
+class cache_stats {
+public:
+    cache_stats();
+    void clear();
+    void inc_stats(int access_type, int access_outcome);
+    enum cache_request_status select_stats_status(enum cache_request_status probe, enum cache_request_status access) const;
+    unsigned &operator()(int access_type, int access_outcome);
+    unsigned operator()(int access_type, int access_outcome) const;
+    cache_stats operator+(const cache_stats &cs);
+    cache_stats &operator+=(const cache_stats &cs);
+    void print_stats(FILE *fout, const char *cache_name = "Cache_stats") const;
+
+    unsigned get_stats(enum mem_access_type *access_type, unsigned num_access_type, enum cache_request_status *access_status, unsigned num_access_status)  const;
+    void get_sub_stats(struct cache_sub_stats &css) const;
+
+private:
+    bool check_valid(int type, int status) const;
+
+    std::vector< std::vector<unsigned> > m_stats;
+};
 
 class cache_t {
 public:
@@ -405,7 +490,7 @@ bool was_read_sent( const std::list<cache_event> &events );
 /// Each subclass implements its own 'access' function
 class baseline_cache : public cache_t {
 public:
-    baseline_cache( const char *name, const cache_config &config, int core_id, int type_id, mem_fetch_interface *memport,
+    baseline_cache( const char *name, cache_config &config, int core_id, int type_id, mem_fetch_interface *memport,
                      enum mem_fetch_status status )
     : m_config(config), m_tag_array(new tag_array(config,core_id,type_id)), m_mshrs(config.m_mshr_entries,config.m_mshr_max_merge)
     {
@@ -421,17 +506,19 @@ public:
         assert(config.m_mshr_type == ASSOC);
         m_memport=memport;
         m_miss_queue_status = status;
-        m_read_access=0;
-        m_write_access=0;
-        m_read_miss=0;
-        m_write_miss=0;
-        n_simt_to_mem=0;
     }
 
     virtual ~baseline_cache()
     {
         delete m_tag_array;
     }
+
+	void update_cache_parameters(cache_config &config)
+	{
+		m_config=config;
+		m_tag_array->update_cache_parameters(config);
+		m_mshrs.check_mshr_parameters(config.m_mshr_entries,config.m_mshr_max_merge);
+	}
 
     virtual enum cache_request_status access( new_addr_type addr, mem_fetch *mf, unsigned time, std::list<cache_event> &events ) =  0;
     /// Sends next request to lower level of memory
@@ -449,25 +536,21 @@ public:
     void print(FILE *fp, unsigned &accesses, unsigned &misses) const;
     void display_state( FILE *fp ) const;
 
-    virtual void get_data_stats(unsigned &read_access, unsigned &read_misses,unsigned &write_access,  unsigned &write_misses) const {
-    	read_access = m_read_access;
-    	write_access = m_write_access;
-    	read_misses = m_read_miss;
-    	write_misses = m_write_miss;
+    // Stat collection
+    const cache_stats &get_stats() const {
+        return m_stats;
     }
-
-    void get_stats(unsigned &accesses, unsigned &misses) const {
-    	m_tag_array->get_stats(accesses, misses);
+    unsigned get_stats(enum mem_access_type *access_type, unsigned num_access_type, enum cache_request_status *access_status, unsigned num_access_status)  const{
+        return m_stats.get_stats(access_type, num_access_type, access_status, num_access_status);
     }
-
-    void set_icnt_power_stats(unsigned &simt_to_mem) const{
-    	simt_to_mem = n_simt_to_mem;
+    void get_sub_stats(struct cache_sub_stats &css) const {
+        m_stats.get_sub_stats(css);
     }
 
 protected:
     // Constructor that can be used by derived classes with custom tag arrays
     baseline_cache( const char *name,
-                    const cache_config &config,
+                    cache_config &config,
                     int core_id,
                     int type_id,
                     mem_fetch_interface *memport,
@@ -482,7 +565,7 @@ protected:
 
 protected:
     std::string m_name;
-    const cache_config &m_config;
+    cache_config &m_config;
     tag_array*  m_tag_array;
     mshr_table m_mshrs;
     std::list<mem_fetch*> m_miss_queue;
@@ -508,6 +591,8 @@ protected:
 
     extra_mf_fields_lookup m_extra_mf_fields;
 
+    cache_stats m_stats;
+
     /// Checks whether this request can be handled on this cycle. num_miss equals max # of misses to be handled on this cycle
     bool miss_queue_full(unsigned num_miss){
     	  return ( (m_miss_queue.size()+num_miss) >= m_config.m_miss_queue_size );
@@ -518,20 +603,12 @@ protected:
     /// Read miss handler. Check MSHR hit or MSHR available
     void send_read_request(new_addr_type addr, new_addr_type block_addr, unsigned cache_index, mem_fetch *mf,
     		unsigned time, bool &do_miss, bool &wb, cache_block_t &evicted, std::list<cache_event> &events, bool read_only, bool wa);
-
-    // Power stats
-    unsigned m_read_access;
-    unsigned m_write_access;
-    unsigned m_read_miss;
-    unsigned m_write_miss;
-
-    unsigned n_simt_to_mem; // Interconnect power stats
 };
 
 /// Read only cache
 class read_only_cache : public baseline_cache {
 public:
-    read_only_cache( const char *name, const cache_config &config, int core_id, int type_id, mem_fetch_interface *memport, enum mem_fetch_status status )
+    read_only_cache( const char *name, cache_config &config, int core_id, int type_id, mem_fetch_interface *memport, enum mem_fetch_status status )
     : baseline_cache(name,config,core_id,type_id,memport,status){}
 
     /// Access cache for read_only_cache: returns RESERVATION_FAIL if request could not be accepted (for any reason)
@@ -540,14 +617,14 @@ public:
     virtual ~read_only_cache(){}
 
 protected:
-    read_only_cache( const char *name, const cache_config &config, int core_id, int type_id, mem_fetch_interface *memport, enum mem_fetch_status status, tag_array* new_tag_array )
+    read_only_cache( const char *name, cache_config &config, int core_id, int type_id, mem_fetch_interface *memport, enum mem_fetch_status status, tag_array* new_tag_array )
     : baseline_cache(name,config,core_id,type_id,memport,status, new_tag_array){}
 };
 
 /// Data cache - Implements common functions for L1 and L2 data cache
 class data_cache : public baseline_cache {
 public:
-    data_cache( const char *name, const cache_config &config,
+    data_cache( const char *name, cache_config &config,
     			int core_id, int type_id, mem_fetch_interface *memport,
                 mem_fetch_allocator *mfcreator, enum mem_fetch_status status )
     			: baseline_cache(name,config,core_id,type_id,memport,status)
@@ -587,7 +664,7 @@ public:
 
 protected:
     data_cache( const char *name,
-                const cache_config &config,
+                cache_config &config,
     			int core_id,
                 int type_id,
                 mem_fetch_interface *memport,
@@ -640,7 +717,7 @@ protected:
 /// (the policy used in fermi according to the CUDA manual)
 class l1_cache : public data_cache {
 public:
-	l1_cache(const char *name, const cache_config &config,
+	l1_cache(const char *name, cache_config &config,
 			int core_id, int type_id, mem_fetch_interface *memport,
             mem_fetch_allocator *mfcreator, enum mem_fetch_status status )
 			: data_cache(name,config,core_id,type_id,memport,mfcreator,status){}
@@ -651,7 +728,7 @@ public:
 
 protected:
 	l1_cache( const char *name,
-              const cache_config &config,
+              cache_config &config,
 			  int core_id,
               int type_id,
               mem_fetch_interface *memport,
@@ -665,7 +742,7 @@ protected:
 /// Models second level shared cache with global write-back and write-allocate policies
 class l2_cache : public data_cache {
 public:
-	l2_cache(const char *name, const cache_config &config,
+	l2_cache(const char *name,  cache_config &config,
 			int core_id, int type_id, mem_fetch_interface *memport,
             mem_fetch_allocator *mfcreator, enum mem_fetch_status status )
 			: data_cache(name,config,core_id,type_id,memport,mfcreator,status){}
@@ -685,7 +762,7 @@ public:
 // http://www-graphics.stanford.edu/papers/texture_prefetch/
 class tex_cache : public cache_t {
 public:
-    tex_cache( const char *name, const cache_config &config, int core_id, int type_id, mem_fetch_interface *memport,
+    tex_cache( const char *name, cache_config &config, int core_id, int type_id, mem_fetch_interface *memport,
                enum mem_fetch_status request_status, 
                enum mem_fetch_status rob_status )
     : m_config(config), 
@@ -703,7 +780,6 @@ public:
         m_cache = new data_block[ config.get_num_lines() ];
         m_request_queue_status = request_status;
         m_rob_status = rob_status;
-        n_simt_to_mem=0;
     }
 
     /// Access function for tex_cache
@@ -721,15 +797,18 @@ public:
     mem_fetch *next_access(){return m_result_fifo.pop();}
     void display_state( FILE *fp ) const;
 
-    void get_stats(unsigned &accesses, unsigned &misses) const{
-    	m_tags.get_stats(accesses, misses);
+    // Stat collection
+    const cache_stats &get_stats() const {
+        return m_stats;
+    }
+    unsigned get_stats(enum mem_access_type *access_type, unsigned num_access_type, enum cache_request_status *access_status, unsigned num_access_status) const{
+        return m_stats.get_stats(access_type, num_access_type, access_status, num_access_status);
     }
 
-    void set_icnt_power_stats(unsigned &simt_to_mem) const{
-    	simt_to_mem = n_simt_to_mem;
+    void get_sub_stats(struct cache_sub_stats &css) const{
+        m_stats.get_sub_stats(css);
     }
-
-    private:
+private:
     std::string m_name;
     const cache_config &m_config;
 
@@ -852,12 +931,11 @@ public:
         unsigned m_rob_index;
     };
 
+    cache_stats m_stats;
+
     typedef std::map<mem_fetch*,extra_mf_fields> extra_mf_fields_lookup;
 
     extra_mf_fields_lookup m_extra_mf_fields;
-
-    // Interconnect power stats
-    unsigned n_simt_to_mem;
 };
 
 #endif

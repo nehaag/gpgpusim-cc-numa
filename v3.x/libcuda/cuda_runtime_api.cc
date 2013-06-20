@@ -344,7 +344,7 @@ static CUctx_st* GPGPUSim_Context()
 	return the_context;
 }
 
-extern "C" void ptxinfo_addinfo()
+ void ptxinfo_addinfo()
 {
 	if( !strcmp("__cuda_dummy_entry__",get_ptxinfo_kname()) ) {
 		// this string produced by ptxas for empty ptx files (e.g., bandwidth test)
@@ -786,6 +786,7 @@ __host__ cudaError_t CUDARTAPI cudaGetDevice(int *device)
 	*device = g_active_device;
 	return g_last_cudaError = cudaSuccess;
 }
+
 
 /*******************************************************************************
  *                                                                              *
@@ -1248,8 +1249,8 @@ void setCuobjdumpsassfilename(const char* filename){
 	}
 	(dynamic_cast<cuobjdumpELFSection*>(cuobjdumpSectionList.front()))->setSASSfilename(filename);
 }
-extern "C" int cuobjdump_parse();
-extern "C" FILE *cuobjdump_in;
+extern int cuobjdump_parse();
+extern FILE *cuobjdump_in;
 
 //! Return the executable file of the process containing the PTX/SASS code 
 //!
@@ -1960,6 +1961,15 @@ cudaError_t CUDARTAPI cudaRuntimeGetVersion(int *runtimeVersion)
 	return g_last_cudaError = cudaErrorUnknown;
 }
 
+#if CUDART_VERSION >= 3000
+__host__ cudaError_t CUDARTAPI cudaFuncSetCacheConfig(const char *func, enum cudaFuncCache  cacheConfig )
+{
+	CUctx_st *context = GPGPUSim_Context();
+	context->get_device()->get_gpgpu()->set_cache_config(context->get_kernel(func)->get_name(), (FuncCache)cacheConfig);
+	return g_last_cudaError = cudaSuccess;
+}
+#endif
+
 #endif
 
 cudaError_t CUDARTAPI cudaGLSetGLDevice(int device)
@@ -2010,13 +2020,13 @@ int CUDARTAPI __cudaSynchronizeThreads(void**, void*)
 
 ////////
 
-extern "C" int ptx_parse();
-extern "C" int ptx__scan_string(const char*);
-extern "C" FILE *ptx_in;
+extern int ptx_parse();
+extern int ptx__scan_string(const char*);
+extern FILE *ptx_in;
 
-extern "C" int ptxinfo_parse();
-extern "C" int ptxinfo_debug;
-extern "C" FILE *ptxinfo_in;
+extern int ptxinfo_parse();
+extern int ptxinfo_debug;
+extern FILE *ptxinfo_in;
 
 /// static functions
 

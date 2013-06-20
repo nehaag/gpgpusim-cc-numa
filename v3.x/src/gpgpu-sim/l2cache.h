@@ -88,12 +88,8 @@ public:
 			unsigned &n_wr,
 			unsigned &n_req) const;
 
-   void set_L2cache_power_stats(unsigned &n_read_access,
-			unsigned &n_read_miss,
-			unsigned &n_write_access,
-			unsigned &n_write_miss) const;
-
-   void set_icnt_power_stats(unsigned &n_mem_to_simt) const;
+   void accumulate_L2cache_stats(class cache_stats &l2_stats) const;
+   void get_L2cache_sub_stats(struct cache_sub_stats &css) const;
 
 private:
 // data
@@ -134,9 +130,6 @@ private:
    std::set<mem_fetch*> m_request_tracker;
 
    friend class L2interface;
-
-   // interconnect power stats
-   unsigned n_mem_to_simt;
 };
 
 class L2interface : public mem_fetch_interface {

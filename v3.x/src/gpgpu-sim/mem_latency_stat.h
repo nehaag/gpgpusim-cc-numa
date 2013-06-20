@@ -30,6 +30,7 @@
 
 #include <stdio.h>
 #include <zlib.h>
+#include <map>
 
 class memory_stats_t {
 public:
@@ -44,7 +45,6 @@ public:
    void memlatstat_lat_pw();
    void memlatstat_print(unsigned n_mem, unsigned gpu_mem_n_bk);
 
-   void print( FILE *fp );
    void visualizer_print( gzFile visualizer_file );
 
    unsigned m_n_shader;
@@ -81,11 +81,7 @@ public:
    unsigned ***mem_access_type_stats; // dram access type classification
 
 
-   // stats
-   unsigned L2_write_access;
-   unsigned L2_write_miss;
-   unsigned L2_read_access;
-   unsigned L2_read_miss;
+   // L2 cache stats
    unsigned int *L2_cbtoL2length;
    unsigned int *L2_cbtoL2writelength;
    unsigned int *L2_L2tocblength;
@@ -93,6 +89,7 @@ public:
    unsigned int *L2_dramtoL2writelength;
    unsigned int *L2_L2todramlength;
 
+   // DRAM access row locality stats 
    unsigned int **concurrent_row_access; //concurrent_row_access[dram chip id][bank id]
    unsigned int **num_activates; //num_activates[dram chip id][bank id]
    unsigned int **row_access; //row_access[dram chip id][bank id]

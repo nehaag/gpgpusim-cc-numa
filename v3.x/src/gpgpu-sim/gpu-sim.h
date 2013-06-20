@@ -35,7 +35,6 @@
 #include "shader.h"
 #include <iostream>
 #include <fstream>
-
 #include <list>
 #include <stdio.h>
 
@@ -71,6 +70,7 @@ enum dram_ctrl_t {
    DRAM_FIFO=0,
    DRAM_FRFCFS=1
 };
+
 
 
 struct power_config {
@@ -210,7 +210,7 @@ struct memory_config {
    void reg_options(class OptionParser * opp);
 
    bool m_valid;
-   l2_cache_config m_L2_config;
+   mutable l2_cache_config m_L2_config;
    bool m_L2_texure_only;
 
    char *gpgpu_dram_timing_opt;
@@ -414,10 +414,11 @@ private:
    void reinit_clock_domains(void);
    int  next_clock_domain(void);
    void issue_block2core();
-   void print_dram_L2_stats(FILE *fout) const;
+   void print_dram_stats(FILE *fout) const;
    void L2c_print_cache_stat() const;
    void shader_print_runtime_stat( FILE *fout );
    void shader_print_l1_miss_stat( FILE *fout ) const;
+   void shader_print_cache_stats( FILE *fout ) const;
    void shader_print_scheduler_stat( FILE* fout, bool print_dynamic_info ) const;
    void visualizer_printstat();
    void print_shader_cycle_distro( FILE *fout ) const;
@@ -461,6 +462,9 @@ private:
    unsigned long long  gpu_tot_issued_cta;
    unsigned long long  last_gpu_sim_insn;
 
+
+   std::map<std::string, FuncCache> m_special_cache_config;
+
    std::vector<std::string> m_executed_kernel_names; //< names of kernel for stat printout 
    std::vector<unsigned> m_executed_kernel_uids; //< uids of kernel launches for stat printout
    std::string executed_kernel_info_string(); //< format the kernel information into a string for stat printout
@@ -474,6 +478,11 @@ public:
 
 
 
+   FuncCache get_cache_config(std::string kernel_name);
+   void set_cache_config(std::string kernel_name, FuncCache cacheConfig );
+   bool has_special_cache_config(std::string kernel_name);
+   void change_cache_config(FuncCache cache_config);
+   void set_cache_config(std::string kernel_name);
 
 };
 

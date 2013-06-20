@@ -556,10 +556,10 @@ private:
           else if( m_cu ) return m_cu->get_active_mask();
           else abort();
       }
-      unsigned get_op3() const
+      unsigned get_sp_op() const
       {
-          if( m_warp ) return m_warp->op3;
-          else if( m_cu ) return m_cu->get_op3();
+          if( m_warp ) return m_warp->sp_op;
+          else if( m_cu ) return m_cu->get_sp_op();
           else abort();
       }
       unsigned get_oc_id() const { return m_cu->get_id(); }
@@ -754,7 +754,7 @@ private:
       unsigned get_warp_id() const { return m_warp_id; }
       unsigned get_active_count() const { return m_warp->active_count(); }
       const active_mask_t & get_active_mask() const { return m_warp->get_active_mask(); }
-      unsigned get_op3() const { return m_warp->op3; }
+      unsigned get_sp_op() const { return m_warp->sp_op; }
       unsigned get_id() const { return m_cuid; } // returns CU hw id
 
       // modifiers
@@ -1080,9 +1080,11 @@ public:
     void print(FILE *fout) const;
     void print_cache_stats( FILE *fp, unsigned& dl1_accesses, unsigned& dl1_misses );
     void get_cache_stats(unsigned &read_accesses, unsigned &write_accesses, unsigned &read_misses, unsigned &write_misses, unsigned cache_type);
-    void set_stats();
+    void get_cache_stats(cache_stats &cs);
 
-    void set_icnt_power_stats(unsigned &simt_to_mem) const;
+    void get_L1D_sub_stats(struct cache_sub_stats &css) const;
+    void get_L1C_sub_stats(struct cache_sub_stats &css) const;
+    void get_L1T_sub_stats(struct cache_sub_stats &css) const;
 
 protected:
     ldst_unit( mem_fetch_interface *icnt,
@@ -1148,9 +1150,6 @@ protected:
    // for debugging
    unsigned long long m_last_inst_gpu_sim_cycle;
    unsigned long long m_last_inst_gpu_tot_sim_cycle;
-
-   // Interconnect power stats
-   unsigned n_simt_to_mem;
 };
 
 enum pipeline_stage_name_t {
@@ -1213,10 +1212,10 @@ struct shader_core_config : public core_config
         assert( !(n_thread_per_shader % warp_size) );
         max_sfu_latency = 512;
         max_sp_latency = 32;
-        m_L1I_config.init();
-        m_L1T_config.init();
-        m_L1C_config.init();
-        m_L1D_config.init();
+        m_L1I_config.init(m_L1I_config.m_config_string,FuncCachePreferNone);
+        m_L1T_config.init(m_L1T_config.m_config_string,FuncCachePreferNone);
+        m_L1C_config.init(m_L1C_config.m_config_string,FuncCachePreferNone);
+        m_L1D_config.init(m_L1D_config.m_config_string,FuncCachePreferNone);
         gpgpu_cache_texl1_linesize = m_L1T_config.get_line_sz();
         gpgpu_cache_constl1_linesize = m_L1C_config.get_line_sz();
         m_valid = true;
@@ -1244,10 +1243,10 @@ struct shader_core_config : public core_config
     char* pipeline_widths_string;
     int pipe_widths[N_PIPELINE_STAGES];
 
-    cache_config m_L1I_config;
-    cache_config m_L1T_config;
-    cache_config m_L1C_config;
-    cache_config m_L1D_config;
+    mutable cache_config m_L1I_config;
+    mutable cache_config m_L1T_config;
+    mutable cache_config m_L1C_config;
+    mutable cache_config m_L1D_config;
 
     bool gpgpu_dwf_reg_bankconflict;
 
@@ -1367,19 +1366,9 @@ struct shader_core_stats_pod {
     unsigned made_write_mfs;
     unsigned made_read_mfs;
 
-    // Power stats
     unsigned *gpgpu_n_shmem_bank_access;
-    unsigned *inst_c_read_access;	// Instruction cache read access
-    unsigned *inst_c_read_miss;		// Instruction cache read miss
-    unsigned *const_c_read_access;	// Constant cache read access
-    unsigned *const_c_read_miss;		// Constant cache read miss
-    unsigned *text_c_read_access;	// Texture cache read access
-    unsigned *text_c_read_miss;		// Texture cache read miss
-    unsigned *l1d_read_access;		// L1 Data cache read access
-    unsigned *l1d_read_miss;			// L1 Data cache read miss
-    unsigned *l1d_write_access;		// L1 Data cache write access
-    unsigned *l1d_write_miss;		// L1 Data cache write miss
-
+    long *n_simt_to_mem; // Interconnect power stats
+    long *n_mem_to_simt;
 };
 
 class shader_core_stats : public shader_core_stats_pod {
@@ -1429,17 +1418,8 @@ public:
         shader_cycle_distro = (unsigned*) calloc(config->warp_size+3, sizeof(unsigned));
         last_shader_cycle_distro = (unsigned*) calloc(m_config->warp_size+3, sizeof(unsigned));
 
-        // Power stats
-        inst_c_read_access = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        inst_c_read_miss = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        const_c_read_access = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        const_c_read_miss = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        text_c_read_access = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        text_c_read_miss = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        l1d_read_access = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        l1d_read_miss = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        l1d_write_access = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
-        l1d_write_miss = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
+        n_simt_to_mem = (long *)calloc(config->num_shader(), sizeof(long));
+        n_mem_to_simt = (long *)calloc(config->num_shader(), sizeof(long));
 
         gpgpu_n_shmem_bank_access = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
@@ -1584,9 +1564,14 @@ public:
     std::list<unsigned> get_regs_written( const inst_t &fvt ) const;
     const shader_core_config *get_config() const { return m_config; }
     void print_cache_stats( FILE *fp, unsigned& dl1_accesses, unsigned& dl1_misses );
-    void get_cache_stats(unsigned &read_accesses, unsigned &write_accesses, unsigned &read_misses, unsigned &write_misses, unsigned cache_type);
 
-    void set_icnt_power_stats(unsigned &n_simt_to_mem) const;
+    void get_cache_stats(cache_stats &cs);
+    void get_L1I_sub_stats(struct cache_sub_stats &css) const;
+    void get_L1D_sub_stats(struct cache_sub_stats &css) const;
+    void get_L1C_sub_stats(struct cache_sub_stats &css) const;
+    void get_L1T_sub_stats(struct cache_sub_stats &css) const;
+
+    void get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
 
 // debug:
     void display_simt_state(FILE *fout, int mask ) const;
@@ -1692,6 +1677,9 @@ public:
 	 void incsfuactivelanes_stat(unsigned active_count) {m_stats->m_active_sfu_lanes[m_sid]=m_stats->m_active_sfu_lanes[m_sid]+active_count;}
 	 void incfuactivelanes_stat(unsigned active_count) {m_stats->m_active_fu_lanes[m_sid]=m_stats->m_active_fu_lanes[m_sid]+active_count;}
 	 void incfumemactivelanes_stat(unsigned active_count) {m_stats->m_active_fu_mem_lanes[m_sid]=m_stats->m_active_fu_mem_lanes[m_sid]+active_count;}
+
+	 void inc_simt_to_mem(unsigned n_flits){ m_stats->n_simt_to_mem[m_sid] += n_flits; }
+
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){
       return  ( ((32-active_count)>>1)*latency) + ( ((32-active_count)>>3)*latency) + ( ((32-active_count)>>3)*latency);
@@ -1825,9 +1813,14 @@ public:
 
     void display_pipeline( unsigned sid, FILE *fout, int print_mem, int mask );
     void print_cache_stats( FILE *fp, unsigned& dl1_accesses, unsigned& dl1_misses ) const;
-    void get_cache_stats(unsigned &read_accesses, unsigned &write_accesses, unsigned &read_misses, unsigned &write_misses, unsigned cache_type) const;
 
-    void set_icnt_stats(unsigned &n_simt_to_mem) const;
+    void get_cache_stats(cache_stats &cs) const;
+    void get_L1I_sub_stats(struct cache_sub_stats &css) const;
+    void get_L1D_sub_stats(struct cache_sub_stats &css) const;
+    void get_L1C_sub_stats(struct cache_sub_stats &css) const;
+    void get_L1T_sub_stats(struct cache_sub_stats &css) const;
+
+    void get_icnt_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
 
 private:
     unsigned m_cluster_id;
@@ -1851,7 +1844,8 @@ public:
     }
     virtual void push(mem_fetch *mf) 
     {
-        m_cluster->icnt_inject_request_packet(mf);
+    	m_core->inc_simt_to_mem(mf->get_num_flits(true));
+        m_cluster->icnt_inject_request_packet(mf);        
     }
 private:
     shader_core_ctx *m_core;
@@ -1867,11 +1861,10 @@ public:
     }
     virtual void push(mem_fetch *mf)
     {
-        if( !mf->get_inst().empty() )
-            m_core->mem_instruction_stats(mf->get_inst()); // not I$-fetch
         if ( mf && mf->isatomic() )
             mf->do_atomic(); // execute atomic inside the "memory subsystem"
-        m_cluster->push_response_fifo(mf);
+        m_core->inc_simt_to_mem(mf->get_num_flits(true));
+        m_cluster->push_response_fifo(mf);        
     }
 private:
     shader_core_ctx *m_core;
