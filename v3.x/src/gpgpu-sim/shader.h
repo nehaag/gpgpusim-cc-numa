@@ -52,6 +52,7 @@
 #include "mem_fetch.h"
 #include "stats.h"
 #include "gpu-cache.h"
+#include "traffic_breakdown.h"
 
 
 
@@ -278,6 +279,7 @@ enum concrete_scheduler
     CONCRETE_SCHEDULER_LRR = 0,
     CONCRETE_SCHEDULER_GTO,
     CONCRETE_SCHEDULER_TWO_LEVEL_ACTIVE,
+    CONCRETE_SCHEDULER_WARP_LIMITING,
     NUM_CONCRETE_SCHEDULERS
 };
 
@@ -449,6 +451,28 @@ private:
     scheduler_prioritization_type m_inner_level_prioritization;
     scheduler_prioritization_type m_outer_level_prioritization;
 	unsigned m_max_active_warps;
+};
+
+// Static Warp Limiting Scheduler
+class swl_scheduler : public scheduler_unit {
+public:
+	swl_scheduler ( shader_core_stats* stats, shader_core_ctx* shader,
+                    Scoreboard* scoreboard, simt_stack** simt,
+                    std::vector<shd_warp_t>* warp,
+                    register_set* sp_out,
+                    register_set* sfu_out,
+                    register_set* mem_out,
+                    int id,
+                    char* config_string );
+	virtual ~swl_scheduler () {}
+	virtual void order_warps ();
+    virtual void done_adding_supervised_warps() {
+        m_last_supervised_issued = m_supervised_warps.begin();
+    }
+
+protected:
+    scheduler_prioritization_type m_prioritization;
+    unsigned m_num_warps_to_limit;
 };
 
 
@@ -1248,6 +1272,8 @@ struct shader_core_config : public core_config
     mutable cache_config m_L1C_config;
     mutable cache_config m_L1D_config;
 
+    bool gmem_skip_L1D; // on = global memory access always skip the L1 cache 
+    
     bool gpgpu_dwf_reg_bankconflict;
 
     int gpgpu_num_sched_per_core;
@@ -1361,6 +1387,7 @@ struct shader_core_stats_pod {
     int gpgpu_n_mem_read_inst;
     
     int gpgpu_n_mem_l2_writeback;
+    int gpgpu_n_mem_l1_write_allocate; 
     int gpgpu_n_mem_l2_write_allocate;
 
     unsigned made_write_mfs;
@@ -1421,10 +1448,24 @@ public:
         n_simt_to_mem = (long *)calloc(config->num_shader(), sizeof(long));
         n_mem_to_simt = (long *)calloc(config->num_shader(), sizeof(long));
 
+        m_outgoing_traffic_stats = new traffic_breakdown("coretomem"); 
+        m_incoming_traffic_stats = new traffic_breakdown("memtocore"); 
+
         gpgpu_n_shmem_bank_access = (unsigned *)calloc(config->num_shader(), sizeof(unsigned));
 
         m_shader_dynamic_warp_issue_distro.resize( config->num_shader() );
         m_shader_warp_slot_issue_distro.resize( config->num_shader() );
+    }
+
+    ~shader_core_stats()
+    {
+        delete m_outgoing_traffic_stats; 
+        delete m_incoming_traffic_stats; 
+        free(m_num_sim_insn); 
+        free(m_num_sim_winsn);
+        free(m_n_diverge); 
+        free(shader_cycle_distro);
+        free(last_shader_cycle_distro);
     }
 
     void new_grid()
@@ -1449,6 +1490,10 @@ public:
 
 private:
     const shader_core_config *m_config;
+
+    traffic_breakdown *m_outgoing_traffic_stats; // core to memory partitions
+    traffic_breakdown *m_incoming_traffic_stats; // memory partition to core 
+
     // Counts the instructions issued for each dynamic warp.
     std::vector< std::vector<unsigned> > m_shader_dynamic_warp_issue_distro;
     std::vector<unsigned> m_last_shader_dynamic_warp_issue_distro;

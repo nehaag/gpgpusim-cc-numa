@@ -29,7 +29,9 @@
 #define ABSTRACT_HARDWARE_MODEL_INCLUDED
 
 
-
+// Forward declarations
+class gpgpu_sim;
+class kernel_info_t;
 
 enum _memory_space_t {
    undefined_space=0,
@@ -531,6 +533,7 @@ public:
    void set_bank( unsigned b ) { m_bank = b; }
    bool is_const() const { return (m_type == const_space) || (m_type == param_space_kernel); }
    bool is_local() const { return (m_type == local_space) || (m_type == param_space_local); }
+   bool is_global() const { return (m_type == global_space); }
 
 private:
    enum _memory_space_t m_type;
@@ -541,19 +544,29 @@ const unsigned MAX_MEMORY_ACCESS_SIZE = 128;
 typedef std::bitset<MAX_MEMORY_ACCESS_SIZE> mem_access_byte_mask_t;
 #define NO_PARTIAL_WRITE (mem_access_byte_mask_t())
 
-enum mem_access_type {
-   GLOBAL_ACC_R, 
-   LOCAL_ACC_R, 
-   CONST_ACC_R, 
-   TEXTURE_ACC_R, 
-   GLOBAL_ACC_W, 
-   LOCAL_ACC_W,
-   L1_WRBK_ACC,
-   L2_WRBK_ACC, 
-   INST_ACC_R,
-   L2_WR_ALLOC_R,
-   NUM_MEM_ACCESS_TYPE
-};
+#define MEM_ACCESS_TYPE_TUP_DEF \
+MA_TUP_BEGIN( mem_access_type ) \
+   MA_TUP( GLOBAL_ACC_R ), \
+   MA_TUP( LOCAL_ACC_R ), \
+   MA_TUP( CONST_ACC_R ), \
+   MA_TUP( TEXTURE_ACC_R ), \
+   MA_TUP( GLOBAL_ACC_W ), \
+   MA_TUP( LOCAL_ACC_W ), \
+   MA_TUP( L1_WRBK_ACC ), \
+   MA_TUP( L2_WRBK_ACC ), \
+   MA_TUP( INST_ACC_R ), \
+   MA_TUP( L1_WR_ALLOC_R ), \
+   MA_TUP( L2_WR_ALLOC_R ), \
+   MA_TUP( NUM_MEM_ACCESS_TYPE ) \
+MA_TUP_END( mem_access_type ) 
+
+#define MA_TUP_BEGIN(X) enum X {
+#define MA_TUP(X) X
+#define MA_TUP_END(X) };
+MEM_ACCESS_TYPE_TUP_DEF
+#undef MA_TUP_BEGIN
+#undef MA_TUP
+#undef MA_TUP_END
 
 const char * mem_access_type_str(enum mem_access_type access_type); 
 
@@ -955,23 +968,49 @@ size_t get_kernel_code_size( class function_info *entry );
  */
 class core_t {
     public:
-        virtual ~core_t() {}
+        core_t( gpgpu_sim *gpu, 
+                kernel_info_t *kernel,
+                unsigned warp_size,
+                unsigned threads_per_shader )
+            : m_gpu( gpu ),
+              m_kernel( kernel ),
+              m_simt_stack( NULL ),
+              m_thread( NULL ),
+              m_warp_size( warp_size )
+        {
+            m_warp_count = threads_per_shader/m_warp_size;
+            // Handle the case where the number of threads is not a
+            // multiple of the warp size
+            if ( threads_per_shader % m_warp_size != 0 ) {
+                m_warp_count += 1;
+            }
+            assert( m_warp_count * m_warp_size > 0 );
+            m_thread = ( ptx_thread_info** )
+                     calloc( m_warp_count * m_warp_size,
+                             sizeof( ptx_thread_info* ) );
+            initilizeSIMTStack(m_warp_count,m_warp_size);
+        }
+        virtual ~core_t() { free(m_thread); }
         virtual void warp_exit( unsigned warp_id ) = 0;
         virtual bool warp_waiting_at_barrier( unsigned warp_id ) const = 0;
         virtual void checkExecutionStatusAndUpdate(warp_inst_t &inst, unsigned t, unsigned tid)=0;
         class gpgpu_sim * get_gpu() {return m_gpu;}
-        void execute_warp_inst_t(warp_inst_t &inst, unsigned warpSize, unsigned warpId =(unsigned)-1);
+        void execute_warp_inst_t(warp_inst_t &inst, unsigned warpId =(unsigned)-1);
         bool  ptx_thread_done( unsigned hw_thread_id ) const ;
-        void updateSIMTStack(unsigned warpId, unsigned warpSize, warp_inst_t * inst);
-        void initilizeSIMTStack(unsigned warps, unsigned warpsSize);
+        void updateSIMTStack(unsigned warpId, warp_inst_t * inst);
+        void initilizeSIMTStack(unsigned warp_count, unsigned warps_size);
+        void deleteSIMTStack();
         warp_inst_t getExecuteWarp(unsigned warpId);
         void get_pdom_stack_top_info( unsigned warpId, unsigned *pc, unsigned *rpc ) const;
         kernel_info_t * get_kernel_info(){ return m_kernel;}
+        unsigned get_warp_size() const { return m_warp_size; }
     protected:
         class gpgpu_sim *m_gpu;
         kernel_info_t *m_kernel;
         simt_stack  **m_simt_stack; // pdom based reconvergence context for each warp
-        class ptx_thread_info ** m_thread; 
+        class ptx_thread_info ** m_thread;
+        unsigned m_warp_size;
+        unsigned m_warp_count;
 };
 
 

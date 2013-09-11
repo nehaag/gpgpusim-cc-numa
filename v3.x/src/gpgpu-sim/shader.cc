@@ -40,15 +40,16 @@
 #include "mem_fetch.h"
 #include "mem_latency_stat.h"
 #include "visualizer.h"
-#include "../intersim/statwraper.h"
-#include "../intersim/interconnect_interface.h"
+#include "../statwrapper.h"
 #include "icnt_wrapper.h"
 #include <string.h>
 #include <limits.h>
+#include "traffic_breakdown.h"
 #include "shader_trace.h"
 
 #define PRIORITIZE_MSHR_OVER_WB 1
 #define MAX(a,b) (((a)>(b))?(a):(b))
+#define MIN(a,b) (((a)<(b))?(a):(b))
     
 
 /////////////////////////////////////////////////////////////////////////////
@@ -71,11 +72,10 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
                                   const struct shader_core_config *config,
                                   const struct memory_config *mem_config,
                                   shader_core_stats *stats )
-   : m_barriers( config->max_warps_per_shader, config->max_cta_per_core ),
+   : core_t( gpu, NULL, config->warp_size, config->n_thread_per_shader ),
+     m_barriers( config->max_warps_per_shader, config->max_cta_per_core ),
      m_dynamic_warp_id(0)
 {
-    m_kernel = NULL;
-    m_gpu = gpu;
     m_cluster = cluster;
     m_config = config;
     m_memory_config = mem_config;
@@ -91,7 +91,6 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
     }
     
     m_threadState = (thread_ctx_t*) calloc(sizeof(thread_ctx_t), config->n_thread_per_shader);
-    m_thread = (ptx_thread_info**) calloc(sizeof(ptx_thread_info*), config->n_thread_per_shader);
     
     m_not_completed = 0;
     m_active_threads.reset();
@@ -121,7 +120,6 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
     m_L1I = new read_only_cache( name,m_config->m_L1I_config,m_sid,get_shader_instruction_cache_id(),m_icnt,IN_L1I_MISS_QUEUE);
     
     m_warp.resize(m_config->max_warps_per_shader, shd_warp_t(this, warp_size));
-    initilizeSIMTStack(config->max_warps_per_shader,this->get_config()->warp_size);
     m_scoreboard = new Scoreboard(m_sid, m_config->max_warps_per_shader);
     
     //scedulers
@@ -133,6 +131,8 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
                                          CONCRETE_SCHEDULER_TWO_LEVEL_ACTIVE :
                                          sched_config.find("gto") != std::string::npos ?
                                          CONCRETE_SCHEDULER_GTO :
+                                         sched_config.find("warp_limiting") != std::string::npos ?
+                                         CONCRETE_SCHEDULER_WARP_LIMITING:
                                          NUM_CONCRETE_SCHEDULERS;
     assert ( scheduler != NUM_CONCRETE_SCHEDULERS );
     
@@ -179,6 +179,21 @@ shader_core_ctx::shader_core_ctx( class gpgpu_sim *gpu,
                                        &m_pipeline_reg[ID_OC_SFU],
                                        &m_pipeline_reg[ID_OC_MEM],
                                        i
+                                     )
+                );
+                break;
+            case CONCRETE_SCHEDULER_WARP_LIMITING:
+                schedulers.push_back(
+                    new swl_scheduler( m_stats,
+                                       this,
+                                       m_scoreboard,
+                                       m_simt_stack,
+                                       &m_warp,
+                                       &m_pipeline_reg[ID_OC_SP],
+                                       &m_pipeline_reg[ID_OC_SFU],
+                                       &m_pipeline_reg[ID_OC_MEM],
+                                       i,
+                                       config->gpgpu_scheduler_string
                                      )
                 );
                 break;
@@ -384,8 +399,10 @@ void shader_core_stats::print( FILE* fout ) const
    fprintf(fout, "gpgpu_stall_shd_mem[c_mem][bk_conf] = %d\n", gpu_stall_shd_mem_breakdown[C_MEM][BK_CONF]);
    fprintf(fout, "gpgpu_stall_shd_mem[c_mem][mshr_rc] = %d\n", gpu_stall_shd_mem_breakdown[C_MEM][MSHR_RC_FAIL]);
    fprintf(fout, "gpgpu_stall_shd_mem[c_mem][icnt_rc] = %d\n", gpu_stall_shd_mem_breakdown[C_MEM][ICNT_RC_FAIL]);
+   fprintf(fout, "gpgpu_stall_shd_mem[c_mem][data_port_stall] = %d\n", gpu_stall_shd_mem_breakdown[C_MEM][DATA_PORT_STALL]);
    fprintf(fout, "gpgpu_stall_shd_mem[t_mem][mshr_rc] = %d\n", gpu_stall_shd_mem_breakdown[T_MEM][MSHR_RC_FAIL]);
    fprintf(fout, "gpgpu_stall_shd_mem[t_mem][icnt_rc] = %d\n", gpu_stall_shd_mem_breakdown[T_MEM][ICNT_RC_FAIL]);
+   fprintf(fout, "gpgpu_stall_shd_mem[t_mem][data_port_stall] = %d\n", gpu_stall_shd_mem_breakdown[T_MEM][DATA_PORT_STALL]);
    fprintf(fout, "gpgpu_stall_shd_mem[s_mem][bk_conf] = %d\n", gpu_stall_shd_mem_breakdown[S_MEM][BK_CONF]);
    fprintf(fout, "gpgpu_stall_shd_mem[gl_mem][bk_conf] = %d\n", 
            gpu_stall_shd_mem_breakdown[G_MEM_LD][BK_CONF] + 
@@ -399,6 +416,12 @@ void shader_core_stats::print( FILE* fout ) const
            gpu_stall_shd_mem_breakdown[L_MEM_LD][COAL_STALL] + 
            gpu_stall_shd_mem_breakdown[L_MEM_ST][COAL_STALL]    
            ); // coalescing stall + bank conflict at data cache 
+   fprintf(fout, "gpgpu_stall_shd_mem[gl_mem][data_port_stall] = %d\n", 
+           gpu_stall_shd_mem_breakdown[G_MEM_LD][DATA_PORT_STALL] + 
+           gpu_stall_shd_mem_breakdown[G_MEM_ST][DATA_PORT_STALL] + 
+           gpu_stall_shd_mem_breakdown[L_MEM_LD][DATA_PORT_STALL] + 
+           gpu_stall_shd_mem_breakdown[L_MEM_ST][DATA_PORT_STALL]    
+           ); // data port stall at data cache 
    fprintf(fout, "gpgpu_stall_shd_mem[g_mem_ld][mshr_rc] = %d\n", gpu_stall_shd_mem_breakdown[G_MEM_LD][MSHR_RC_FAIL]);
    fprintf(fout, "gpgpu_stall_shd_mem[g_mem_ld][icnt_rc] = %d\n", gpu_stall_shd_mem_breakdown[G_MEM_LD][ICNT_RC_FAIL]);
    fprintf(fout, "gpgpu_stall_shd_mem[g_mem_ld][wb_icnt_rc] = %d\n", gpu_stall_shd_mem_breakdown[G_MEM_LD][WB_ICNT_RC_FAIL]);
@@ -425,6 +448,9 @@ void shader_core_stats::print( FILE* fout ) const
    for (unsigned i = 3; i < m_config->warp_size + 3; i++) 
       fprintf(fout, "\tW%d:%d", i-2, shader_cycle_distro[i]);
    fprintf(fout, "\n");
+
+   m_outgoing_traffic_stats->print(fout); 
+   m_incoming_traffic_stats->print(fout); 
 }
 
 void shader_core_stats::event_warp_issued( unsigned s_id, unsigned warp_id, unsigned num_issued, unsigned dynamic_warp_id ) {
@@ -464,18 +490,22 @@ void shader_core_stats::visualizer_print( gzFile visualizer_file )
 
     // warp issue breakdown
     unsigned sid = m_config->gpgpu_warp_issue_shader;
-    gzprintf(visualizer_file, "WarpIssueSlotBreakdown:");
     unsigned count = 0;
     unsigned warp_id_issued_sum = 0;
-    for ( std::vector<unsigned>::const_iterator iter = m_shader_warp_slot_issue_distro[ sid ].begin();
-          iter != m_shader_warp_slot_issue_distro[ sid ].end(); iter++, count++ ) {
-        unsigned diff = count < m_last_shader_warp_slot_issue_distro.size() ?
-                        *iter - m_last_shader_warp_slot_issue_distro[ count ] :
-                        *iter;
-        gzprintf( visualizer_file, " %d", diff );
-        warp_id_issued_sum += diff;
+    gzprintf(visualizer_file, "WarpIssueSlotBreakdown:");
+    if(m_shader_warp_slot_issue_distro[sid].size() > 0){
+        for ( std::vector<unsigned>::const_iterator iter = m_shader_warp_slot_issue_distro[ sid ].begin();
+              iter != m_shader_warp_slot_issue_distro[ sid ].end(); iter++, count++ ) {
+            unsigned diff = count < m_last_shader_warp_slot_issue_distro.size() ?
+                            *iter - m_last_shader_warp_slot_issue_distro[ count ] :
+                            *iter;
+            gzprintf( visualizer_file, " %d", diff );
+            warp_id_issued_sum += diff;
+        }
+        m_last_shader_warp_slot_issue_distro = m_shader_warp_slot_issue_distro[ sid ];
+    }else{
+        gzprintf( visualizer_file, " 0");
     }
-    m_last_shader_warp_slot_issue_distro = m_shader_warp_slot_issue_distro[ sid ];
     gzprintf(visualizer_file,"\n");
 
     #define DYNAMIC_WARP_PRINT_RESOLUTION 32
@@ -483,25 +513,29 @@ void shader_core_stats::visualizer_print( gzFile visualizer_file )
     unsigned dynamic_id_issued_sum = 0;
     count = 0;
     gzprintf(visualizer_file, "WarpIssueDynamicIdBreakdown:");
-    for ( std::vector<unsigned>::const_iterator iter = m_shader_dynamic_warp_issue_distro[ sid ].begin();
-          iter != m_shader_dynamic_warp_issue_distro[ sid ].end(); iter++, count++ ) {
-        unsigned diff = count < m_last_shader_dynamic_warp_issue_distro.size() ?
-                        *iter - m_last_shader_dynamic_warp_issue_distro[ count ] :
-                        *iter;
-        total_issued_this_resolution += diff;
-        if ( ( count + 1 ) % DYNAMIC_WARP_PRINT_RESOLUTION == 0 ) {
+    if(m_shader_dynamic_warp_issue_distro[sid].size() > 0){
+        for ( std::vector<unsigned>::const_iterator iter = m_shader_dynamic_warp_issue_distro[ sid ].begin();
+              iter != m_shader_dynamic_warp_issue_distro[ sid ].end(); iter++, count++ ) {
+            unsigned diff = count < m_last_shader_dynamic_warp_issue_distro.size() ?
+                            *iter - m_last_shader_dynamic_warp_issue_distro[ count ] :
+                            *iter;
+            total_issued_this_resolution += diff;
+            if ( ( count + 1 ) % DYNAMIC_WARP_PRINT_RESOLUTION == 0 ) {
+                gzprintf( visualizer_file, " %d", total_issued_this_resolution );
+                dynamic_id_issued_sum += total_issued_this_resolution;
+                total_issued_this_resolution = 0;
+            }
+        }
+        if ( count % DYNAMIC_WARP_PRINT_RESOLUTION != 0 ) {
             gzprintf( visualizer_file, " %d", total_issued_this_resolution );
             dynamic_id_issued_sum += total_issued_this_resolution;
-            total_issued_this_resolution = 0;
         }
+        m_last_shader_dynamic_warp_issue_distro = m_shader_dynamic_warp_issue_distro[ sid ];
+        assert( warp_id_issued_sum == dynamic_id_issued_sum );
+    }else{
+        gzprintf( visualizer_file, " 0");
     }
-    if ( count % DYNAMIC_WARP_PRINT_RESOLUTION != 0 ) {
-        gzprintf( visualizer_file, " %d", total_issued_this_resolution );
-        dynamic_id_issued_sum += total_issued_this_resolution;
-    }
-    m_last_shader_dynamic_warp_issue_distro = m_shader_dynamic_warp_issue_distro[ sid ];
     gzprintf(visualizer_file,"\n");
-    assert( warp_id_issued_sum == dynamic_id_issued_sum );
 
     // overall cache miss rates
     gzprintf(visualizer_file, "gpgpu_n_cache_bkconflict: %d\n", gpgpu_n_cache_bkconflict);
@@ -637,7 +671,7 @@ void shader_core_ctx::fetch()
 
 void shader_core_ctx::func_exec_inst( warp_inst_t &inst )
 {
-    execute_warp_inst_t(inst, m_config->warp_size);
+    execute_warp_inst_t(inst);
     if( inst.is_load() || inst.is_store() )
         inst.generate_mem_accesses();
 }
@@ -658,7 +692,7 @@ void shader_core_ctx::issue_warp( register_set& pipe_reg_set, const warp_inst_t*
     else if( next_inst->op == MEMORY_BARRIER_OP ) 
         m_warp[warp_id].set_membar();
 
-    updateSIMTStack(warp_id,m_config->warp_size,*pipe_reg);
+    updateSIMTStack(warp_id,*pipe_reg);
     m_scoreboard->reserveRegisters(*pipe_reg);
     m_warp[warp_id].set_next_pc(next_inst->pc + next_inst->isize);
 }
@@ -894,7 +928,13 @@ void scheduler_unit::do_on_warp_issued( unsigned warp_id,
 bool scheduler_unit::sort_warps_by_oldest_dynamic_id(shd_warp_t* lhs, shd_warp_t* rhs)
 {
     if (rhs && lhs) {
-        return lhs->get_dynamic_warp_id() < rhs->get_dynamic_warp_id();
+        if ( lhs->done_exit() || lhs->waiting() ) {
+            return false;
+        } else if ( rhs->done_exit() || rhs->waiting() ) {
+            return true;
+        } else {
+            return lhs->get_dynamic_warp_id() < rhs->get_dynamic_warp_id();
+        }
     } else {
         return lhs < rhs;
     }
@@ -941,32 +981,32 @@ two_level_active_scheduler::do_on_warp_issued( unsigned warp_id,
 
 void two_level_active_scheduler::order_warps()
 {
-	//Move waiting warps to m_pending_warps
+    //Move waiting warps to m_pending_warps
     unsigned num_demoted = 0;
-	for (	std::vector< shd_warp_t* >::iterator iter = m_next_cycle_prioritized_warps.begin();
-			iter != m_next_cycle_prioritized_warps.end(); ) {
-		bool waiting = (*iter)->waiting();
-		for (int i=0; i<4; i++){
-			const warp_inst_t* inst = (*iter)->ibuffer_next_inst();
-			//Is the instruction waiting on a long operation?
-			if ( inst && inst->in[i] > 0 && this->m_scoreboard->islongop((*iter)->get_warp_id(), inst->in[i])){
-				waiting = true;
-			}
-		}
+    for (   std::vector< shd_warp_t* >::iterator iter = m_next_cycle_prioritized_warps.begin();
+            iter != m_next_cycle_prioritized_warps.end(); ) {
+        bool waiting = (*iter)->waiting();
+        for (int i=0; i<4; i++){
+            const warp_inst_t* inst = (*iter)->ibuffer_next_inst();
+            //Is the instruction waiting on a long operation?
+            if ( inst && inst->in[i] > 0 && this->m_scoreboard->islongop((*iter)->get_warp_id(), inst->in[i])){
+                waiting = true;
+            }
+        }
 
-		if( waiting ) {
-			m_pending_warps.push_back(*iter);
-			iter = m_next_cycle_prioritized_warps.erase(iter);
+        if( waiting ) {
+            m_pending_warps.push_back(*iter);
+            iter = m_next_cycle_prioritized_warps.erase(iter);
             SCHED_DPRINTF( "DEMOTED warp_id=%d, dynamic_warp_id=%d\n",
                            (*iter)->get_warp_id(),
                            (*iter)->get_dynamic_warp_id() );
             ++num_demoted;
-		} else {
+        } else {
             ++iter;
         }
-	}
+    }
 
-	//If there is space in m_next_cycle_prioritized_warps, promote the next m_pending_warps
+    //If there is space in m_next_cycle_prioritized_warps, promote the next m_pending_warps
     unsigned num_promoted = 0;
     if ( SCHEDULER_PRIORITIZATION_SRR == m_outer_level_prioritization ) {
         while ( m_next_cycle_prioritized_warps.size() < m_max_active_warps ) {
@@ -976,7 +1016,7 @@ void two_level_active_scheduler::order_warps()
                            (m_next_cycle_prioritized_warps.back())->get_warp_id(),
                            (m_next_cycle_prioritized_warps.back())->get_dynamic_warp_id() );
             ++num_promoted;
-    	}
+        }
     } else {
         fprintf( stderr,
                  "Unimplemented m_outer_level_prioritization: %d\n",
@@ -984,6 +1024,42 @@ void two_level_active_scheduler::order_warps()
         abort();
     }
     assert( num_promoted == num_demoted );
+}
+
+swl_scheduler::swl_scheduler ( shader_core_stats* stats, shader_core_ctx* shader,
+                               Scoreboard* scoreboard, simt_stack** simt,
+                               std::vector<shd_warp_t>* warp,
+                               register_set* sp_out,
+                               register_set* sfu_out,
+                               register_set* mem_out,
+                               int id,
+                               char* config_string )
+    : scheduler_unit ( stats, shader, scoreboard, simt, warp, sp_out, sfu_out, mem_out, id )
+{
+    int ret = sscanf( config_string,
+                      "warp_limiting:%d:%d",
+                      (int*)&m_prioritization,
+                      &m_num_warps_to_limit
+                     );
+    assert( 2 == ret );
+    // Currently only GTO is implemented
+    assert( m_prioritization == SCHEDULER_PRIORITIZATION_GTO );
+    assert( m_num_warps_to_limit <= shader->get_config()->max_warps_per_shader );
+}
+
+void swl_scheduler::order_warps()
+{
+    if ( SCHEDULER_PRIORITIZATION_GTO == m_prioritization ) {
+        order_by_priority( m_next_cycle_prioritized_warps,
+                           m_supervised_warps,
+                           m_last_supervised_issued,
+                           MIN( m_num_warps_to_limit, m_supervised_warps.size() ),
+                           ORDERING_GREEDY_THEN_PRIORITY_FUNC,
+                           scheduler_unit::sort_warps_by_oldest_dynamic_id );
+    } else {
+        fprintf(stderr, "swl_scheduler m_prioritization = %d\n", m_prioritization);
+        abort();
+    }
 }
 
 void shader_core_ctx::read_operands()
@@ -1250,6 +1326,9 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
     if( inst.accessq_empty() )
         return result;
 
+    if( !cache->data_port_free() ) 
+        return DATA_PORT_STALL; 
+
     //const mem_access_t &access = inst.accessq_back();
     mem_fetch *mf = m_mf_allocator->alloc(inst,inst.accessq_back());
     std::list<cache_event> events;
@@ -1302,7 +1381,16 @@ bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_rea
    const mem_access_t &access = inst.accessq_back();
    unsigned size = access.get_size(); 
 
-   if( CACHE_GLOBAL == inst.cache_op || (m_L1D == NULL) ) {
+   bool bypassL1D = false; 
+   if ( CACHE_GLOBAL == inst.cache_op || (m_L1D == NULL) ) {
+       bypassL1D = true; 
+   } else if (inst.space.is_global()) { // global memory access 
+       // skip L1 cache if the option is enabled
+       if (m_core->get_config()->gmem_skip_L1D) 
+           bypassL1D = true; 
+   }
+
+   if( bypassL1D ) {
        // bypass L1 cache
        if( m_icnt->full(size, inst.is_store() || inst.isatomic()) ) {
            stall_cond = ICNT_RC_FAIL;
@@ -1693,12 +1781,16 @@ void ldst_unit::cycle()
    if( !m_response_fifo.empty() ) {
        mem_fetch *mf = m_response_fifo.front();
        if (mf->istexture()) {
-           m_L1T->fill(mf,gpu_sim_cycle+gpu_tot_sim_cycle);
-           m_response_fifo.pop_front(); 
+           if (m_L1T->fill_port_free()) {
+               m_L1T->fill(mf,gpu_sim_cycle+gpu_tot_sim_cycle);
+               m_response_fifo.pop_front(); 
+           }
        } else if (mf->isconst())  {
-           mf->set_status(IN_SHADER_FETCHED,gpu_sim_cycle+gpu_tot_sim_cycle);
-           m_L1C->fill(mf,gpu_sim_cycle+gpu_tot_sim_cycle);
-           m_response_fifo.pop_front(); 
+           if (m_L1C->fill_port_free()) {
+               mf->set_status(IN_SHADER_FETCHED,gpu_sim_cycle+gpu_tot_sim_cycle);
+               m_L1C->fill(mf,gpu_sim_cycle+gpu_tot_sim_cycle);
+               m_response_fifo.pop_front(); 
+           }
        } else {
     	   if( mf->get_type() == WRITE_ACK || ( m_config->gpgpu_perfect_mem && mf->get_is_write() )) {
                m_core->store_ack(mf);
@@ -1706,13 +1798,25 @@ void ldst_unit::cycle()
                delete mf;
            } else {
                assert( !mf->get_is_write() ); // L1 cache is write evict, allocate line on load miss only
-               if( mf->get_inst().cache_op != CACHE_GLOBAL && m_L1D ) {
-                   m_L1D->fill(mf,gpu_sim_cycle+gpu_tot_sim_cycle);
-                   m_response_fifo.pop_front();
-               } else if( m_next_global == NULL ) {
-                   mf->set_status(IN_SHADER_FETCHED,gpu_sim_cycle+gpu_tot_sim_cycle);
-                   m_response_fifo.pop_front();
-                   m_next_global = mf;
+
+               bool bypassL1D = false; 
+               if ( CACHE_GLOBAL == mf->get_inst().cache_op || (m_L1D == NULL) ) {
+                   bypassL1D = true; 
+               } else if (mf->get_access_type() == GLOBAL_ACC_R || mf->get_access_type() == GLOBAL_ACC_W) { // global memory access 
+                   if (m_core->get_config()->gmem_skip_L1D)
+                       bypassL1D = true; 
+               }
+               if( bypassL1D ) {
+                   if ( m_next_global == NULL ) {
+                       mf->set_status(IN_SHADER_FETCHED,gpu_sim_cycle+gpu_tot_sim_cycle);
+                       m_response_fifo.pop_front();
+                       m_next_global = mf;
+                   }
+               } else {
+                   if (m_L1D->fill_port_free()) {
+                       m_L1D->fill(mf,gpu_sim_cycle+gpu_tot_sim_cycle);
+                       m_response_fifo.pop_front();
+                   }
                }
            }
        }
@@ -1919,6 +2023,7 @@ void gpgpu_sim::shader_print_cache_stats( FILE *fout ) const{
         }
         fprintf(fout, "\tL1D_total_cache_pending_hits = %u\n", total_css.pending_hits);
         fprintf(fout, "\tL1D_total_cache_reservation_fails = %u\n", total_css.res_fails);
+        total_css.print_port_stats(fout, "\tL1D_cache"); 
     }
 
     // L1C
@@ -3084,10 +3189,20 @@ void simt_core_cluster::icnt_inject_request_packet(class mem_fetch *mf)
     case INST_ACC_R: m_stats->gpgpu_n_mem_read_inst++; break;
     case L1_WRBK_ACC: m_stats->gpgpu_n_mem_write_global++; break;
     case L2_WRBK_ACC: m_stats->gpgpu_n_mem_l2_writeback++; break;
+    case L1_WR_ALLOC_R: m_stats->gpgpu_n_mem_l1_write_allocate++; break;
     case L2_WR_ALLOC_R: m_stats->gpgpu_n_mem_l2_write_allocate++; break;
     default: assert(0);
     }
-   unsigned destination = mf->get_tlx_addr().chip;
+
+   // The packet size varies depending on the type of request: 
+   // - For write request and atomic request, the packet contains the data 
+   // - For read request (i.e. not write nor atomic), the packet only has control metadata
+   unsigned int packet_size = mf->size(); 
+   if (!mf->get_is_write() && !mf->isatomic()) {
+      packet_size = mf->get_ctrl_size(); 
+   }
+   m_stats->m_outgoing_traffic_stats->record_traffic(mf, packet_size); 
+   unsigned destination = mf->get_sub_partition_id();
    mf->set_status(IN_ICNT_TO_MEM,gpu_sim_cycle+gpu_tot_sim_cycle);
    if (!mf->get_is_write() && !mf->isatomic())
       ::icnt_push(m_cluster_id, m_config->mem2device(destination), (void*)mf, mf->get_ctrl_size() );
@@ -3121,6 +3236,12 @@ void simt_core_cluster::icnt_cycle()
             return;
         assert(mf->get_tpc() == m_cluster_id);
         assert(mf->get_type() == READ_REPLY || mf->get_type() == WRITE_ACK );
+
+        // The packet size varies depending on the type of request: 
+        // - For read request and atomic request, the packet contains the data 
+        // - For write-ack, the packet only has control metadata
+        unsigned int packet_size = (mf->get_is_write())? mf->get_ctrl_size() : mf->size(); 
+        m_stats->m_incoming_traffic_stats->record_traffic(mf, packet_size); 
         mf->set_status(IN_CLUSTER_TO_SHADER_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
         //m_memory_stats->memlatstat_read_done(mf,m_shader_config->max_warps_per_shader);
         m_response_fifo.push_back(mf);

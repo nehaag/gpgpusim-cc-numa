@@ -51,8 +51,7 @@
 #include "l2cache.h"
 
 #include "../cuda-sim/ptx-stats.h"
-#include "../intersim/statwraper.h"
-#include "../intersim/interconnect_interface.h"
+#include "../statwrapper.h"
 #include "../abstract_hardware_model.h"
 #include "../debug.h"
 #include "../gpgpusim_entrypoint.h"
@@ -159,6 +158,9 @@ void memory_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_n_mem", OPT_UINT32, &m_n_mem, 
                  "number of memory modules (e.g. memory controllers) in gpu",
                  "8");
+    option_parser_register(opp, "-gpgpu_n_sub_partition_per_mchannel", OPT_UINT32, &m_n_sub_partition_per_memory_channel, 
+                 "number of memory subpartition in each memory module",
+                 "1");
     option_parser_register(opp, "-gpgpu_n_mem_per_ctrlr", OPT_UINT32, &gpu_n_mem_per_ctrlr, 
                  "number of memory chips per memory controller",
                  "1");
@@ -224,6 +226,9 @@ void shader_core_config::reg_options(class OptionParser * opp)
                    "per-shader L1 data cache config "
                    " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<merge>,<mq> | none}",
                    "none" );
+    option_parser_register(opp, "-gmem_skip_L1D", OPT_BOOL, &gmem_skip_L1D, 
+                   "global memory access skip L1D cache (implements -Xptxas -dlcm=cg, default=no skip)",
+                   "0");
 
     option_parser_register(opp, "-gpgpu_perfect_mem", OPT_BOOL, &gpgpu_perfect_mem, 
                  "enable perfect memory mode (no cache miss)",
@@ -378,6 +383,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp)
    option_parser_register(opp, "-gpgpu_runtime_stat", OPT_CSTR, &gpgpu_runtime_stat, 
                   "display runtime statistics such as dram utilization {<freq>:<flag>}",
                   "10000:0");
+   option_parser_register(opp, "-liveness_message_freq", OPT_INT64, &liveness_message_freq, 
+               "Minimum number of seconds between simulation liveness messages (0 = always print)",
+               "1");
    option_parser_register(opp, "-gpgpu_flush_l1_cache", OPT_BOOL, &gpgpu_flush_l1_cache,
                 "Flush L1 cache at the end of each kernel call",
                 "0");
@@ -423,6 +431,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp)
     option_parser_register(opp, "-trace_sampling_core", OPT_INT32, 
                           &Trace::sampling_core, "The core which is printed using CORE_DPRINTF. Default 0",
                           "0");
+    option_parser_register(opp, "-trace_sampling_memory_partition", OPT_INT32, 
+                          &Trace::sampling_memory_partition, "The memory partition which is printed using MEMPART_DPRINTF. Default -1 (i.e. all)",
+                          "-1");
    ptx_file_line_stats_options(opp);
 }
 
@@ -558,10 +569,17 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
         m_cluster[i] = new simt_core_cluster(this,i,m_shader_config,m_memory_config,m_shader_stats,m_memory_stats);
 
     m_memory_partition_unit = new memory_partition_unit*[m_memory_config->m_n_mem];
-    for (unsigned i=0;i<m_memory_config->m_n_mem;i++) 
+    m_memory_sub_partition = new memory_sub_partition*[m_memory_config->m_n_mem_sub_partition];
+    for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
         m_memory_partition_unit[i] = new memory_partition_unit(i, m_memory_config, m_memory_stats);
+        for (unsigned p = 0; p < m_memory_config->m_n_sub_partition_per_memory_channel; p++) {
+            unsigned submpid = i * m_memory_config->m_n_sub_partition_per_memory_channel + p; 
+            m_memory_sub_partition[submpid] = m_memory_partition_unit[i]->get_sub_partition(p); 
+        }
+    }
 
-    icnt_init(m_shader_config->n_simt_clusters,m_memory_config->m_n_mem);
+    icnt_wrapper_init();
+    icnt_create(m_shader_config->n_simt_clusters,m_memory_config->m_n_mem_sub_partition);
 
     time_vector_create(NUM_MEM_REQ_STAT);
     fprintf(stdout, "GPGPU-Sim uArch: performance model initialization complete.\n");
@@ -571,6 +589,8 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
     m_last_cluster_issue = 0;
     *average_pipeline_duty_cycle=0;
     *active_sms=0;
+
+    last_liveness_message_time = 0;
 }
 
 int gpgpu_sim::shared_mem_size() const
@@ -682,8 +702,8 @@ void gpgpu_sim::init()
        set_spill_interval (m_config.gpgpu_cflog_interval * 40);
     }
 
-    if (g_network_mode) 
-       icnt_init_grid(); 
+    if (g_network_mode)
+       icnt_init();
 
     // McPAT initialization function. Called on first launch of GPU
 #ifdef GPGPUSIM_POWER_MODEL
@@ -701,15 +721,14 @@ void gpgpu_sim::update_stats() {
 
 void gpgpu_sim::print_stats()
 {
-
     ptx_file_line_stats_write_file();
     gpu_print_stat();
 
     if (g_network_mode) {
-       interconnect_stats();
-       printf("----------------------------Interconnect-DETAILS---------------------------------" );
-       icnt_overal_stat();
-       printf("----------------------------END-of-Interconnect-DETAILS-------------------------" );
+        printf("----------------------------Interconnect-DETAILS--------------------------------\n" );
+        icnt_display_stats();
+        icnt_display_overall_stats();
+        printf("----------------------------END-of-Interconnect-DETAILS-------------------------\n" );
     }
 }
 
@@ -745,7 +764,7 @@ void gpgpu_sim::deadlock_check()
       }
       if( icnt_busy() ) {
          printf("GPGPU-Sim uArch DEADLOCK:  iterconnect contains traffic\n");
-         display_icnt_state( stdout );
+         icnt_display_state( stdout );
       }
       printf("\nRe-run the simulator in gdb and use debug routines in .gdbinit to debug this\n");
       fflush(stdout);
@@ -918,9 +937,9 @@ void gpgpu_sim::gpu_print_stat()
        total_l2_css.clear();
 
        printf("\n========= L2 cache stats =========\n");
-       for (unsigned i=0;i<m_memory_config->m_n_mem;i++){
-           m_memory_partition_unit[i]->accumulate_L2cache_stats(l2_stats);
-           m_memory_partition_unit[i]->get_L2cache_sub_stats(l2_css);
+       for (unsigned i=0;i<m_memory_config->m_n_mem_sub_partition;i++){
+           m_memory_sub_partition[i]->accumulate_L2cache_stats(l2_stats);
+           m_memory_sub_partition[i]->get_L2cache_sub_stats(l2_css);
 
            fprintf( stdout, "L2_cache_bank[%d]: Access = %u, Miss = %u, Miss_rate = %.3lf, Pending_hits = %u, Reservation_fails = %u\n",
                     i, l2_css.accesses, l2_css.misses, (double)l2_css.misses / (double)l2_css.accesses, l2_css.pending_hits, l2_css.res_fails);
@@ -937,6 +956,7 @@ void gpgpu_sim::gpu_print_stat()
           printf("L2_total_cache_reservation_fails = %u\n", total_l2_css.res_fails);
           printf("L2_total_cache_breakdown:\n");
           l2_stats.print_stats(stdout, "L2_cache_stats_breakdown");
+          total_l2_css.print_port_stats(stdout, "L2_cache");
        }
    }
 
@@ -1142,8 +1162,8 @@ void gpgpu_sim::cycle()
    }
     if (clock_mask & ICNT) {
         // pop from memory controller to interconnect
-        for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
-            mem_fetch* mf = m_memory_partition_unit[i]->top();
+        for (unsigned i=0;i<m_memory_config->m_n_mem_sub_partition;i++) {
+            mem_fetch* mf = m_memory_sub_partition[i]->top();
             if (mf) {
                 unsigned response_size = mf->get_is_write()?mf->get_ctrl_size():mf->size();
                 if ( ::icnt_has_buffer( m_shader_config->mem2device(i), response_size ) ) {
@@ -1151,12 +1171,12 @@ void gpgpu_sim::cycle()
                        mf->set_return_timestamp(gpu_sim_cycle+gpu_tot_sim_cycle);
                     mf->set_status(IN_ICNT_TO_SHADER,gpu_sim_cycle+gpu_tot_sim_cycle);
                     ::icnt_push( m_shader_config->mem2device(i), mf->get_tpc(), mf, response_size );
-                    m_memory_partition_unit[i]->pop();
+                    m_memory_sub_partition[i]->pop();
                 } else {
                     gpu_stall_icnt2sh++;
                 }
             } else {
-               m_memory_partition_unit[i]->pop();
+               m_memory_sub_partition[i]->pop();
             }
         }
     }
@@ -1174,17 +1194,17 @@ void gpgpu_sim::cycle()
    // L2 operations follow L2 clock domain
    if (clock_mask & L2) {
        m_power_stats->pwr_mem_stat->l2_cache_stats[CURRENT_STAT_IDX].clear();
-      for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
+      for (unsigned i=0;i<m_memory_config->m_n_mem_sub_partition;i++) {
           //move memory request from interconnect into memory partition (if not backed up)
           //Note:This needs to be called in DRAM clock domain if there is no L2 cache in the system
-          if ( m_memory_partition_unit[i]->full() ) {
+          if ( m_memory_sub_partition[i]->full() ) {
              gpu_stall_dramfull++;
           } else {
               mem_fetch* mf = (mem_fetch*) icnt_pop( m_shader_config->mem2device(i) );
-              m_memory_partition_unit[i]->push( mf, gpu_sim_cycle + gpu_tot_sim_cycle );
+              m_memory_sub_partition[i]->push( mf, gpu_sim_cycle + gpu_tot_sim_cycle );
           }
-          m_memory_partition_unit[i]->cache_cycle(gpu_sim_cycle+gpu_tot_sim_cycle);
-          m_memory_partition_unit[i]->accumulate_L2cache_stats(m_power_stats->pwr_mem_stat->l2_cache_stats[CURRENT_STAT_IDX]);
+          m_memory_sub_partition[i]->cache_cycle(gpu_sim_cycle+gpu_tot_sim_cycle);
+          m_memory_sub_partition[i]->accumulate_L2cache_stats(m_power_stats->pwr_mem_stat->l2_cache_stats[CURRENT_STAT_IDX]);
        }
    }
 
@@ -1255,7 +1275,7 @@ void gpgpu_sim::cycle()
             if (m_memory_config->m_L2_config.get_num_lines()) {
                int dlc = 0;
                for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
-                  dlc = m_memory_partition_unit[i]->flushL2();
+                  dlc = m_memory_sub_partition[i]->flushL2();
                   assert (dlc == 0); // need to model actual writes to DRAM here
                   printf("Dirty lines flushed from L2 %d is %d\n", i, dlc  );
                }
@@ -1268,17 +1288,20 @@ void gpgpu_sim::cycle()
          time_t curr_time;
          time(&curr_time);
          unsigned long long  elapsed_time = MAX(curr_time - g_simulation_starttime, 1);
-         days    = elapsed_time/(3600*24);
-         hrs     = elapsed_time/3600 - 24*days;
-         minutes = elapsed_time/60 - 60*(hrs + 24*days);
-         sec = elapsed_time - 60*(minutes + 60*(hrs + 24*days));
-         printf("GPGPU-Sim uArch: cycles simulated: %lld  inst.: %lld (ipc=%4.1f) sim_rate=%u (inst/sec) elapsed = %u:%u:%02u:%02u / %s", 
-                gpu_tot_sim_cycle + gpu_sim_cycle, gpu_tot_sim_insn + gpu_sim_insn, 
-                (double)gpu_sim_insn/(double)gpu_sim_cycle,
-                (unsigned)((gpu_tot_sim_insn+gpu_sim_insn) / elapsed_time),
-                (unsigned)days,(unsigned)hrs,(unsigned)minutes,(unsigned)sec,
-                ctime(&curr_time));
-         fflush(stdout);
+         if ( (elapsed_time - last_liveness_message_time) >= m_config.liveness_message_freq ) {
+            days    = elapsed_time/(3600*24);
+            hrs     = elapsed_time/3600 - 24*days;
+            minutes = elapsed_time/60 - 60*(hrs + 24*days);
+            sec = elapsed_time - 60*(minutes + 60*(hrs + 24*days));
+            printf("GPGPU-Sim uArch: cycles simulated: %lld  inst.: %lld (ipc=%4.1f) sim_rate=%u (inst/sec) elapsed = %u:%u:%02u:%02u / %s", 
+                   gpu_tot_sim_cycle + gpu_sim_cycle, gpu_tot_sim_insn + gpu_sim_insn, 
+                   (double)gpu_sim_insn/(double)gpu_sim_cycle,
+                   (unsigned)((gpu_tot_sim_insn+gpu_sim_insn) / elapsed_time),
+                   (unsigned)days,(unsigned)hrs,(unsigned)minutes,(unsigned)sec,
+                   ctime(&curr_time));
+            fflush(stdout);
+            last_liveness_message_time = elapsed_time; 
+         }
          visualizer_printstat();
          m_memory_stats->memlatstat_lat_pw();
          if (m_config.gpgpu_runtime_stat && (m_config.gpu_runtime_stat_flag != 0) ) {
@@ -1373,10 +1396,5 @@ const struct memory_config * gpgpu_sim::getMemoryConfig()
 simt_core_cluster * gpgpu_sim::getSIMTCluster()
 {
    return *m_cluster;
-}
-
-void memory_partition_unit::visualizer_print( gzFile visualizer_file )
-{
-   m_dram->visualizer_print(visualizer_file);
 }
 

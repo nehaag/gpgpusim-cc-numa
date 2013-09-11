@@ -133,6 +133,7 @@ public:
         m_config_string = NULL; // set by option parser
         m_config_stringPrefL1 = NULL;
         m_config_stringPrefShared = NULL;
+        m_data_port_width = 0; 
     }
     void init(char * config, FuncCache status)
     {
@@ -140,10 +141,11 @@ public:
         assert( config );
         char rp, wp, ap, mshr_type, wap;
 
-        int ntok = sscanf(config,"%u:%u:%u,%c:%c:%c:%c,%c:%u:%u,%u:%u",
+        int ntok = sscanf(config,"%u:%u:%u,%c:%c:%c:%c,%c:%u:%u,%u:%u,%u",
                           &m_nset, &m_line_sz, &m_assoc, &rp, &wp, &ap, &wap,
                           &mshr_type, &m_mshr_entries,&m_mshr_max_merge,
-                          &m_miss_queue_size,&m_result_fifo_entries);
+                          &m_miss_queue_size,&m_result_fifo_entries,
+                          &m_data_port_width);
 
         if ( ntok < 11 ) {
             if ( !strcmp(config,"none") ) {
@@ -198,6 +200,12 @@ public:
             // are stalling each other.  
             assert(0 && "Invalid cache configuration: Writeback cache cannot allocate new line on fill. "); 
         }
+
+        // default: port to data array width and granularity = line size 
+        if (m_data_port_width == 0) {
+            m_data_port_width = m_line_sz; 
+        }
+        assert(m_line_sz % m_data_port_width == 0); 
     }
     bool disabled() const { return m_disabled;}
     unsigned get_line_sz() const
@@ -278,6 +286,8 @@ protected:
     };
     unsigned m_result_fifo_entries;
 
+    unsigned m_data_port_width; //< number of byte the cache can access per cycle 
+
     friend class tag_array;
     friend class baseline_cache;
     friend class read_only_cache;
@@ -352,7 +362,6 @@ protected:
     int m_type_id; // what kind of cache is this (normal, texture, constant)
 };
 
-
 class mshr_table {
 public:
     mshr_table( unsigned num_entries, unsigned max_merged )
@@ -416,6 +425,10 @@ struct cache_sub_stats{
     unsigned pending_hits;
     unsigned res_fails;
 
+    unsigned long long port_available_cycles; 
+    unsigned long long data_port_busy_cycles; 
+    unsigned long long fill_port_busy_cycles; 
+
     cache_sub_stats(){
         clear();
     }
@@ -424,6 +437,9 @@ struct cache_sub_stats{
         misses = 0;
         pending_hits = 0;
         res_fails = 0;
+        port_available_cycles = 0; 
+        data_port_busy_cycles = 0; 
+        fill_port_busy_cycles = 0; 
     }
     cache_sub_stats &operator+=(const cache_sub_stats &css){
         ///
@@ -433,6 +449,9 @@ struct cache_sub_stats{
         misses += css.misses;
         pending_hits += css.pending_hits;
         res_fails += css.res_fails;
+        port_available_cycles += css.port_available_cycles; 
+        data_port_busy_cycles += css.data_port_busy_cycles; 
+        fill_port_busy_cycles += css.fill_port_busy_cycles; 
         return *this;
     }
 
@@ -445,8 +464,13 @@ struct cache_sub_stats{
         ret.misses = misses + cs.misses;
         ret.pending_hits = pending_hits + cs.pending_hits;
         ret.res_fails = res_fails + cs.res_fails;
+        ret.port_available_cycles = port_available_cycles + cs.port_available_cycles; 
+        ret.data_port_busy_cycles = data_port_busy_cycles + cs.data_port_busy_cycles; 
+        ret.fill_port_busy_cycles = fill_port_busy_cycles + cs.fill_port_busy_cycles; 
         return ret;
     }
+
+    void print_port_stats(FILE *fout, const char *cache_name) const; 
 };
 
 ///
@@ -470,16 +494,25 @@ public:
     unsigned get_stats(enum mem_access_type *access_type, unsigned num_access_type, enum cache_request_status *access_status, unsigned num_access_status)  const;
     void get_sub_stats(struct cache_sub_stats &css) const;
 
+    void sample_cache_port_utility(bool data_port_busy, bool fill_port_busy); 
 private:
     bool check_valid(int type, int status) const;
 
     std::vector< std::vector<unsigned> > m_stats;
+
+    unsigned long long m_cache_port_available_cycles; 
+    unsigned long long m_cache_data_port_busy_cycles; 
+    unsigned long long m_cache_fill_port_busy_cycles; 
 };
 
 class cache_t {
 public:
     virtual ~cache_t() {}
     virtual enum cache_request_status access( new_addr_type addr, mem_fetch *mf, unsigned time, std::list<cache_event> &events ) =  0;
+
+    // accessors for cache bandwidth availability 
+    virtual bool data_port_free() const = 0; 
+    virtual bool fill_port_free() const = 0; 
 };
 
 bool was_write_sent( const std::list<cache_event> &events );
@@ -492,7 +525,9 @@ class baseline_cache : public cache_t {
 public:
     baseline_cache( const char *name, cache_config &config, int core_id, int type_id, mem_fetch_interface *memport,
                      enum mem_fetch_status status )
-    : m_config(config), m_tag_array(new tag_array(config,core_id,type_id)), m_mshrs(config.m_mshr_entries,config.m_mshr_max_merge)
+    : m_config(config), m_tag_array(new tag_array(config,core_id,type_id)), 
+      m_mshrs(config.m_mshr_entries,config.m_mshr_max_merge), 
+      m_bandwidth_management(config) 
     {
         init( name, config, memport, status );
     }
@@ -547,6 +582,10 @@ public:
         m_stats.get_sub_stats(css);
     }
 
+    // accessors for cache bandwidth availability 
+    bool data_port_free() const { return m_bandwidth_management.data_port_free(); } 
+    bool fill_port_free() const { return m_bandwidth_management.fill_port_free(); } 
+
 protected:
     // Constructor that can be used by derived classes with custom tag arrays
     baseline_cache( const char *name,
@@ -558,7 +597,8 @@ protected:
                     tag_array* new_tag_array )
     : m_config(config),
       m_tag_array( new_tag_array ),
-      m_mshrs(config.m_mshr_entries,config.m_mshr_max_merge)
+      m_mshrs(config.m_mshr_entries,config.m_mshr_max_merge), 
+      m_bandwidth_management(config) 
     {
         init( name, config, memport, status );
     }
@@ -603,6 +643,34 @@ protected:
     /// Read miss handler. Check MSHR hit or MSHR available
     void send_read_request(new_addr_type addr, new_addr_type block_addr, unsigned cache_index, mem_fetch *mf,
     		unsigned time, bool &do_miss, bool &wb, cache_block_t &evicted, std::list<cache_event> &events, bool read_only, bool wa);
+
+    /// Sub-class containing all metadata for port bandwidth management 
+    class bandwidth_management 
+    {
+    public: 
+        bandwidth_management(cache_config &config); 
+
+        /// use the data port based on the outcome and events generated by the mem_fetch request 
+        void use_data_port(mem_fetch *mf, enum cache_request_status outcome, const std::list<cache_event> &events); 
+
+        /// use the fill port 
+        void use_fill_port(mem_fetch *mf); 
+
+        /// called every cache cycle to free up the ports 
+        void replenish_port_bandwidth(); 
+
+        /// query for data port availability 
+        bool data_port_free() const; 
+        /// query for fill port availability 
+        bool fill_port_free() const; 
+    protected: 
+        const cache_config &m_config; 
+
+        int m_data_port_occupied_cycles; //< Number of cycle that the data port remains used 
+        int m_fill_port_occupied_cycles; //< Number of cycle that the fill port remains used 
+    }; 
+
+    bandwidth_management m_bandwidth_management; 
 };
 
 /// Read only cache
@@ -626,15 +694,18 @@ class data_cache : public baseline_cache {
 public:
     data_cache( const char *name, cache_config &config,
     			int core_id, int type_id, mem_fetch_interface *memport,
-                mem_fetch_allocator *mfcreator, enum mem_fetch_status status )
+                mem_fetch_allocator *mfcreator, enum mem_fetch_status status,
+                mem_access_type wr_alloc_type, mem_access_type wrbk_type )
     			: baseline_cache(name,config,core_id,type_id,memport,status)
     {
         init( mfcreator );
+        m_wr_alloc_type = wr_alloc_type;
+        m_wrbk_type = wrbk_type;
     }
 
     virtual ~data_cache() {}
 
-    void init( mem_fetch_allocator *mfcreator )
+    virtual void init( mem_fetch_allocator *mfcreator )
     {
         m_memfetch_creator=mfcreator;
 
@@ -646,114 +717,235 @@ public:
 
         // Set write hit function
         switch(m_config.m_write_policy){
-        case READ_ONLY: assert(0 && "Error: Writable Data_cache set as READ_ONLY\n"); break; // READ_ONLY is now a separate cache class, config is deprecated
+        // READ_ONLY is now a separate cache class, config is deprecated
+        case READ_ONLY:
+            assert(0 && "Error: Writable Data_cache set as READ_ONLY\n");
+            break; 
         case WRITE_BACK: m_wr_hit = &data_cache::wr_hit_wb; break;
         case WRITE_THROUGH: m_wr_hit = &data_cache::wr_hit_wt; break;
         case WRITE_EVICT: m_wr_hit = &data_cache::wr_hit_we; break;
-        case LOCAL_WB_GLOBAL_WT: m_wr_hit = &data_cache::wr_hit_global_we_local_wb; break;
-        default: assert(0 && "Error: Must set valid cache write policy\n"); break; // Need to set a write hit function
+        case LOCAL_WB_GLOBAL_WT:
+            m_wr_hit = &data_cache::wr_hit_global_we_local_wb;
+            break;
+        default:
+            assert(0 && "Error: Must set valid cache write policy\n");
+            break; // Need to set a write hit function
         }
 
         // Set write miss function
         switch(m_config.m_write_alloc_policy){
         case WRITE_ALLOCATE: m_wr_miss = &data_cache::wr_miss_wa; break;
         case NO_WRITE_ALLOCATE: m_wr_miss = &data_cache::wr_miss_no_wa; break;
-        default: assert(0 && "Error: Must set valid cache write miss policy\n"); break; // Need to set a write miss function
+        default:
+            assert(0 && "Error: Must set valid cache write miss policy\n");
+            break; // Need to set a write miss function
         }
     }
 
+    virtual enum cache_request_status access( new_addr_type addr,
+                                              mem_fetch *mf,
+                                              unsigned time,
+                                              std::list<cache_event> &events );
 protected:
     data_cache( const char *name,
                 cache_config &config,
-    			int core_id,
+                int core_id,
                 int type_id,
                 mem_fetch_interface *memport,
                 mem_fetch_allocator *mfcreator,
                 enum mem_fetch_status status,
-                tag_array* new_tag_array )
+                tag_array* new_tag_array,
+                mem_access_type wr_alloc_type,
+                mem_access_type wrbk_type)
     : baseline_cache(name, config, core_id, type_id, memport,status, new_tag_array)
     {
         init( mfcreator );
+        m_wr_alloc_type = wr_alloc_type;
+        m_wrbk_type = wrbk_type;
     }
+
+    mem_access_type m_wr_alloc_type; // Specifies type of write allocate request (e.g., L1 or L2)
+    mem_access_type m_wrbk_type; // Specifies type of writeback request (e.g., L1 or L2)
+
+    //! A general function that takes the result of a tag_array probe
+    //  and performs the correspding functions based on the cache configuration
+    //  The access fucntion calls this function
+    enum cache_request_status
+        process_tag_probe( bool wr,
+                           enum cache_request_status status,
+                           new_addr_type addr,
+                           unsigned cache_index,
+                           mem_fetch* mf,
+                           unsigned time,
+                           std::list<cache_event>& events );
 
 protected:
     mem_fetch_allocator *m_memfetch_creator;
 
     // Functions for data cache access
     /// Sends write request to lower level memory (write or writeback)
-    void send_write_request(mem_fetch *mf, cache_event request, unsigned time, std::list<cache_event> &events);
+    void send_write_request( mem_fetch *mf,
+                             cache_event request,
+                             unsigned time,
+                             std::list<cache_event> &events);
 
-
-    // Member Function pointers - Set by configuration options to the functions below each grouping
+    // Member Function pointers - Set by configuration options
+    // to the functions below each grouping
     /******* Write-hit configs *******/
-    enum cache_request_status (data_cache::*m_wr_hit)(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status);
+    enum cache_request_status
+        (data_cache::*m_wr_hit)( new_addr_type addr,
+                                 unsigned cache_index,
+                                 mem_fetch *mf,
+                                 unsigned time,
+                                 std::list<cache_event> &events,
+                                 enum cache_request_status status );
     /// Marks block as MODIFIED and updates block LRU
-    enum cache_request_status wr_hit_wb(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status); // write-back
-    enum cache_request_status wr_hit_wt(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status); // write-through
+    enum cache_request_status
+        wr_hit_wb( new_addr_type addr,
+                   unsigned cache_index,
+                   mem_fetch *mf,
+                   unsigned time,
+                   std::list<cache_event> &events,
+                   enum cache_request_status status ); // write-back
+    enum cache_request_status
+        wr_hit_wt( new_addr_type addr,
+                   unsigned cache_index,
+                   mem_fetch *mf,
+                   unsigned time,
+                   std::list<cache_event> &events,
+                   enum cache_request_status status ); // write-through
+
     /// Marks block as INVALID and sends write request to lower level memory
-    enum cache_request_status wr_hit_we(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status); // write-evict
-    enum cache_request_status wr_hit_global_we_local_wb(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status); // global write-evict, local write-back
+    enum cache_request_status
+        wr_hit_we( new_addr_type addr,
+                   unsigned cache_index,
+                   mem_fetch *mf,
+                   unsigned time,
+                   std::list<cache_event> &events,
+                   enum cache_request_status status ); // write-evict
+    enum cache_request_status
+        wr_hit_global_we_local_wb( new_addr_type addr,
+                                   unsigned cache_index,
+                                   mem_fetch *mf,
+                                   unsigned time,
+                                   std::list<cache_event> &events,
+                                   enum cache_request_status status );
+        // global write-evict, local write-back
 
 
     /******* Write-miss configs *******/
-    enum cache_request_status (data_cache::*m_wr_miss)(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status);
-    /// Sends read request, and possible write-back request, to lower level memory for a write miss with write-allocate
-    enum cache_request_status wr_miss_wa(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status); // write-allocate
-    enum cache_request_status wr_miss_no_wa(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status); // no write-allocate
+    enum cache_request_status
+        (data_cache::*m_wr_miss)( new_addr_type addr,
+                                  unsigned cache_index,
+                                  mem_fetch *mf,
+                                  unsigned time,
+                                  std::list<cache_event> &events,
+                                  enum cache_request_status status );
+    /// Sends read request, and possible write-back request,
+    //  to lower level memory for a write miss with write-allocate
+    enum cache_request_status
+        wr_miss_wa( new_addr_type addr,
+                    unsigned cache_index,
+                    mem_fetch *mf,
+                    unsigned time,
+                    std::list<cache_event> &events,
+                    enum cache_request_status status ); // write-allocate
+    enum cache_request_status
+        wr_miss_no_wa( new_addr_type addr,
+                       unsigned cache_index,
+                       mem_fetch *mf,
+                       unsigned time,
+                       std::list<cache_event> &events,
+                       enum cache_request_status status ); // no write-allocate
 
     // Currently no separate functions for reads
     /******* Read-hit configs *******/
-    enum cache_request_status (data_cache::*m_rd_hit)(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status);
-    enum cache_request_status rd_hit_base(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status);
+    enum cache_request_status
+        (data_cache::*m_rd_hit)( new_addr_type addr,
+                                 unsigned cache_index,
+                                 mem_fetch *mf,
+                                 unsigned time,
+                                 std::list<cache_event> &events,
+                                 enum cache_request_status status );
+    enum cache_request_status
+        rd_hit_base( new_addr_type addr,
+                     unsigned cache_index,
+                     mem_fetch *mf,
+                     unsigned time,
+                     std::list<cache_event> &events,
+                     enum cache_request_status status );
 
     /******* Read-miss configs *******/
-    enum cache_request_status (data_cache::*m_rd_miss)(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status);
-    enum cache_request_status rd_miss_base(new_addr_type addr, unsigned cache_index, mem_fetch *mf, unsigned time, std::list<cache_event> &events, enum cache_request_status status);
+    enum cache_request_status
+        (data_cache::*m_rd_miss)( new_addr_type addr,
+                                  unsigned cache_index,
+                                  mem_fetch *mf,
+                                  unsigned time,
+                                  std::list<cache_event> &events,
+                                  enum cache_request_status status );
+    enum cache_request_status
+        rd_miss_base( new_addr_type addr,
+                      unsigned cache_index,
+                      mem_fetch*mf,
+                      unsigned time,
+                      std::list<cache_event> &events,
+                      enum cache_request_status status );
 
 };
 
 /// This is meant to model the first level data cache in Fermi.
-/// It is write-evict (global) or write-back (local) at the granularity of individual blocks
+/// It is write-evict (global) or write-back (local) at
+/// the granularity of individual blocks
 /// (the policy used in fermi according to the CUDA manual)
 class l1_cache : public data_cache {
 public:
-	l1_cache(const char *name, cache_config &config,
-			int core_id, int type_id, mem_fetch_interface *memport,
+    l1_cache(const char *name, cache_config &config,
+            int core_id, int type_id, mem_fetch_interface *memport,
             mem_fetch_allocator *mfcreator, enum mem_fetch_status status )
-			: data_cache(name,config,core_id,type_id,memport,mfcreator,status){}
+            : data_cache(name,config,core_id,type_id,memport,mfcreator,status, L1_WR_ALLOC_R, L1_WRBK_ACC){}
 
     virtual ~l1_cache(){}
 
-	virtual enum cache_request_status access( new_addr_type addr, mem_fetch *mf, unsigned time, std::list<cache_event> &events );
+    virtual enum cache_request_status
+        access( new_addr_type addr,
+                mem_fetch *mf,
+                unsigned time,
+                std::list<cache_event> &events );
 
 protected:
-	l1_cache( const char *name,
+    l1_cache( const char *name,
               cache_config &config,
-			  int core_id,
+              int core_id,
               int type_id,
               mem_fetch_interface *memport,
               mem_fetch_allocator *mfcreator,
               enum mem_fetch_status status,
               tag_array* new_tag_array )
-	: data_cache(name,config,core_id,type_id,memport,mfcreator,status, new_tag_array){}
+    : data_cache( name,
+                  config,
+                  core_id,type_id,memport,mfcreator,status, new_tag_array, L1_WR_ALLOC_R, L1_WRBK_ACC ){}
 
 };
 
-/// Models second level shared cache with global write-back and write-allocate policies
+/// Models second level shared cache with global write-back
+/// and write-allocate policies
 class l2_cache : public data_cache {
 public:
-	l2_cache(const char *name,  cache_config &config,
-			int core_id, int type_id, mem_fetch_interface *memport,
+    l2_cache(const char *name,  cache_config &config,
+            int core_id, int type_id, mem_fetch_interface *memport,
             mem_fetch_allocator *mfcreator, enum mem_fetch_status status )
-			: data_cache(name,config,core_id,type_id,memport,mfcreator,status){}
+            : data_cache(name,config,core_id,type_id,memport,mfcreator,status, L2_WR_ALLOC_R, L2_WRBK_ACC){}
 
     virtual ~l2_cache() {}
 
-	virtual enum cache_request_status access( new_addr_type addr, mem_fetch *mf, unsigned time, std::list<cache_event> &events );
-
+    virtual enum cache_request_status
+        access( new_addr_type addr,
+                mem_fetch *mf,
+                unsigned time,
+                std::list<cache_event> &events );
 };
 
-/********************************************************************************************************************************************************/
+/*****************************************************************************/
 
 // See the following paper to understand this cache model:
 // 
@@ -796,6 +988,10 @@ public:
     /// Pop next ready access (includes both accesses that "HIT" and those that "MISS")
     mem_fetch *next_access(){return m_result_fifo.pop();}
     void display_state( FILE *fp ) const;
+
+    // accessors for cache bandwidth availability - stubs for now 
+    bool data_port_free() const { return true; }
+    bool fill_port_free() const { return true; }
 
     // Stat collection
     const cache_stats &get_stats() const {
