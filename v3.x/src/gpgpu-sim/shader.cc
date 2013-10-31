@@ -1036,12 +1036,14 @@ swl_scheduler::swl_scheduler ( shader_core_stats* stats, shader_core_ctx* shader
                                char* config_string )
     : scheduler_unit ( stats, shader, scoreboard, simt, warp, sp_out, sfu_out, mem_out, id )
 {
+    unsigned m_prioritization_readin;
     int ret = sscanf( config_string,
                       "warp_limiting:%d:%d",
-                      (int*)&m_prioritization,
+                      &m_prioritization_readin,
                       &m_num_warps_to_limit
                      );
     assert( 2 == ret );
+    m_prioritization = (scheduler_prioritization_type)m_prioritization_readin;
     // Currently only GTO is implemented
     assert( m_prioritization == SCHEDULER_PRIORITIZATION_GTO );
     assert( m_num_warps_to_limit <= shader->get_config()->max_warps_per_shader );
@@ -1379,7 +1381,6 @@ bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_rea
    assert( !inst.accessq_empty() );
    mem_stage_stall_type stall_cond = NO_RC_FAIL;
    const mem_access_t &access = inst.accessq_back();
-   unsigned size = access.get_size(); 
 
    bool bypassL1D = false; 
    if ( CACHE_GLOBAL == inst.cache_op || (m_L1D == NULL) ) {
@@ -1392,6 +1393,8 @@ bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_rea
 
    if( bypassL1D ) {
        // bypass L1 cache
+       unsigned control_size = inst.is_store() ? WRITE_PACKET_SIZE : READ_PACKET_SIZE;
+       unsigned size = access.get_size() + control_size;
        if( m_icnt->full(size, inst.is_store() || inst.isatomic()) ) {
            stall_cond = ICNT_RC_FAIL;
        } else {
