@@ -35,7 +35,7 @@
 #include <stdio.h>
 
 #include "opcodes.h"
-#include "../intersim/statwraper.h"
+#include "../statwrapper.h"
 #include <set>
 #include <map>
 #include "../abstract_hardware_model.h"
@@ -467,52 +467,52 @@ std::string ptx_get_insn_str( address_type pc )
 }
 
 void ptx_instruction::set_fp_or_int_archop(){
-	op2=UN_OP;
+    oprnd_type=UN_OP;
 	if((m_opcode == MEMBAR_OP)||(m_opcode == SSY_OP )||(m_opcode == BRA_OP) || (m_opcode == BAR_OP) || (m_opcode == RET_OP) || (m_opcode == RETP_OP) || (m_opcode == NOP_OP) || (m_opcode == EXIT_OP) || (m_opcode == CALLP_OP) || (m_opcode == CALL_OP)){
 			// do nothing
 	}else if((m_opcode == CVT_OP || m_opcode == SET_OP || m_opcode == SLCT_OP)){
 		if(get_type2()==F16_TYPE || get_type2()==F32_TYPE || get_type2() == F64_TYPE || get_type2() == FF64_TYPE){
-			op2= FP_OP;
-		}else op2=INT_OP;
+		    oprnd_type= FP_OP;
+		}else oprnd_type=INT_OP;
 
 	}else{
 		if(get_type()==F16_TYPE || get_type()==F32_TYPE || get_type() == F64_TYPE || get_type() == FF64_TYPE){
-			op2= FP_OP;
-		}else op2=INT_OP;
+		    oprnd_type= FP_OP;
+		}else oprnd_type=INT_OP;
 	}
 }
 void ptx_instruction::set_mul_div_or_other_archop(){
-	op3=OTHER_OP;
+    sp_op=OTHER_OP;
 	if((m_opcode != MEMBAR_OP) && (m_opcode != SSY_OP) && (m_opcode != BRA_OP) && (m_opcode != BAR_OP) && (m_opcode != EXIT_OP) && (m_opcode != NOP_OP) && (m_opcode != RETP_OP) && (m_opcode != RET_OP) && (m_opcode != CALLP_OP) && (m_opcode != CALL_OP)){
 		if(get_type()==F32_TYPE || get_type() == F64_TYPE || get_type() == FF64_TYPE){
 			switch(get_opcode()){
 				case MUL_OP:
 				case MAD_OP:
-					op3=FP_MUL_OP;
+				    sp_op=FP_MUL_OP;
 					break;
 				case DIV_OP:
-					op3=FP_DIV_OP;
+				    sp_op=FP_DIV_OP;
 					break;
 				case LG2_OP:
-					op3=FP_LG_OP;
+				    sp_op=FP_LG_OP;
 					break;
 				case RSQRT_OP:
 				case SQRT_OP:
-					op3=FP_SQRT_OP;
+				    sp_op=FP_SQRT_OP;
 					break;
 				case RCP_OP:
-               op3=FP_DIV_OP;
+				    sp_op=FP_DIV_OP;
 					break;
 				case SIN_OP:
 				case COS_OP:
-					op3=FP_SIN_OP;
+				    sp_op=FP_SIN_OP;
 					break;
 				case EX2_OP:
-					op3=FP_EXP_OP;
+				    sp_op=FP_EXP_OP;
 					break;
 				default:
 					if(op==ALU_OP)
-						op3=FP__OP;
+					    sp_op=FP__OP;
 					break;
 
 			}
@@ -520,21 +520,21 @@ void ptx_instruction::set_mul_div_or_other_archop(){
 			switch(get_opcode()){
 				case MUL24_OP:
 				case MAD24_OP:
-					op3=INT_MUL24_OP;
+				    sp_op=INT_MUL24_OP;
 				break;
 				case MUL_OP:
 				case MAD_OP:
 					if(get_type()==U32_TYPE || get_type()==S32_TYPE || get_type()==B32_TYPE)
-						op3=INT_MUL32_OP;
+					    sp_op=INT_MUL32_OP;
 					else
-						op3=INT_MUL_OP;
+					    sp_op=INT_MUL_OP;
 				break;
 				case DIV_OP:
-					op3=INT_DIV_OP;
+				    sp_op=INT_DIV_OP;
 				break;
 				default:
 					if(op==ALU_OP)
-						op3=INT__OP;
+					    sp_op=INT__OP;
 					break;
 			}
 		}
@@ -585,7 +585,7 @@ void ptx_instruction::set_opcode_and_latency()
 	   	 }
 	}
    op = ALU_OP;
-   op5= NOT_TEX;
+   mem_op= NOT_TEX;
    initiation_interval = latency = 1;
    switch( m_opcode ) {
    case MOV_OP:
@@ -598,7 +598,7 @@ void ptx_instruction::set_opcode_and_latency()
    case ST_OP: op = STORE_OP; break;
    case BRA_OP: op = BRANCH_OP; break;
    case BREAKADDR_OP: op = BRANCH_OP; break;
-   case TEX_OP: op = LOAD_OP; op5=TEX; break;
+   case TEX_OP: op = LOAD_OP; mem_op=TEX; break;
    case ATOM_OP: op = LOAD_OP; break;
    case BAR_OP: op = BARRIER_OP; break;
    case MEMBAR_OP: op = MEMORY_BARRIER_OP; break;
@@ -1623,7 +1623,7 @@ void gpgpu_ptx_sim_memcpy_symbol(const char *hostVar, const void *src, size_t co
 
 int g_ptx_sim_mode; // if non-zero run functional simulation only (i.e., no notion of a clock cycle)
 
-extern "C" int ptx_debug;
+extern int ptx_debug;
 
 bool g_cuda_launch_blocking = false;
 
@@ -1702,7 +1702,11 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
 
     //we excute the kernel one CTA (Block) at the time, as synchronization functions work block wise
     while(!kernel.no_more_ctas_to_run()){
-        functionalCoreSim cta(&kernel, g_the_gpu, g_the_gpu->getShaderCoreConfig()->warp_size);
+        functionalCoreSim cta(
+            &kernel,
+            g_the_gpu,
+            g_the_gpu->getShaderCoreConfig()->warp_size
+        );
         cta.execute();
     }
     
@@ -1744,27 +1748,22 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
 void functionalCoreSim::initializeCTA()
 {
     int ctaLiveThreads=0;
-    m_warpsCount= ceil((double)m_kernel->threads_per_cta()/m_maxWarpSize);
-    initilizeSIMTStack(m_warpsCount,m_maxWarpSize);
-    m_warpAtBarrier =  new bool [m_warpsCount];
-    m_liveThreadCount = new unsigned [m_warpsCount];
-    m_thread = new ptx_thread_info*[m_warpsCount*m_maxWarpSize];
     
-    for(int i=0; i< m_warpsCount; i++){
+    for(int i=0; i< m_warp_count; i++){
         m_warpAtBarrier[i]=false;
         m_liveThreadCount[i]=0;
     }
-    for(int i=0; i< m_warpsCount*m_maxWarpSize;i++)
+    for(int i=0; i< m_warp_count*m_warp_size;i++)
         m_thread[i]=NULL;
     
     //get threads for a cta
     for(unsigned i=0; i<m_kernel->threads_per_cta();i++) {
-        ptx_sim_init_thread(*m_kernel,&m_thread[i],0,i,m_kernel->threads_per_cta()-i,m_kernel->threads_per_cta(),this,0,i/m_maxWarpSize,(gpgpu_t*)m_gpu, true);
+        ptx_sim_init_thread(*m_kernel,&m_thread[i],0,i,m_kernel->threads_per_cta()-i,m_kernel->threads_per_cta(),this,0,i/m_warp_size,(gpgpu_t*)m_gpu, true);
         assert(m_thread[i]!=NULL && !m_thread[i]->is_done());
         ctaLiveThreads++;
     }
     
-    for(int k=0;k<m_warpsCount;k++)
+    for(int k=0;k<m_warp_count;k++)
         createWarp(k);
 }
 
@@ -1773,13 +1772,13 @@ void  functionalCoreSim::createWarp(unsigned warpId)
    simt_mask_t initialMask;
    unsigned liveThreadsCount=0;
    initialMask.set();
-    for(int i=warpId*m_maxWarpSize; i<warpId*m_maxWarpSize+m_maxWarpSize;i++){
-        if(m_thread[i]==NULL) initialMask.reset(i-warpId*m_maxWarpSize);
+    for(int i=warpId*m_warp_size; i<warpId*m_warp_size+m_warp_size;i++){
+        if(m_thread[i]==NULL) initialMask.reset(i-warpId*m_warp_size);
         else liveThreadsCount++;
     }   
    
-   assert(m_thread[warpId*m_maxWarpSize]!=NULL);
-   m_simt_stack[warpId]->launch(m_thread[warpId*m_maxWarpSize]->get_pc(),initialMask);
+   assert(m_thread[warpId*m_warp_size]!=NULL);
+   m_simt_stack[warpId]->launch(m_thread[warpId*m_warp_size]->get_pc(),initialMask);
    m_liveThreadCount[warpId]= liveThreadsCount;
 }
 
@@ -1791,12 +1790,12 @@ void functionalCoreSim::execute()
     while(true){
         bool someOneLive= false;
         bool allAtBarrier = true;
-        for(unsigned i=0;i<m_warpsCount;i++){
+        for(unsigned i=0;i<m_warp_count;i++){
             executeWarp(i,allAtBarrier,someOneLive);
         }
         if(!someOneLive) break;
         if(allAtBarrier){
-             for(unsigned i=0;i<m_warpsCount;i++)
+             for(unsigned i=0;i<m_warp_count;i++)
                  m_warpAtBarrier[i]=false;
         }
     }
@@ -1806,10 +1805,10 @@ void functionalCoreSim::executeWarp(unsigned i, bool &allAtBarrier, bool & someO
 {
     if(!m_warpAtBarrier[i] && m_liveThreadCount[i]!=0){
         warp_inst_t inst =getExecuteWarp(i);
-        execute_warp_inst_t(inst,m_maxWarpSize,i);
+        execute_warp_inst_t(inst,i);
         if(inst.isatomic()) inst.do_atomic(true);
         if(inst.op==BARRIER_OP || inst.op==MEMORY_BARRIER_OP ) m_warpAtBarrier[i]=true;
-        updateSIMTStack(i,m_maxWarpSize,&inst);
+        updateSIMTStack( i, &inst );
     }
     if(m_liveThreadCount[i]>0) someOneLive=true;
     if(!m_warpAtBarrier[i]&& m_liveThreadCount[i]>0) allAtBarrier = false;
@@ -1853,28 +1852,28 @@ struct gpgpu_ptx_sim_kernel_info get_ptxinfo_kinfo()
     return g_ptxinfo_kinfo;
 }
 
-extern "C" void ptxinfo_function(const char *fname )
+void ptxinfo_function(const char *fname )
 {
     clear_ptxinfo();
     g_ptxinfo_kname = strdup(fname);
 }
 
-extern "C" void ptxinfo_regs( unsigned nregs )
+void ptxinfo_regs( unsigned nregs )
 {
     g_ptxinfo_kinfo.regs=nregs;
 }
 
-extern "C" void ptxinfo_lmem( unsigned declared, unsigned system )
+void ptxinfo_lmem( unsigned declared, unsigned system )
 {
     g_ptxinfo_kinfo.lmem=declared+system;
 }
 
-extern "C" void ptxinfo_smem( unsigned declared, unsigned system )
+void ptxinfo_smem( unsigned declared, unsigned system )
 {
     g_ptxinfo_kinfo.smem=declared+system;
 }
 
-extern "C" void ptxinfo_cmem( unsigned nbytes, unsigned bank )
+void ptxinfo_cmem( unsigned nbytes, unsigned bank )
 {
     g_ptxinfo_kinfo.cmem+=nbytes;
 }
@@ -1989,7 +1988,7 @@ address_type get_converge_point( address_type pc )
 
 void functionalCoreSim::warp_exit( unsigned warp_id )
 {
-    for(int i=0;i<m_warpsCount*m_maxWarpSize;i++){
+    for(int i=0;i<m_warp_count*m_warp_size;i++){
         if(m_thread[i]!=NULL){
              m_thread[i]->m_cta_info->register_deleted_thread(m_thread[i]);
              delete m_thread[i];

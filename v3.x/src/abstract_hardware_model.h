@@ -29,7 +29,9 @@
 #define ABSTRACT_HARDWARE_MODEL_INCLUDED
 
 
-
+// Forward declarations
+class gpgpu_sim;
+class kernel_info_t;
 
 enum _memory_space_t {
    undefined_space=0,
@@ -46,6 +48,15 @@ enum _memory_space_t {
    generic_space,
    instruction_space
 };
+
+
+enum FuncCache
+{
+  FuncCachePreferNone = 0,
+  FuncCachePreferShared = 1,
+  FuncCachePreferL1 = 2
+};
+
 
 #ifdef __cplusplus
 
@@ -73,14 +84,14 @@ enum uarch_op_t {
 };
 typedef enum uarch_op_t op_type;
 
-enum uarch_op2_t {
+enum uarch_operand_type_t {
 	UN_OP=-1,
     INT_OP,
     FP_OP
 };
-typedef enum uarch_op2_t op_type2;
+typedef enum uarch_operand_type_t types_of_operands;
 
-enum uarch_op3_t {
+enum special_operations_t {
     OTHER_OP,
     INT__OP,
 	INT_MUL24_OP,
@@ -90,24 +101,24 @@ enum uarch_op3_t {
     FP_MUL_OP,
     FP_DIV_OP,
     FP__OP,
-	 FP_SQRT_OP,
-	 FP_LG_OP,
-	 FP_SIN_OP,
-	 FP_EXP_OP
+	FP_SQRT_OP,
+	FP_LG_OP,
+	FP_SIN_OP,
+	FP_EXP_OP
 };
-typedef enum uarch_op3_t op_type3;
-enum uarch_op4_t {
+typedef enum special_operations_t special_ops; // Required to identify for the power model
+enum operation_pipeline_t {
     UNKOWN_OP,
     SP__OP,
     SFU__OP,
     MEM__OP
 };
-typedef enum uarch_op4_t op_type4;
-enum uarch_op5_t {
+typedef enum operation_pipeline_t operation_pipeline;
+enum mem_operation_t {
     NOT_TEX,
     TEX
 };
-typedef enum uarch_op5_t op_type5;
+typedef enum mem_operation_t mem_operation;
 
 enum _memory_op_t {
 	no_memory_op = 0,
@@ -226,6 +237,9 @@ struct core_config {
         m_valid = false; 
         num_shmem_bank=16; 
         shmem_limited_broadcast = false; 
+        gpgpu_shmem_sizeDefault=(unsigned)-1;
+        gpgpu_shmem_sizePrefL1=(unsigned)-1;
+        gpgpu_shmem_sizePrefShared=(unsigned)-1;
     }
     virtual void init() = 0;
 
@@ -244,7 +258,10 @@ struct core_config {
         return ((addr/WORD_SIZE) % num_shmem_bank);
     }
     unsigned mem_warp_parts;  
-    unsigned gpgpu_shmem_size;
+    mutable unsigned gpgpu_shmem_size;
+    unsigned gpgpu_shmem_sizeDefault;
+    unsigned gpgpu_shmem_sizePrefL1;
+    unsigned gpgpu_shmem_sizePrefShared;
 
     // texture and constant cache line sizes (used to determine number of memory accesses)
     unsigned gpgpu_cache_texl1_linesize;
@@ -516,6 +533,7 @@ public:
    void set_bank( unsigned b ) { m_bank = b; }
    bool is_const() const { return (m_type == const_space) || (m_type == param_space_kernel); }
    bool is_local() const { return (m_type == local_space) || (m_type == param_space_local); }
+   bool is_global() const { return (m_type == global_space); }
 
 private:
    enum _memory_space_t m_type;
@@ -526,19 +544,31 @@ const unsigned MAX_MEMORY_ACCESS_SIZE = 128;
 typedef std::bitset<MAX_MEMORY_ACCESS_SIZE> mem_access_byte_mask_t;
 #define NO_PARTIAL_WRITE (mem_access_byte_mask_t())
 
-enum mem_access_type {
-   GLOBAL_ACC_R, 
-   LOCAL_ACC_R, 
-   CONST_ACC_R, 
-   TEXTURE_ACC_R, 
-   GLOBAL_ACC_W, 
-   LOCAL_ACC_W,
-   L1_WRBK_ACC,
-   L2_WRBK_ACC, 
-   INST_ACC_R,
-   L2_WR_ALLOC_R,
-   NUM_MEM_ACCESS_TYPE
-};
+#define MEM_ACCESS_TYPE_TUP_DEF \
+MA_TUP_BEGIN( mem_access_type ) \
+   MA_TUP( GLOBAL_ACC_R ), \
+   MA_TUP( LOCAL_ACC_R ), \
+   MA_TUP( CONST_ACC_R ), \
+   MA_TUP( TEXTURE_ACC_R ), \
+   MA_TUP( GLOBAL_ACC_W ), \
+   MA_TUP( LOCAL_ACC_W ), \
+   MA_TUP( L1_WRBK_ACC ), \
+   MA_TUP( L2_WRBK_ACC ), \
+   MA_TUP( INST_ACC_R ), \
+   MA_TUP( L1_WR_ALLOC_R ), \
+   MA_TUP( L2_WR_ALLOC_R ), \
+   MA_TUP( NUM_MEM_ACCESS_TYPE ) \
+MA_TUP_END( mem_access_type ) 
+
+#define MA_TUP_BEGIN(X) enum X {
+#define MA_TUP(X) X
+#define MA_TUP_END(X) };
+MEM_ACCESS_TYPE_TUP_DEF
+#undef MA_TUP_BEGIN
+#undef MA_TUP
+#undef MA_TUP_END
+
+const char * mem_access_type_str(enum mem_access_type access_type); 
 
 enum cache_operator_type {
     CACHE_UNDEFINED, 
@@ -662,10 +692,10 @@ public:
         pc=(address_type)-1;
         reconvergence_pc=(address_type)-1;
         op=NO_OP; 
-        op2=UN_OP;
-        op3=OTHER_OP;
-        op4=UNKOWN_OP;
-        op5=NOT_TEX;
+        oprnd_type=UN_OP;
+        sp_op=OTHER_OP;
+        op_pipe=UNKOWN_OP;
+        mem_op=NOT_TEX;
         num_operands=0;
         num_regs=0;
         memset(out, 0, sizeof(unsigned)); 
@@ -697,10 +727,10 @@ public:
     address_type pc;        // program counter address of instruction
     unsigned isize;         // size of instruction in bytes 
     op_type op;             // opcode (uarch visible)
-    op_type2 op2;           // opcode (uarch visible) determine if the operation is an interger or a floating point
-    op_type3 op3;           // opcode (uarch visible) determine if int_alu, fp_alu, int_mul ....
-    op_type4 op4;
-    op_type5 op5;
+    types_of_operands oprnd_type;     // code (uarch visible) identify if the operation is an interger or a floating point
+    special_ops sp_op;           // code (uarch visible) identify if int_alu, fp_alu, int_mul ....
+    operation_pipeline op_pipe;  // code (uarch visible) identify the pipeline of the operation (SP, SFU or MEM)
+    mem_operation mem_op;        // code (uarch visible) identify memory type
     _memory_op_t memory_op; // memory_op used by ptxplus 
     unsigned num_operands;
     unsigned num_regs; // count vector operand as one register operand
@@ -938,23 +968,49 @@ size_t get_kernel_code_size( class function_info *entry );
  */
 class core_t {
     public:
-        virtual ~core_t() {}
+        core_t( gpgpu_sim *gpu, 
+                kernel_info_t *kernel,
+                unsigned warp_size,
+                unsigned threads_per_shader )
+            : m_gpu( gpu ),
+              m_kernel( kernel ),
+              m_simt_stack( NULL ),
+              m_thread( NULL ),
+              m_warp_size( warp_size )
+        {
+            m_warp_count = threads_per_shader/m_warp_size;
+            // Handle the case where the number of threads is not a
+            // multiple of the warp size
+            if ( threads_per_shader % m_warp_size != 0 ) {
+                m_warp_count += 1;
+            }
+            assert( m_warp_count * m_warp_size > 0 );
+            m_thread = ( ptx_thread_info** )
+                     calloc( m_warp_count * m_warp_size,
+                             sizeof( ptx_thread_info* ) );
+            initilizeSIMTStack(m_warp_count,m_warp_size);
+        }
+        virtual ~core_t() { free(m_thread); }
         virtual void warp_exit( unsigned warp_id ) = 0;
         virtual bool warp_waiting_at_barrier( unsigned warp_id ) const = 0;
         virtual void checkExecutionStatusAndUpdate(warp_inst_t &inst, unsigned t, unsigned tid)=0;
         class gpgpu_sim * get_gpu() {return m_gpu;}
-        void execute_warp_inst_t(warp_inst_t &inst, unsigned warpSize, unsigned warpId =(unsigned)-1);
+        void execute_warp_inst_t(warp_inst_t &inst, unsigned warpId =(unsigned)-1);
         bool  ptx_thread_done( unsigned hw_thread_id ) const ;
-        void updateSIMTStack(unsigned warpId, unsigned warpSize, warp_inst_t * inst);
-        void initilizeSIMTStack(unsigned warps, unsigned warpsSize);
+        void updateSIMTStack(unsigned warpId, warp_inst_t * inst);
+        void initilizeSIMTStack(unsigned warp_count, unsigned warps_size);
+        void deleteSIMTStack();
         warp_inst_t getExecuteWarp(unsigned warpId);
         void get_pdom_stack_top_info( unsigned warpId, unsigned *pc, unsigned *rpc ) const;
         kernel_info_t * get_kernel_info(){ return m_kernel;}
+        unsigned get_warp_size() const { return m_warp_size; }
     protected:
         class gpgpu_sim *m_gpu;
         kernel_info_t *m_kernel;
         simt_stack  **m_simt_stack; // pdom based reconvergence context for each warp
-        class ptx_thread_info ** m_thread; 
+        class ptx_thread_info ** m_thread;
+        unsigned m_warp_size;
+        unsigned m_warp_count;
 };
 
 

@@ -108,6 +108,22 @@ address_type line_size_based_tag_func(new_addr_type address, new_addr_type line_
    return address & ~(line_size-1);
 }
 
+const char * mem_access_type_str(enum mem_access_type access_type)
+{
+   #define MA_TUP_BEGIN(X) static const char* access_type_str[] = {
+   #define MA_TUP(X) #X
+   #define MA_TUP_END(X) };
+   MEM_ACCESS_TYPE_TUP_DEF
+   #undef MA_TUP_BEGIN
+   #undef MA_TUP
+   #undef MA_TUP_END
+
+   assert(access_type < NUM_MEM_ACCESS_TYPE); 
+
+   return access_type_str[access_type]; 
+}
+
+
 void warp_inst_t::clear_active( const active_mask_t &inactive ) {
     active_mask_t test = m_warp_active_mask;
     test &= inactive;
@@ -730,13 +746,13 @@ void simt_stack::update( simt_mask_t &thread_done, addr_vector_t &next_pc, addre
     }
 }
 
-void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpSize, unsigned warpId)
+void core_t::execute_warp_inst_t(warp_inst_t &inst, unsigned warpId)
 {
-    for ( unsigned t=0; t < warpSize; t++ ) {
+    for ( unsigned t=0; t < m_warp_size; t++ ) {
         if( inst.active(t) ) {
             if(warpId==(unsigned (-1)))
                 warpId = inst.warp_id();
-            unsigned tid=warpSize*warpId+t;
+            unsigned tid=m_warp_size*warpId+t;
             m_thread[tid]->ptx_exec_inst(inst,t);
             
             //virtual function
@@ -750,12 +766,12 @@ bool  core_t::ptx_thread_done( unsigned hw_thread_id ) const
     return ((m_thread[ hw_thread_id ]==NULL) || m_thread[ hw_thread_id ]->is_done());
 }
   
-void core_t::updateSIMTStack(unsigned warpId, unsigned warpSize, warp_inst_t * inst)
+void core_t::updateSIMTStack(unsigned warpId, warp_inst_t * inst)
 {
     simt_mask_t thread_done;
     addr_vector_t next_pc;
-    unsigned wtid = warpId * warpSize;
-    for (unsigned i = 0; i < warpSize; i++) {
+    unsigned wtid = warpId * m_warp_size;
+    for (unsigned i = 0; i < m_warp_size; i++) {
         if( ptx_thread_done(wtid+i) ) {
             thread_done.set(i);
             next_pc.push_back( (address_type)-1 );
@@ -778,11 +794,23 @@ warp_inst_t core_t::getExecuteWarp(unsigned warpId)
     return wi;
 }
 
-void core_t::initilizeSIMTStack(unsigned warps, unsigned warpsSize)
+void core_t::deleteSIMTStack()
+{
+    if ( m_simt_stack ) {
+        for (unsigned i = 0; i < m_warp_count; ++i) 
+            delete m_simt_stack[i];
+        delete[] m_simt_stack;
+        m_simt_stack = NULL;
+    }
+}
+
+void core_t::initilizeSIMTStack(unsigned warp_count, unsigned warp_size)
 { 
-    m_simt_stack = new simt_stack*[warps];
-    for (unsigned i = 0; i < warps; ++i) 
-        m_simt_stack[i] = new simt_stack(i,warpsSize);
+    m_simt_stack = new simt_stack*[warp_count];
+    for (unsigned i = 0; i < warp_count; ++i) 
+        m_simt_stack[i] = new simt_stack(i,warp_size);
+    m_warp_size = warp_size;
+    m_warp_count = warp_count;
 }
 
 void core_t::get_pdom_stack_top_info( unsigned warpId, unsigned *pc, unsigned *rpc ) const

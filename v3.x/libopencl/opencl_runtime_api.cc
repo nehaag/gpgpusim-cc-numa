@@ -415,7 +415,7 @@ void register_ptx_function( const char *name, function_info *impl )
    sg_info->m_kernels[name] = impl;
 }
 
-extern "C" void ptxinfo_addinfo()
+ void ptxinfo_addinfo()
 {
    ptxinfo_opencl_addinfo( sg_info->m_kernels );
 }
@@ -432,14 +432,15 @@ void _cl_program::Build(const char *options)
       char *use_extracted_ptx = getenv("PTX_SIM_USE_PTX_FILE");
       if( use_extracted_ptx == NULL ) {
          char *nvopencl_libdir = getenv("NVOPENCL_LIBDIR");
-         char *gpgpusim_opencl_path = getenv("GPGPUSIM_ROOT");
+         const std::string gpgpu_opencl_path_str = std::string(getenv("GPGPUSIM_ROOT"))
+            + "/build/" + std::string(getenv("GPGPUSIM_CONFIG"));
          bool error = false;
          if( nvopencl_libdir == NULL ) {
             printf("GPGPU-Sim OpenCL API: Please set your NVOPENCL_LIBDIR environment variable to\n"
                    "                      the location of NVIDIA's libOpenCL.so file on your system.\n");
             error = true;
          }
-         if( gpgpusim_opencl_path == NULL ) {
+         if( getenv("GPGPUSIM_ROOT") == NULL || getenv("GPGPUSIM_CONFIG") == NULL ) {
             fprintf(stderr,"GPGPU-Sim OpenCL API: Please set your GPGPUSIM_ROOT environment variable\n");
             fprintf(stderr,"                      to point to the location of your GPGPU-Sim installation\n");
             error = true;
@@ -495,7 +496,7 @@ void _cl_program::Build(const char *options)
             if( result ) { printf("GPGPU-Sim OpenCL API: ERROR (%d)\n", result ); exit(1); }
 
             // copy the nvopencl_wrapper file to the remote server
-            snprintf(commandline,1024,"rsync -t %s/libopencl/bin/nvopencl_wrapper %s:%s/nvopencl_wrapper", gpgpusim_opencl_path, remote_host, remote_dir );
+            snprintf(commandline,1024,"rsync -t %s/libopencl/bin/nvopencl_wrapper %s:%s/nvopencl_wrapper", gpgpu_opencl_path_str.c_str(), remote_host, remote_dir );
             printf("GPGPU-Sim OpenCL API: OpenCL wrapper command line \'%s\'\n", commandline);
             fflush(stdout);
             result = system(commandline);
@@ -518,7 +519,7 @@ void _cl_program::Build(const char *options)
          } else {
             setenv("LD_LIBRARY_PATH",nvopencl_libdir,1);
             snprintf(commandline,1024,"%s/libopencl/bin/nvopencl_wrapper %s %s %s", 
-                   gpgpusim_opencl_path, cl_fname, ptx_fname, opt );
+                   gpgpu_opencl_path_str.c_str(), cl_fname, ptx_fname, opt );
             printf("GPGPU-Sim OpenCL API: OpenCL wrapper command line \'%s\'\n", commandline);
             fflush(stdout);
             int result = system(commandline);
@@ -596,8 +597,10 @@ cl_kernel _cl_program::CreateKernel( const char *kernel_name, cl_int *errcode_re
 
    if( finfo == NULL ) 
       setErrCode( errcode_ret, CL_INVALID_PROGRAM_EXECUTABLE );
-   else 
+   else{ 
       result = new _cl_kernel(this,kernel_name,finfo);
+      setErrCode( errcode_ret, CL_SUCCESS );
+   }
    return result;
 }
 
@@ -670,16 +673,25 @@ void opencl_not_finished( const char* func, unsigned line )
 }
 
 extern CL_API_ENTRY cl_context CL_API_CALL
-clCreateContextFromType(cl_context_properties * properties,
-                        cl_ulong          device_type,
+clCreateContextFromType(const cl_context_properties * properties,
+                        cl_device_type          device_type,
                         void (*pfn_notify)(const char *, const void *, size_t, void *),
                         void *                  user_data,
                         cl_int *                errcode_ret) CL_API_SUFFIX__VERSION_1_0
 {
    _cl_device_id *gpu = GPGPUSim_Init();
-   if( device_type != CL_DEVICE_TYPE_GPU ) {
+
+   switch (device_type) {
+   case CL_DEVICE_TYPE_GPU: 
+   case CL_DEVICE_TYPE_ACCELERATOR:
+   case CL_DEVICE_TYPE_DEFAULT:
+   case CL_DEVICE_TYPE_ALL:
+      break; // GPGPU-Sim qualifies as these types of device. 
+   default: 
       printf("GPGPU-Sim OpenCL API: unsupported device type %lx\n", device_type );
-      exit(1);
+      setErrCode( errcode_ret, CL_DEVICE_NOT_FOUND );
+      return NULL;
+      break;
    }
    
    if( properties != NULL ) {
@@ -878,8 +890,19 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
              if( global_work_size[d] <= command_queue->get_device()->the_device()->threads_per_core() ) {
                 _local_size[d] = global_work_size[d];
              } else { 
-                printf("GPGPU-Sim OpenCL API: ERROR clEnqueueNDRangeKernel does not know how to divide work\n" );
-                return CL_INVALID_WORK_GROUP_SIZE;
+                // start with the maximum number of thread that a core may hold, 
+                // and decrement by 64 threadsuntil there is a local_work_size 
+                // that can perfectly divide the global_work_size. 
+                unsigned n_thread_per_core = command_queue->get_device()->the_device()->threads_per_core();
+                size_t local_size_attempt = n_thread_per_core; 
+                while (local_size_attempt > 1 and (n_thread_per_core % 64 == 0)) {
+                   if (global_work_size[d] % local_size_attempt == 0) {
+                      break; 
+                   }
+                   local_size_attempt -= 64; 
+                }
+                if (local_size_attempt == 0) local_size_attempt = 1;
+                _local_size[d] = local_size_attempt;
              }
           } else {
              _local_size[d] = 1;
@@ -1021,10 +1044,20 @@ clGetPlatformIDs(cl_uint num_entries, cl_platform_id *platforms, cl_uint *num_pl
       if( param_value ) *((cl_int*)param_value) = (N); \
       if( param_value_size_ret ) *param_value_size_ret = sizeof(cl_int);
 
+#define CL_UINT_CASE( N ) \
+      if( param_value && param_value_size < sizeof(cl_uint) ) return CL_INVALID_VALUE; \
+      if( param_value ) *((cl_uint*)param_value) = (N); \
+      if( param_value_size_ret ) *param_value_size_ret = sizeof(cl_uint);
+
 #define CL_ULONG_CASE( N ) \
       if( param_value && param_value_size < sizeof(cl_ulong) ) return CL_INVALID_VALUE; \
       if( param_value ) *((cl_ulong*)param_value) = (N); \
       if( param_value_size_ret ) *param_value_size_ret = sizeof(cl_ulong);
+
+#define CL_BOOL_CASE( N ) \
+      if( param_value && param_value_size < sizeof(cl_bool) ) return CL_INVALID_VALUE; \
+      if( param_value ) *((cl_bool*)param_value) = (N); \
+      if( param_value_size_ret ) *param_value_size_ret = sizeof(cl_bool);
 
 #define CL_SIZE_CASE( N ) \
       if( param_value && param_value_size < sizeof(size_t) ) return CL_INVALID_VALUE; \
@@ -1075,7 +1108,9 @@ clGetDeviceIDs(cl_platform_id   platform,
 
    switch( device_type ) {
    case CL_DEVICE_TYPE_CPU: 
-      opencl_not_implemented(__my_func__,__LINE__);
+      // Some benchmarks (e.g. ComD benchmark from Mantevo package) looks for CPU and GPU to choose among, so it is not wise to abort execution because of GPGPUsim is not a CPU !.
+      printf("GPGPU-Sim OpenCL API: unsupported device type %lx\n", device_type );
+      return CL_DEVICE_NOT_FOUND;
       break;
    case CL_DEVICE_TYPE_DEFAULT:
    case CL_DEVICE_TYPE_GPU: 
@@ -1105,11 +1140,12 @@ clGetDeviceInfo(cl_device_id    device,
    switch( param_name ) {
    case CL_DEVICE_NAME: CL_STRING_CASE( "GPGPU-Sim" ); break;
    case CL_DEVICE_GLOBAL_MEM_SIZE: CL_ULONG_CASE( 1024*1024*1024 ); break;
-   case CL_DEVICE_MAX_COMPUTE_UNITS: CL_INT_CASE( device->the_device()->get_config().num_shader() ); break;
-   case CL_DEVICE_MAX_CLOCK_FREQUENCY: CL_INT_CASE( device->the_device()->shader_clock() ); break;
+   case CL_DEVICE_MAX_COMPUTE_UNITS: CL_UINT_CASE( device->the_device()->get_config().num_shader() ); break;
+   case CL_DEVICE_MAX_CLOCK_FREQUENCY: CL_UINT_CASE( device->the_device()->shader_clock() ); break;
    case CL_DEVICE_VENDOR:CL_STRING_CASE("GPGPU-Sim.org"); break;
+   case CL_DEVICE_VERSION: CL_STRING_CASE("OpenCL 1.0"); break;
    case CL_DRIVER_VERSION: CL_STRING_CASE("1.0"); break;
-   case CL_DEVICE_TYPE: CL_INT_CASE(CL_DEVICE_TYPE_GPU); break;
+   case CL_DEVICE_TYPE: CL_CASE(cl_device_type, CL_DEVICE_TYPE_GPU); break;
    case CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS: CL_INT_CASE( 3 ); break;
    case CL_DEVICE_MAX_WORK_ITEM_SIZES: 
       if( param_value && param_value_size < 3*sizeof(size_t) ) return CL_INVALID_VALUE; \
@@ -1123,6 +1159,8 @@ clGetDeviceInfo(cl_device_id    device,
       break;
    case CL_DEVICE_MAX_WORK_GROUP_SIZE: CL_INT_CASE( device->the_device()->threads_per_core() ); break;
    case CL_DEVICE_ADDRESS_BITS: CL_INT_CASE( 32 ); break;
+   case CL_DEVICE_AVAILABLE: CL_BOOL_CASE( CL_TRUE ); break;
+   case CL_DEVICE_COMPILER_AVAILABLE: CL_BOOL_CASE( CL_TRUE ); break;
    case CL_DEVICE_IMAGE_SUPPORT: CL_INT_CASE( CL_TRUE ); break;
    case CL_DEVICE_MAX_READ_IMAGE_ARGS: CL_INT_CASE( 128 ); break;
    case CL_DEVICE_MAX_WRITE_IMAGE_ARGS: CL_INT_CASE( 8 ); break;

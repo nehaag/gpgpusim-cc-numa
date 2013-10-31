@@ -33,10 +33,8 @@ TRACE?=0
 
 ifeq ($(DEBUG),1)
 	CXXFLAGS = -Wall -DDEBUG
-	CXXFLAGS_L2CACHE = -Wall -DDEBUG
 else
 	CXXFLAGS = -Wall
-	CXXFLAGS_L2CACHE = -Wall
 endif
 
 ifeq ($(TRACE),1)
@@ -47,13 +45,11 @@ include ../../version_detection.mk
 
 ifeq ($(GNUC_CPP0X), 1)
     CXXFLAGS += -std=c++0x
-    CXXFLAGS_L2CACHE += -std=c++0x
 endif
 
 ifneq ($(DEBUG),1)
 	OPTFLAGS += -O3
 else
-	CXXFLAGS_L2CACHE += 
 	CXXFLAGS += 
 endif
 
@@ -67,7 +63,7 @@ OPTFLAGS += -g3 -fPIC
 CPP = g++ $(SNOW)
 OEXT = o
 
-OUTPUT_DIR=../../$(SIM_OBJ_FILES_DIR)/gpgpu-sim
+OUTPUT_DIR=$(SIM_OBJ_FILES_DIR)/gpgpu-sim
 
 SRCS = $(shell ls *.cc)
 
@@ -84,14 +80,11 @@ OBJS = $(CSRCS:%.cc=$(OUTPUT_DIR)/%.$(OEXT))
 libgpu_uarch_sim.a:$(OBJS)
 	ar rcs  $(OUTPUT_DIR)/libgpu_uarch_sim.a $(OBJS)
 
-Makefile.makedepend: depend
+$(OUTPUT_DIR)/Makefile.makedepend: depend
 
 depend:
-	touch Makefile.makedepend
-	makedepend -fMakefile.makedepend -p$(OUTPUT_DIR)/ $(CSRCS) 2> /dev/null
-
-$(OUTPUT_DIR)/l2cache.$(OEXT): l2cache.cc
-	$(CPP) $(OPTFLAGS) $(CXXFLAGS_L2CACHE) -o $*.$(OEXT) -c l2cache.cc
+	touch $(OUTPUT_DIR)/Makefile.makedepend
+	makedepend -f$(OUTPUT_DIR)/Makefile.makedepend -p$(OUTPUT_DIR)/ $(CSRCS) 2> /dev/null
 
 $(OUTPUT_DIR)/%.$(OEXT): %.cc
 	$(CPP) $(OPTFLAGS) $(CXXFLAGS) $(POWER_FLAGS) -o $(OUTPUT_DIR)/$*.$(OEXT) -c $*.cc
@@ -102,10 +95,10 @@ clean:
 
 $(OUTPUT_DIR)/option_parser.$(OEXT): option_parser.h
 
-$(OUTPUT_DIR)/dram_sched.$(OEXT): ../cuda-sim/ptx.tab.h
+$(OUTPUT_DIR)/dram_sched.$(OEXT): $(OUTPUT_DIR)/../cuda-sim/ptx.tab.h
 
-../cuda-sim/ptx.tab.h:
-	make -C ../cuda-sim/ ptx.tab.c
+$(OUTPUT_DIR)/../cuda-sim/ptx.tab.h:
+	make -C ../cuda-sim/ $(OUTPUT_DIR)/../cuda-sim/ptx.tab.c
 
-include Makefile.makedepend
+include $(OUTPUT_DIR)/Makefile.makedepend
 

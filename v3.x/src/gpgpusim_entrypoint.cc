@@ -115,14 +115,24 @@ void *gpgpu_sim_thread_concurrent(void*)
         g_the_gpu->init();
         do {
             // check if a kernel has completed
-			// launch operation on device if one is pending and can be run
-			g_stream_manager->operation(&sim_cycles);
-		    if( g_the_gpu->active() ) {
-		        g_the_gpu->cycle();
-		        sim_cycles = true;
-		        g_the_gpu->deadlock_check();
-		    }
-		    active=g_the_gpu->active() || !g_stream_manager->empty_protected();
+            // launch operation on device if one is pending and can be run
+
+            // Need to break this loop when a kernel completes. This was a
+            // source of non-deterministic behaviour in GPGPU-Sim (bug 147).
+            // If another stream operation is available, g_the_gpu remains active,
+            // causing this loop to not break. If the next operation happens to be
+            // another kernel, the gpu is not re-initialized and the inter-kernel
+            // behaviour may be incorrect. Check that a kernel has finished and
+            // no other kernel is currently running.
+            if(g_stream_manager->operation(&sim_cycles) && !g_the_gpu->active())
+                break;
+
+            if( g_the_gpu->active() ) {
+                g_the_gpu->cycle();
+                sim_cycles = true;
+                g_the_gpu->deadlock_check();
+            }
+            active=g_the_gpu->active() || !g_stream_manager->empty_protected();
         } while( active );
         if(g_debug_execution >= 3) {
            printf("GPGPU-Sim: ** STOP simulation thread (no work) **\n");
@@ -244,8 +254,15 @@ int gpgpu_opencl_ptx_sim_main_perf( kernel_info_t *grid )
    return 0;
 }
 
+//! Functional simulation of OpenCL
+/*!
+ * This function call the CUDA PTX functional simulator
+ */
 int gpgpu_opencl_ptx_sim_main_func( kernel_info_t *grid )
 {
-   printf("GPGPU-Sim PTX API: OpenCL functional-only simulation not yet implemented (use performance simulation)\n");
-   exit(1);
+    //calling the CUDA PTX simulator, sending the kernel by reference and a flag set to true,
+    //the flag used by the function to distinguish OpenCL calls from the CUDA simulation calls which
+    //it is needed by the called function to not register the exit the exit of OpenCL kernel as it doesn't register entering in the first place as the CUDA kernels does
+   gpgpu_cuda_ptx_sim_main_func( *grid, true );
+   return 0;
 }
