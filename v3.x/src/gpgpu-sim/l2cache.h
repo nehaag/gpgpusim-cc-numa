@@ -94,8 +94,8 @@ public:
 
    std::map <unsigned long long int, std::vector<unsigned long int> > num_access_per_cacheline;
    unsigned long int epoch_number;
-   std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_per_epoch;
-   std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_across_epoch;
+   //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_per_epoch;
+   //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_across_epoch;
    
 private: 
 

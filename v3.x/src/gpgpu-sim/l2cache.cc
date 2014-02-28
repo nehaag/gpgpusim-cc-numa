@@ -271,7 +271,7 @@ void memory_partition_unit::dram_cycle()
 
                 // update last access re-use distance stats
                 // local update
-                reuse_distance_per_epoch[cacheline].push_back(gpu_tot_sim_cycle + gpu_sim_cycle);
+                //reuse_distance_per_epoch[cacheline].push_back(gpu_tot_sim_cycle + gpu_sim_cycle);
 
                 mf->set_status(IN_PARTITION_DRAM_LATENCY_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
                 m_arbitration_metadata.borrow_credit(spid); 
@@ -347,29 +347,29 @@ void memory_partition_unit::print( FILE *fp )
         fprintf(fp, " %d\n", sum);
     }
 
-    // re-use distance stats
-    fprintf(fp, "Re-use distance in this kernel\n");
-    it = reuse_distance_per_epoch.begin();
-    for (; it != reuse_distance_per_epoch.end(); ++it) {
-        fprintf(fp, "%lld: ", it->first);
-        for (int i=0; i<it->second.size(); ++i)
-            fprintf(fp, "%ld ", it->second[i]);
-        fprintf(fp, "\n");
+    //// re-use distance stats
+    //fprintf(fp, "Re-use distance in this kernel\n");
+    //it = reuse_distance_per_epoch.begin();
+    //for (; it != reuse_distance_per_epoch.end(); ++it) {
+    //    fprintf(fp, "%lld: ", it->first);
+    //    for (int i=0; i<it->second.size(); ++i)
+    //        fprintf(fp, "%ld ", it->second[i]);
+    //    fprintf(fp, "\n");
 
-        // update the global re-use map
-        reuse_distance_across_epoch[it->first].push_back(it->second.back());
-    }
-    fprintf(fp, "\n");
-    reuse_distance_per_epoch.clear();
+    //    // update the global re-use map
+    //    reuse_distance_across_epoch[it->first].push_back(it->second.back());
+    //}
+    //fprintf(fp, "\n");
+    //reuse_distance_per_epoch.clear();
 
-    fprintf(fp, "Global re-use distance in this kernel\n");
-    it = reuse_distance_across_epoch.begin();
-    for (; it != reuse_distance_across_epoch.end(); ++it) {
-        fprintf(fp, "%lld: ", it->first);
-        for (int i=0; i<it->second.size(); ++i)
-            fprintf(fp, "%ld ", it->second[i]);
-        fprintf(fp, "\n");
-    }
+    //fprintf(fp, "Global re-use distance in this kernel\n");
+    //it = reuse_distance_across_epoch.begin();
+    //for (; it != reuse_distance_across_epoch.end(); ++it) {
+    //    fprintf(fp, "%lld: ", it->first);
+    //    for (int i=0; i<it->second.size(); ++i)
+    //        fprintf(fp, "%ld ", it->second[i]);
+    //    fprintf(fp, "\n");
+    //}
 
     ++epoch_number;
 }
