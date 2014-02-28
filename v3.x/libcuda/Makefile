@@ -117,7 +117,7 @@ cuobjdump_parser.c: cuobjdump.y
 	$(YACC) $(YFLAGS) -p cuobjdump_ -o$@ $<
 
 cuobjdump_lexer.c: cuobjdump.l cuobjdump_parser.h
-	$(LEX) $(LEXFLAGS) -P cuobjdump_ -o$@ $<
+	$(LEX) $(LEXFLAGS) -Pcuobjdump_ -o$@ $<
 	
 # The next rule means just get parser.c and you will get parser.h with it
 # in other words, get parser.c and do nothing to get parser.h

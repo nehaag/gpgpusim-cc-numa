@@ -43,7 +43,7 @@ $(OUTPUT_DIR)/ptx.tab.o : ptx.tab.c ptx_parser.h
 
 
 %_lexer.cc: %.l %_parser.hh
-	$(LEX) $(LEXFLAGS) -P $*_ -o$@ $<
+	$(LEX) $(LEXFLAGS) -P$*_ -o$@ $<
 
 %_parser.cc: %.y
 	$(YACC) $(YFLAGS) -p $*_ -o$@ $<

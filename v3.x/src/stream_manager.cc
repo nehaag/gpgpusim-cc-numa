@@ -340,6 +340,10 @@ void stream_manager::print( FILE *fp)
     print_impl(fp);
     pthread_mutex_unlock(&m_lock);
 }
+void stream_manager::print_final_stats()
+{
+    m_gpu->print_stats();
+}
 void stream_manager::print_impl( FILE *fp)
 {
     fprintf(fp,"GPGPU-Sim API: Stream Manager State\n");
@@ -353,6 +357,9 @@ void stream_manager::print_impl( FILE *fp)
         m_stream_zero.print(fp);
 }
 
+stream_manager::~stream_manager() {
+    m_gpu->print_stats();
+}
 void stream_manager::push( stream_operation op )
 {
     struct CUstream_st *stream = op.get_stream();

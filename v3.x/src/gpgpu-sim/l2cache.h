@@ -71,7 +71,7 @@ public:
    void visualizer_print( gzFile visualizer_file ) const;
    void print_stat( FILE *fp ) { m_dram->print_stat(fp); }
    void visualize() const { m_dram->visualize(); }
-   void print( FILE *fp ) const;
+   void print( FILE *fp );
 
    class memory_sub_partition * get_sub_partition(int sub_partition_id) 
    {
@@ -92,6 +92,11 @@ public:
 
    unsigned get_mpid() const { return m_id; }
 
+   std::map <unsigned long long int, std::vector<unsigned long int> > num_access_per_cacheline;
+   unsigned long int epoch_number;
+   std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_per_epoch;
+   std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_across_epoch;
+   
 private: 
 
    unsigned m_id;

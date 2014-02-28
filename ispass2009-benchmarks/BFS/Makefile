@@ -39,6 +39,7 @@ EXECUTABLE	:= BFS
 CUFILES		:= bfs.cu
 # C/C++ source files (compiled with gcc / c++)
 CCFILES		:= 
+CFLAGS := -g
 
 ################################################################################
 # Rules and targets

@@ -1113,6 +1113,10 @@ public:
     void get_L1D_sub_stats(struct cache_sub_stats &css) const;
     void get_L1C_sub_stats(struct cache_sub_stats &css) const;
     void get_L1T_sub_stats(struct cache_sub_stats &css) const;
+    //Neha
+    void get_cumulative_stats(FILE *fp) const;
+    std::map<unsigned long long, unsigned long> mem_accesses;
+    std::map<unsigned long long, unsigned long> mem_accesses_DATA;
 
 protected:
     ldst_unit( mem_fetch_interface *icnt,
@@ -1619,6 +1623,10 @@ public:
     void get_L1D_sub_stats(struct cache_sub_stats &css) const;
     void get_L1C_sub_stats(struct cache_sub_stats &css) const;
     void get_L1T_sub_stats(struct cache_sub_stats &css) const;
+    //Neha
+    void get_cumulative_stats(FILE *fp) const;
+    std::map<unsigned long long, unsigned long> get_L1I_hits() const;
+    std::map<unsigned long long, unsigned long> get_L1CTD_hits() const;
 
     void get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
 
@@ -1794,6 +1802,8 @@ private:
     // fetch
     read_only_cache *m_L1I; // instruction cache
     int  m_last_warp_fetched;
+    //Neha
+    std::map<unsigned long long, unsigned long> mem_accesses_INST;
 
     // decode/dispatch
     std::vector<shd_warp_t>   m_warp;   // per warp information array
@@ -1835,6 +1845,9 @@ public:
                        shader_core_stats *stats,
                        memory_stats_t *mstats );
 
+    //Neha
+    std::map<unsigned long long, unsigned long> mem_accesses_ICNT;
+
     void core_cycle();
     void icnt_cycle();
 
@@ -1868,6 +1881,8 @@ public:
     void get_L1D_sub_stats(struct cache_sub_stats &css) const;
     void get_L1C_sub_stats(struct cache_sub_stats &css) const;
     void get_L1T_sub_stats(struct cache_sub_stats &css) const;
+    //Neha
+    void get_cumulative_stats(FILE *fp) const;
 
     void get_icnt_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
 

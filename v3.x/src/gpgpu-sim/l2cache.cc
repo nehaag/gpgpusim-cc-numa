@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2011, Tor M. Aamodt
+/// Copyright (c) 2009-2011, Tor M. Aamodt
 // The University of British Columbia
 // All rights reserved.
 //
@@ -72,6 +72,9 @@ memory_partition_unit::memory_partition_unit( unsigned partition_id,
         unsigned sub_partition_id = m_id * m_config->m_n_sub_partition_per_memory_channel + p; 
         m_sub_partition[p] = new memory_sub_partition(sub_partition_id, m_config, stats); 
     }
+
+    // Initialize the epoch number
+    epoch_number = 0;
 }
 
 memory_partition_unit::~memory_partition_unit() 
@@ -234,6 +237,42 @@ void memory_partition_unit::dram_cycle()
                 d.req = mf;
                 d.ready_cycle = gpu_sim_cycle+gpu_tot_sim_cycle + m_config->dram_latency;
                 m_dram_latency_queue.push_back(d);
+
+                // Add uniques addresses to the cacheline tracking data structure
+                // If address is not present then add 0 accesses for all
+                // previous epochs and also current
+                unsigned long long int cacheline = mf->get_addr() / 128;
+
+                // number of epochs this address was not accessed
+                unsigned int diff = 0;
+                // check if an element already exists
+                if (num_access_per_cacheline.count(cacheline))
+                    diff = epoch_number - (num_access_per_cacheline[cacheline].size() - 3);
+                else {
+                    diff = epoch_number;
+
+                    // Store the address decoding at dram level in the map
+                    const addrdec_t &tlx = mf->get_tlx_addr();
+                    num_access_per_cacheline[cacheline].push_back(tlx.bk);
+                    num_access_per_cacheline[cacheline].push_back(tlx.row);
+                    num_access_per_cacheline[cacheline].push_back(tlx.col);
+                }
+
+
+                // push 0(s) for all the epochs till now
+                for (unsigned int i = 0; i < (diff+1); ++i) {
+                    num_access_per_cacheline[cacheline].push_back(0);
+                    // updated only once per epoch
+                    //if (i == diff)
+                    //    reuse_distance_across_epoch[cacheline].push_back(gpu_tot_sim_cycle + gpu_sim_cycle);
+                }
+                // Increment the acccesses per epoch
+                num_access_per_cacheline[cacheline][epoch_number+3] += 1;
+
+                // update last access re-use distance stats
+                // local update
+                reuse_distance_per_epoch[cacheline].push_back(gpu_tot_sim_cycle + gpu_sim_cycle);
+
                 mf->set_status(IN_PARTITION_DRAM_LATENCY_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
                 m_arbitration_metadata.borrow_credit(spid); 
                 break;  // the DRAM should only accept one request per cycle 
@@ -273,7 +312,7 @@ void memory_partition_unit::set_dram_power_stats(unsigned &n_cmd,
     m_dram->set_dram_power_stats(n_cmd, n_activity, n_nop, n_act, n_pre, n_rd, n_wr, n_req);
 }
 
-void memory_partition_unit::print( FILE *fp ) const
+void memory_partition_unit::print( FILE *fp )
 {
     fprintf(fp, "Memory Partition %u: \n", m_id); 
     for (unsigned p = 0; p < m_config->m_n_sub_partition_per_memory_channel; p++) {
@@ -290,6 +329,49 @@ void memory_partition_unit::print( FILE *fp ) const
             fprintf(fp, " <NULL mem_fetch?>\n"); 
     }
     m_dram->print(fp); 
+    
+    // Unique accesses stats
+    fprintf(fp, "Cache line map size: %ld \n", num_access_per_cacheline.size());
+    fprintf(fp, "Addr Accesses\n");
+    std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it = num_access_per_cacheline.begin();
+    //std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it1 = reuse_distance_per_epoch.begin();
+    //std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it2 = reuse_distance_across_epoch.begin();
+    unsigned int sum = 0;
+    for (; it != num_access_per_cacheline.end(); ++it) {
+        fprintf(fp, "%lld: ", it->first);
+        sum = 0;
+        for (int i=0; i<it->second.size(); ++i) {
+            if (i>2) sum += it->second[i];
+            fprintf(fp, "%ld ", it->second[i]);
+        }
+        fprintf(fp, " %d\n", sum);
+    }
+
+    // re-use distance stats
+    fprintf(fp, "Re-use distance in this kernel\n");
+    it = reuse_distance_per_epoch.begin();
+    for (; it != reuse_distance_per_epoch.end(); ++it) {
+        fprintf(fp, "%lld: ", it->first);
+        for (int i=0; i<it->second.size(); ++i)
+            fprintf(fp, "%ld ", it->second[i]);
+        fprintf(fp, "\n");
+
+        // update the global re-use map
+        reuse_distance_across_epoch[it->first].push_back(it->second.back());
+    }
+    fprintf(fp, "\n");
+    reuse_distance_per_epoch.clear();
+
+    fprintf(fp, "Global re-use distance in this kernel\n");
+    it = reuse_distance_across_epoch.begin();
+    for (; it != reuse_distance_across_epoch.end(); ++it) {
+        fprintf(fp, "%lld: ", it->first);
+        for (int i=0; i<it->second.size(); ++i)
+            fprintf(fp, "%ld ", it->second[i]);
+        fprintf(fp, "\n");
+    }
+
+    ++epoch_number;
 }
 
 memory_sub_partition::memory_sub_partition( unsigned sub_partition_id, 

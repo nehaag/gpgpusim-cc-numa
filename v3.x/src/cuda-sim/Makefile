@@ -97,10 +97,10 @@ $(OUTPUT_DIR)/ptxinfo.tab.c: ptxinfo.y
 	bison --name-prefix=ptxinfo_ -v -d ptxinfo.y --file-prefix=$(OUTPUT_DIR)/ptxinfo
 
 $(OUTPUT_DIR)/lex.ptx_.c: ptx.l
-	flex --outfile=$(OUTPUT_DIR)/lex.ptx_.c ptx.l 
+	flex -o$(OUTPUT_DIR)/lex.ptx_.c ptx.l 
 
 $(OUTPUT_DIR)/lex.ptxinfo_.c: ptxinfo.l
-	flex --outfile=$(OUTPUT_DIR)/lex.ptxinfo_.c ptxinfo.l 
+	flex -o$(OUTPUT_DIR)/lex.ptxinfo_.c ptxinfo.l 
 
 clean:
 	rm -f *~ *.o *.gcda *.gcno *.gcov libgpgpu_ptx_sim.a \

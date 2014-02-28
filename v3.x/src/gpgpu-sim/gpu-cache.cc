@@ -1020,7 +1020,6 @@ data_cache::access( new_addr_type addr,
                     unsigned time,
                     std::list<cache_event> &events )
 {
-
     assert( mf->get_data_size() <= m_config.get_line_sz());
     bool wr = mf->get_is_write();
     new_addr_type block_addr = m_config.block_addr(addr);

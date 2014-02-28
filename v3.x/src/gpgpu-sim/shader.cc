@@ -649,6 +649,8 @@ void shader_core_ctx::fetch()
                     m_last_warp_fetched=warp_id;
                     m_inst_fetch_buffer = ifetch_buffer_t(pc,nbytes,warp_id);
                     m_warp[warp_id].set_last_fetch(gpu_sim_cycle);
+                    //Neha
+                    mem_accesses_INST[mf->get_addr()] += 1;
                     delete mf;
                 } else {
                     m_last_warp_fetched=warp_id;
@@ -1199,6 +1201,10 @@ void ldst_unit::get_L1T_sub_stats(struct cache_sub_stats &css) const{
     if(m_L1T)
         m_L1T->get_sub_stats(css);
 }
+void ldst_unit::get_cumulative_stats(FILE *fp) const{
+    fprintf(fp, "All constant+texture+interconnect memory accesses = %lld\n", mem_accesses.size());
+    fprintf(fp, "All l1D+interconnect memory accesses = %lld\n", mem_accesses_DATA.size());
+}
 
 void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst)
 {
@@ -1298,6 +1304,8 @@ ldst_unit::process_cache_access( cache_t* cache,
     if( write_sent ) 
         m_core->inc_store_req( inst.warp_id() );
     if ( status == HIT ) {
+        //Neha
+        mem_accesses[mf->get_addr()] += 1;
         assert( !read_sent );
         inst.accessq_pop_back();
         if ( inst.is_load() ) {
@@ -1400,6 +1408,9 @@ bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_rea
        } else {
            mem_fetch *mf = m_mf_allocator->alloc(inst,access);
            m_icnt->push(mf);
+           //Neha
+           //Request going directly to memory sub-partition via interconnect
+           mem_accesses_DATA[mf->get_addr()] += 1;
            inst.accessq_pop_back();
            //inst.clear_active( access.get_warp_mask() );
            if( inst.is_load() ) { 
@@ -2064,6 +2075,12 @@ void gpgpu_sim::shader_print_cache_stats( FILE *fout ) const{
         fprintf(fout, "\tL1T_total_cache_pending_hits = %u\n", total_css.pending_hits);
         fprintf(fout, "\tL1T_total_cache_reservation_fails = %u\n", total_css.res_fails);
     }
+
+    //Neha
+    //Reporting cumulative access to l1d, const, texture caches
+    for ( unsigned i = 0; i < m_shader_config->n_simt_clusters; ++i ) {
+        m_cluster[i]->get_cumulative_stats(fout);
+    }
 }
 
 void gpgpu_sim::shader_print_l1_miss_stat( FILE *fout ) const
@@ -2721,6 +2738,7 @@ void shader_core_ctx::store_ack( class mem_fetch *mf )
 
 void shader_core_ctx::print_cache_stats( FILE *fp, unsigned& dl1_accesses, unsigned& dl1_misses ) {
    m_ldst_unit->print_cache_stats( fp, dl1_accesses, dl1_misses );
+   m_ldst_unit->print(fp);
 }
 
 void shader_core_ctx::get_cache_stats(cache_stats &cs){
@@ -2732,6 +2750,11 @@ void shader_core_ctx::get_cache_stats(cache_stats &cs){
 void shader_core_ctx::get_L1I_sub_stats(struct cache_sub_stats &css) const{
     if(m_L1I)
         m_L1I->get_sub_stats(css);
+
+    printf("All memory instruction fetch accesses = %ld\n", mem_accesses_INST.size());
+    //std::map<unsigned long long, unsigned long>::const_iterator it = mem_accessesINST.begin();
+    //for (; it != mem_accesses_INST.end(); ++it)
+    //    printf("Address: %lld, Accessed: %ld\n", it->first, it->second);
 }
 void shader_core_ctx::get_L1D_sub_stats(struct cache_sub_stats &css) const{
     m_ldst_unit->get_L1D_sub_stats(css);
@@ -2741,6 +2764,15 @@ void shader_core_ctx::get_L1C_sub_stats(struct cache_sub_stats &css) const{
 }
 void shader_core_ctx::get_L1T_sub_stats(struct cache_sub_stats &css) const{
     m_ldst_unit->get_L1T_sub_stats(css);
+}
+void shader_core_ctx::get_cumulative_stats(FILE *fp) const{
+    m_ldst_unit->get_cumulative_stats(fp);
+}
+std::map<unsigned long long, unsigned long> shader_core_ctx::get_L1I_hits() const{
+    return mem_accesses_INST;
+}
+std::map<unsigned long long, unsigned long> shader_core_ctx::get_L1CTD_hits() const{
+    return m_ldst_unit->mem_accesses;
 }
 
 void shader_core_ctx::get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_simt) const{
@@ -3211,6 +3243,9 @@ void simt_core_cluster::icnt_inject_request_packet(class mem_fetch *mf)
       ::icnt_push(m_cluster_id, m_config->mem2device(destination), (void*)mf, mf->get_ctrl_size() );
    else 
       ::icnt_push(m_cluster_id, m_config->mem2device(destination), (void*)mf, mf->size());
+
+   //Neha
+   mem_accesses_ICNT[mf->get_addr()] += 1;
 }
 
 void simt_core_cluster::icnt_cycle()
@@ -3336,6 +3371,30 @@ void simt_core_cluster::get_L1T_sub_stats(struct cache_sub_stats &css) const{
         total_css += temp_css;
     }
     css = total_css;
+}
+//Neha
+void simt_core_cluster::get_cumulative_stats(FILE *fp) const{
+    //for ( unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i )
+    //    m_core[i]->get_cumulative_stats(fp);
+    fprintf(fp, "All interconnect accessed = %ld \n", mem_accesses_ICNT.size());
+    //collect all the L1 INST hits together
+    std::map<unsigned long long, unsigned long> map_L1I_hits;
+    std::map<unsigned long long, unsigned long>::const_iterator it_temp_i;
+    //collect all the  L1 C, T, D hits together
+    std::map<unsigned long long, unsigned long> map_L1CTD_hits;
+    std::map<unsigned long long, unsigned long>::const_iterator it_temp_ctd;
+    for ( unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i ) {
+        std::map<unsigned long long, unsigned long> temp_L1I_hits;
+        std::map<unsigned long long, unsigned long> temp_L1CTD_hits;
+        temp_L1I_hits = m_core[i]->get_L1I_hits();
+        temp_L1CTD_hits = m_core[i]->get_L1CTD_hits();
+        for (it_temp_i = temp_L1I_hits.begin(); it_temp_i != temp_L1I_hits.end(); ++it_temp_i)
+            map_L1I_hits[it_temp_i->first] += it_temp_i->second;
+        for (it_temp_ctd = temp_L1CTD_hits.begin(); it_temp_ctd != temp_L1CTD_hits.end(); ++it_temp_ctd)
+            map_L1CTD_hits[it_temp_ctd->first] += it_temp_ctd->second;
+    }
+    fprintf(fp, "All instruction hits = %ld \n", map_L1I_hits.size());
+    fprintf(fp, "All CTD hits = %ld \n", map_L1CTD_hits.size());
 }
 
 void shader_core_ctx::checkExecutionStatusAndUpdate(warp_inst_t &inst, unsigned t, unsigned tid)

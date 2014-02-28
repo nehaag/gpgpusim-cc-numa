@@ -94,7 +94,7 @@ ROOTOBJDIR ?= obj
 LIBDIR     := $(NVIDIA_COMPUTE_SDK_LOCATION)/lib
 COMMONDIR  := $(NVIDIA_COMPUTE_SDK_LOCATION)/common
 GPGPUSIM_ROOT ?= ../../..
-INTERMED_FILES := *.cpp*.i *.cpp*.ii *.cu.c *.cudafe*.* *.fatbin.c *.cubin *.hash
+INTERMED_FILES := *.cpp*.i *.cpp.ii *.cu.c *.cudafe*.* *.fatbin.c *.cubin *.hash
 CUDAHOME=$(CUDA_INSTALL_PATH)
 
 NVOPENCC_VER:=$(shell $$CUDAHOME/open64/bin/nvopencc --version 2>&1 | awk '/GPGPU-Sim/ {printf("_nvopencc_CL%d", $$3);}')
@@ -108,7 +108,7 @@ wsm5.f.cu : wsm5.cu
 
 wsm5.cu.o : wsm5.f.cu
 	$(NVCC) $(PHASE) $(NVOPT) wsm5.f.cu
-	$(CC) $(CFLAGS) -o wsm5.cu.o -c wsm5.f.cu.cpp
+	$(CC) $(CFLAGS) -o wsm5.cu.o -c wsm5.f.cu.cpp.ii
 
 
 wsm5_gpu.f.cu : wsm5_gpu.cu spt.h
@@ -116,7 +116,7 @@ wsm5_gpu.f.cu : wsm5_gpu.cu spt.h
 
 wsm5_gpu.cu.o : wsm5_gpu.f.cu
 	$(NVCC) $(PHASE) $(NVOPT) wsm5_gpu.f.cu
-	$(CC) $(CFLAGS) -o wsm5_gpu.cu.o -c wsm5_gpu.f.cu.cpp
+	$(CC) $(CFLAGS) -o wsm5_gpu.cu.o -c wsm5_gpu.f.cu.cpp.ii
 
 
 libmassv.o : libmassv.F

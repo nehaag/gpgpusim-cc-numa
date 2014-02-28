@@ -1313,8 +1313,9 @@ void gpgpu_sim::cycle()
             }
             if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_SHD_INFO) 
                shader_print_runtime_stat( stdout );
-            if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_L1MISS) 
+            if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_L1MISS) {
                shader_print_l1_miss_stat( stdout );
+            }
             if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_SCHED) 
                shader_print_scheduler_stat( stdout, false );
          }
