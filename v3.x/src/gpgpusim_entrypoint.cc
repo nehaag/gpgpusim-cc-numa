@@ -27,6 +27,7 @@
 
 #include "gpgpusim_entrypoint.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "option_parser.h"
 #include "cuda-sim/cuda-sim.h"
@@ -185,6 +186,10 @@ void exit_simulation()
 
 extern bool g_cuda_launch_blocking;
 
+void foo(void) {
+    g_the_gpu->print_stats();
+}
+
 gpgpu_sim *gpgpu_ptx_sim_init_perf()
 {
    srand(1);
@@ -213,6 +218,8 @@ gpgpu_sim *gpgpu_ptx_sim_init_perf()
    sem_init(&g_sim_signal_start,0,0);
    sem_init(&g_sim_signal_finish,0,0);
    sem_init(&g_sim_signal_exit,0,0);
+
+    atexit (foo);
 
    return g_the_gpu;
 }

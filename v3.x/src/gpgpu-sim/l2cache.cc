@@ -244,7 +244,7 @@ void memory_partition_unit::dram_cycle()
                 unsigned long long int cacheline = mf->get_addr() / 128;
 
                 // number of epochs this address was not accessed
-                unsigned int diff = 0;
+                int diff = 0;
                 // check if an element already exists
                 if (num_access_per_cacheline.count(cacheline))
                     diff = epoch_number - (num_access_per_cacheline[cacheline].size() - 3);
