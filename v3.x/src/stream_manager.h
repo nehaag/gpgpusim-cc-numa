@@ -245,7 +245,6 @@ public:
     bool empty_protected();
     bool empty();
     void print( FILE *fp);
-    void print_final_stats();
     void push( stream_operation op );
     bool operation(bool * sim);
 private:

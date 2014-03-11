@@ -521,6 +521,7 @@ unsigned gpgpu_sim::finished_kernel()
         return 0;
     unsigned result = m_finished_kernel.front();
     m_finished_kernel.pop_front();
+    if (result) epoch_number++;
     return result;
 }
 
@@ -571,7 +572,7 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
     m_memory_partition_unit = new memory_partition_unit*[m_memory_config->m_n_mem];
     m_memory_sub_partition = new memory_sub_partition*[m_memory_config->m_n_mem_sub_partition];
     for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
-        m_memory_partition_unit[i] = new memory_partition_unit(i, m_memory_config, m_memory_stats);
+        m_memory_partition_unit[i] = new memory_partition_unit(i, m_memory_config, m_memory_stats, &epoch_number);
         for (unsigned p = 0; p < m_memory_config->m_n_sub_partition_per_memory_channel; p++) {
             unsigned submpid = i * m_memory_config->m_n_sub_partition_per_memory_channel + p; 
             m_memory_sub_partition[submpid] = m_memory_partition_unit[i]->get_sub_partition(p); 
@@ -591,6 +592,8 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
     *active_sms=0;
 
     last_liveness_message_time = 0;
+
+    epoch_number = 0;
 }
 
 int gpgpu_sim::shared_mem_size() const

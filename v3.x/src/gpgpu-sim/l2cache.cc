@@ -62,8 +62,9 @@ mem_fetch * partition_mf_allocator::alloc(new_addr_type addr, mem_access_type ty
 
 memory_partition_unit::memory_partition_unit( unsigned partition_id, 
                                               const struct memory_config *config,
-                                              class memory_stats_t *stats )
-: m_id(partition_id), m_config(config), m_stats(stats), m_arbitration_metadata(config) 
+                                              class memory_stats_t *stats,
+                                              unsigned long int *epoch_number)
+: m_id(partition_id), m_config(config), m_stats(stats), m_arbitration_metadata(config), m_epoch_number(epoch_number) 
 {
     m_dram = new dram_t(m_id,m_config,m_stats,this);
 
@@ -73,8 +74,8 @@ memory_partition_unit::memory_partition_unit( unsigned partition_id,
         m_sub_partition[p] = new memory_sub_partition(sub_partition_id, m_config, stats); 
     }
 
-    // Initialize the epoch number
-    epoch_number = 0;
+    //// Initialize the epoch number
+    //epoch_number = 0;
 }
 
 memory_partition_unit::~memory_partition_unit() 
@@ -247,9 +248,9 @@ void memory_partition_unit::dram_cycle()
                 int diff = 0;
                 // check if an element already exists
                 if (num_access_per_cacheline.count(cacheline))
-                    diff = epoch_number - (num_access_per_cacheline[cacheline].size() - 3);
+                    diff = *m_epoch_number - (num_access_per_cacheline[cacheline].size() - 3);
                 else {
-                    diff = epoch_number;
+                    diff = *m_epoch_number;
 
                     // Store the address decoding at dram level in the map
                     const addrdec_t &tlx = mf->get_tlx_addr();
@@ -267,7 +268,7 @@ void memory_partition_unit::dram_cycle()
                     //    reuse_distance_across_epoch[cacheline].push_back(gpu_tot_sim_cycle + gpu_sim_cycle);
                 }
                 // Increment the acccesses per epoch
-                num_access_per_cacheline[cacheline][epoch_number+3] += 1;
+                num_access_per_cacheline[cacheline][*m_epoch_number+3] += 1;
 
                 // update last access re-use distance stats
                 // local update
@@ -338,7 +339,7 @@ void memory_partition_unit::print( FILE *fp )
     //std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it2 = reuse_distance_across_epoch.begin();
     unsigned int sum = 0;
     for (; it != num_access_per_cacheline.end(); ++it) {
-        fprintf(fp, "%lld: ", it->first);
+        fprintf(fp, "%lld ", it->first);
         sum = 0;
         for (int i=0; i<it->second.size(); ++i) {
             if (i>2) sum += it->second[i];
@@ -371,7 +372,7 @@ void memory_partition_unit::print( FILE *fp )
     //    fprintf(fp, "\n");
     //}
 
-    ++epoch_number;
+    //++epoch_number;
 }
 
 memory_sub_partition::memory_sub_partition( unsigned sub_partition_id, 

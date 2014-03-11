@@ -1117,6 +1117,7 @@ public:
     void get_cumulative_stats(FILE *fp) const;
     std::map<unsigned long long, unsigned long> mem_accesses;
     std::map<unsigned long long, unsigned long> mem_accesses_DATA;
+    std::map <unsigned long long int, std::vector<unsigned long int> > num_access_per_address;
 
 protected:
     ldst_unit( mem_fetch_interface *icnt,
@@ -1627,6 +1628,7 @@ public:
     void get_cumulative_stats(FILE *fp) const;
     std::map<unsigned long long, unsigned long> get_L1I_hits() const;
     std::map<unsigned long long, unsigned long> get_L1CTD_hits() const;
+    std::map<unsigned long long, std::vector<unsigned long int> > get_num_access_per_address() const;
 
     void get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
 
@@ -1736,6 +1738,8 @@ public:
 	 void incfumemactivelanes_stat(unsigned active_count) {m_stats->m_active_fu_mem_lanes[m_sid]=m_stats->m_active_fu_mem_lanes[m_sid]+active_count;}
 
 	 void inc_simt_to_mem(unsigned n_flits){ m_stats->n_simt_to_mem[m_sid] += n_flits; }
+
+    simt_core_cluster *get_cluster() { return m_cluster; }
 
 private:
 	 unsigned inactive_lanes_accesses_sfu(unsigned active_count,double latency){
@@ -1882,7 +1886,8 @@ public:
     void get_L1C_sub_stats(struct cache_sub_stats &css) const;
     void get_L1T_sub_stats(struct cache_sub_stats &css) const;
     //Neha
-    void get_cumulative_stats(FILE *fp) const;
+    void get_cumulative_stats(FILE *fp);
+    std::map<unsigned long long, std::vector<unsigned long int> > cluster_num_access_per_address;
 
     void get_icnt_stats(long &n_simt_to_mem, long &n_mem_to_simt) const;
 

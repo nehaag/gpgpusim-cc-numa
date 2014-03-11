@@ -46,6 +46,7 @@
 #include <limits.h>
 #include "traffic_breakdown.h"
 #include "shader_trace.h"
+#include <stdexcept>
 
 #define PRIORITIZE_MSHR_OVER_WB 1
 #define MAX(a,b) (((a)>(b))?(a):(b))
@@ -1343,6 +1344,37 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
     mem_fetch *mf = m_mf_allocator->alloc(inst,inst.accessq_back());
     std::list<cache_event> events;
     enum cache_request_status status = cache->access(mf->get_addr(),mf,gpu_sim_cycle+gpu_tot_sim_cycle,events);
+
+    // Track per address accesses----------------------------------------------
+    // Add uniques addresses to the tracking data structure
+    // If address is not present then add 0 accesses for all
+    // previous epochs and also current
+    unsigned long long int address = mf->get_addr();
+
+    // number of epochs this address was not accessed
+    int diff = 0;
+    unsigned long int epoch_number = m_core->get_cluster()->get_gpu()->epoch_number;
+    // check if an element already exists
+    if (num_access_per_address.count(address))
+        diff = epoch_number - (num_access_per_address[address].size() - 3);
+    else {
+        diff = epoch_number;
+
+    // Store the address decoding at dram level in the map
+    const addrdec_t &tlx = mf->get_tlx_addr();
+        num_access_per_address[address].push_back(tlx.bk);
+        num_access_per_address[address].push_back(tlx.row);
+        num_access_per_address[address].push_back(tlx.col);
+    }
+
+    // push 0(s) for all the epochs till now
+    for (unsigned int i = 0; i < (diff+1); ++i) {
+        num_access_per_address[address].push_back(0);
+    }
+    // Increment the acccesses per epoch
+    num_access_per_address[address][epoch_number+3] += 1;
+    //-------------------------------------------------------------------------
+
     return process_cache_access( cache, mf->get_addr(), inst, events, mf, status );
 }
 
@@ -2081,6 +2113,52 @@ void gpgpu_sim::shader_print_cache_stats( FILE *fout ) const{
     for ( unsigned i = 0; i < m_shader_config->n_simt_clusters; ++i ) {
         m_cluster[i]->get_cumulative_stats(fout);
     }
+    //collect all accesses per address
+    std::map<unsigned long long, std::vector<unsigned long int> >::iterator it;
+    std::map<unsigned long long, std::vector<unsigned long int> > total_num_access_per_address;
+
+    for ( unsigned i = 0; i < m_shader_config->n_simt_clusters; ++i ) {
+        std::map<unsigned long long, std::vector<unsigned long int> > temp_num_access_per_address = m_cluster[i]->cluster_num_access_per_address;
+        it = temp_num_access_per_address.begin();
+        for (; it != temp_num_access_per_address.end(); ++it) {
+            unsigned int vector_size = it->second.size() - 1;
+            // to check if vector has elements already, if not then catch it and
+            // then insert required number of elements
+            try {
+                total_num_access_per_address[it->first].at(vector_size);
+            }
+            catch (std::out_of_range) {
+                total_num_access_per_address[it->first].resize(it->second.size());
+            }
+                    
+                    
+            for (int i=0; i<it->second.size(); ++i) {
+                // Address decoding thing
+                if (i<3) 
+                    //cluster_num_access_per_address[it->first][i] = it->second[i];
+                    total_num_access_per_address[it->first].at(i) = it->second[i];
+                // Actual accesses per epoch
+                else
+                    total_num_access_per_address[it->first].at(i) += it->second[i];
+            }
+        }
+    }
+
+
+    // Unique address accesses map 
+    fprintf(fout, "Total lane addresses map size: %ld \n", total_num_access_per_address.size());
+    //std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it = total_num_access_per_address.begin();
+    it = total_num_access_per_address.begin();
+    unsigned int sum = 0;
+    for (; it != total_num_access_per_address.end(); ++it) {
+        fprintf(fout, "%lld ", it->first);
+        sum = 0;
+        for (int i=0; i<it->second.size(); ++i) {
+            if (i>2) sum += it->second[i];
+            fprintf(fout, "%ld ", it->second[i]);
+        }
+        fprintf(fout, " %d\n", sum);
+    }
 }
 
 void gpgpu_sim::shader_print_l1_miss_stat( FILE *fout ) const
@@ -2774,6 +2852,10 @@ std::map<unsigned long long, unsigned long> shader_core_ctx::get_L1I_hits() cons
 std::map<unsigned long long, unsigned long> shader_core_ctx::get_L1CTD_hits() const{
     return m_ldst_unit->mem_accesses;
 }
+std::map<unsigned long long, std::vector<unsigned long int> > 
+shader_core_ctx::get_num_access_per_address() const{
+    return m_ldst_unit->num_access_per_address;
+}
 
 void shader_core_ctx::get_icnt_power_stats(long &n_simt_to_mem, long &n_mem_to_simt) const{
 	n_simt_to_mem += m_stats->n_simt_to_mem[m_sid];
@@ -3373,28 +3455,75 @@ void simt_core_cluster::get_L1T_sub_stats(struct cache_sub_stats &css) const{
     css = total_css;
 }
 //Neha
-void simt_core_cluster::get_cumulative_stats(FILE *fp) const{
-    //for ( unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i )
-    //    m_core[i]->get_cumulative_stats(fp);
+void simt_core_cluster::get_cumulative_stats(FILE *fp) {
+
     fprintf(fp, "All interconnect accessed = %ld \n", mem_accesses_ICNT.size());
+    
     //collect all the L1 INST hits together
     std::map<unsigned long long, unsigned long> map_L1I_hits;
     std::map<unsigned long long, unsigned long>::const_iterator it_temp_i;
+    
     //collect all the  L1 C, T, D hits together
     std::map<unsigned long long, unsigned long> map_L1CTD_hits;
     std::map<unsigned long long, unsigned long>::const_iterator it_temp_ctd;
+    
+    //collect all accesses per address
+    std::map<unsigned long long, std::vector<unsigned long int> >::iterator it;
+
     for ( unsigned i = 0; i < m_config->n_simt_cores_per_cluster; ++i ) {
-        std::map<unsigned long long, unsigned long> temp_L1I_hits;
-        std::map<unsigned long long, unsigned long> temp_L1CTD_hits;
-        temp_L1I_hits = m_core[i]->get_L1I_hits();
-        temp_L1CTD_hits = m_core[i]->get_L1CTD_hits();
+        std::map<unsigned long long, unsigned long> temp_L1I_hits = m_core[i]->get_L1I_hits();
+        std::map<unsigned long long, unsigned long> temp_L1CTD_hits = m_core[i]->get_L1CTD_hits();
+        std::map<unsigned long long, std::vector<unsigned long int> > temp_num_access_per_address = m_core[i]->get_num_access_per_address();
+
         for (it_temp_i = temp_L1I_hits.begin(); it_temp_i != temp_L1I_hits.end(); ++it_temp_i)
             map_L1I_hits[it_temp_i->first] += it_temp_i->second;
+
         for (it_temp_ctd = temp_L1CTD_hits.begin(); it_temp_ctd != temp_L1CTD_hits.end(); ++it_temp_ctd)
             map_L1CTD_hits[it_temp_ctd->first] += it_temp_ctd->second;
+
+        it = temp_num_access_per_address.begin();
+        for (; it != temp_num_access_per_address.end(); ++it) {
+            unsigned int vector_size = it->second.size() - 1;
+            // to check if vector has elements already, if not then catch it and
+            // then insert required number of elements
+            try {
+                cluster_num_access_per_address[it->first].at(vector_size);
+            }
+            catch (std::out_of_range) {
+                cluster_num_access_per_address[it->first].resize(it->second.size());
+            }
+                    
+                    
+            for (int i=0; i<it->second.size(); ++i) {
+                // Address decoding thing
+                if (i<3) 
+                    //cluster_num_access_per_address[it->first][i] = it->second[i];
+                    cluster_num_access_per_address[it->first].at(i) = it->second[i];
+                // Actual accesses per epoch
+                else
+                    cluster_num_access_per_address[it->first].at(i) += it->second[i];
+            }
+        }
     }
+
     fprintf(fp, "All instruction hits = %ld \n", map_L1I_hits.size());
     fprintf(fp, "All CTD hits = %ld \n", map_L1CTD_hits.size());
+
+    //// Unique address accesses map 
+    //fprintf(fp, "Total lane addresses map size: %ld \n", total_num_access_per_address.size());
+    //fprintf(fp, "Addr Accesses\n");
+    ////std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it = total_num_access_per_address.begin();
+    //it = total_num_access_per_address.begin();
+    //unsigned int sum = 0;
+    //for (; it != total_num_access_per_address.end(); ++it) {
+    //    fprintf(fp, "%lld: ", it->first);
+    //    sum = 0;
+    //    for (int i=0; i<it->second.size(); ++i) {
+    //        if (i>2) sum += it->second[i];
+    //        fprintf(fp, "%ld ", it->second[i]);
+    //    }
+    //    fprintf(fp, " %d\n", sum);
+    //}
 }
 
 void shader_core_ctx::checkExecutionStatusAndUpdate(warp_inst_t &inst, unsigned t, unsigned tid)

@@ -496,6 +496,9 @@ public:
    void change_cache_config(FuncCache cache_config);
    void set_cache_config(std::string kernel_name);
 
+    // Epoch number: 1 epoch = 1 kernel execution
+    unsigned long int epoch_number;
+
 };
 
 #endif

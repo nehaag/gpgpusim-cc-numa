@@ -58,7 +58,7 @@ private:
 class memory_partition_unit
 {
 public: 
-   memory_partition_unit( unsigned partition_id, const struct memory_config *config, class memory_stats_t *stats );
+   memory_partition_unit( unsigned partition_id, const struct memory_config *config, class memory_stats_t *stats , unsigned long int *epoch_number);
    ~memory_partition_unit(); 
 
    bool busy() const;
@@ -93,7 +93,7 @@ public:
    unsigned get_mpid() const { return m_id; }
 
    std::map <unsigned long long int, std::vector<unsigned long int> > num_access_per_cacheline;
-   unsigned long int epoch_number;
+   unsigned long int *m_epoch_number;
    //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_per_epoch;
    //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_across_epoch;
    
