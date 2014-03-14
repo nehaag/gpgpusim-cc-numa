@@ -226,9 +226,34 @@ public:
                  m_nset, m_assoc, m_line_sz );
     }
 
-    virtual unsigned set_index( new_addr_type addr ) const
+    //virtual unsigned set_index( new_addr_type addr ) const
+    //{
+    //    return(addr >> m_line_sz_log2) & (m_nset-1);
+    //}
+
+    // TODO make this a runtime option
+    #define USE_SET_INDEX_HASH 1
+    #define ODD_HASH_MULTIPLE 7
+
+    unsigned set_index( new_addr_type addr ) const
     {
-        return(addr >> m_line_sz_log2) & (m_nset-1);
+        unsigned set;
+        #if USE_SET_INDEX_HASH
+            set = set_index_hashed( addr );
+        #else
+            set = (addr >> m_line_sz_log2) & (m_nset-1);
+        #endif
+        assert( set < m_nset );
+        return set;
+    }
+
+    unsigned set_index_hashed( new_addr_type addr ) const{
+        new_addr_type set = (addr >> m_line_sz_log2) & (m_nset - 1);
+        new_addr_type tag = (addr >> (m_line_sz_log2+m_nset_log2));
+        tag *= ODD_HASH_MULTIPLE;
+
+        set = (set + tag) & (m_nset - 1);
+        return set;
     }
 
     new_addr_type tag( new_addr_type addr ) const

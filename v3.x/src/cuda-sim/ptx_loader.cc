@@ -229,6 +229,9 @@ void gpgpu_ptxinfo_load_from_string( const char *p_for_info, unsigned source_num
        exit(1);
     }
 
+    snprintf(commandline,1024,"sed -i /warning/d %s", tempfile_ptxinfo);
+    result = system(commandline);
+
     ptxinfo_in = fopen(tempfile_ptxinfo,"r");
     g_ptxinfo_filename = tempfile_ptxinfo;
     ptxinfo_parse();
