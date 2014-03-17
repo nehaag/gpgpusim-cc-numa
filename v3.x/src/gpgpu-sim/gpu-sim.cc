@@ -158,9 +158,9 @@ void memory_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_n_mem", OPT_UINT32, &m_n_mem, 
                  "number of memory modules (e.g. memory controllers) in gpu",
                  "8");
-    option_parser_register(opp, "-gpgpu_n_mem_t2", OPT_UINT32, &m_n_mem_t2, 
-                 "number of memory modules (e.g. memory controllers) in gpu of second type of memory",
-                 "0");
+    //option_parser_register(opp, "-gpgpu_n_mem_t2", OPT_UINT32, &m_n_mem_t2, 
+    //             "number of memory modules (e.g. memory controllers) in gpu of second type of memory",
+    //             "0");
     option_parser_register(opp, "-gpgpu_n_sub_partition_per_mchannel", OPT_UINT32, &m_n_sub_partition_per_memory_channel, 
                  "number of memory subpartition in each memory module",
                  "1");
@@ -188,9 +188,9 @@ void memory_config::reg_options(class OptionParser * opp)
     option_parser_register(opp, "-gpgpu_dram_timing_opt", OPT_CSTR, &gpgpu_dram_timing_opt, 
                 "DRAM timing parameters = {nbk:tCCD:tRRD:tRCD:tRAS:tRP:tRC:CL:WL:tCDLR:tWR:nbkgrp:tCCDL:tRTPL}",
                 "4:2:8:12:21:13:34:9:4:5:13:1:0:0");
-    option_parser_register(opp, "-gpgpu_dram_timing_opt_t2", OPT_CSTR, &gpgpu_dram_timing_opt_t2, 
-                "Type2 timing parameters = {nbk:tCCD:tRRD:tRCD:tRAS:tRP:tRC:CL:WL:tCDLR:tWR:nbkgrp:tCCDL:tRTPL}",
-                "8:2:8:12:21:13:34:9:4:5:13:1:0:0");
+    //option_parser_register(opp, "-gpgpu_dram_timing_opt_t2", OPT_CSTR, &gpgpu_dram_timing_opt_t2, 
+    //            "Type2 timing parameters = {nbk:tCCD:tRRD:tRCD:tRAS:tRP:tRC:CL:WL:tCDLR:tWR:nbkgrp:tCCDL:tRTPL}",
+    //            "8:2:8:12:21:13:34:9:4:5:13:1:0:0");
     option_parser_register(opp, "-rop_latency", OPT_UINT32, &rop_latency,
                      "ROP queue latency (default 85)",
                      "85");
