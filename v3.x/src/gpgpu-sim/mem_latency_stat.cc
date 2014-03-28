@@ -144,6 +144,9 @@ unsigned memory_stats_t::memlatstat_done(mem_fetch *mf )
    assert(idx<32);
    mf_lat_table[idx]++;
    shader_mem_lat_log(mf->get_sid(), mf_latency);
+//   unsigned dram_id = mf->get_tlx_addr().chip;
+//   if (dram_id >= 4) dram_id -= 4;
+//   mf_total_lat_table[dram_id][mf->get_tlx_addr().bk] += mf_latency;
    mf_total_lat_table[mf->get_tlx_addr().chip][mf->get_tlx_addr().bk] += mf_latency;
    if (mf_latency > max_mf_latency)
       max_mf_latency = mf_latency;
@@ -154,6 +157,10 @@ void memory_stats_t::memlatstat_read_done(mem_fetch *mf)
 {
    if (m_memory_config->gpgpu_memlatency_stat) {
       unsigned mf_latency = memlatstat_done(mf);
+//   unsigned dram_id = mf->get_tlx_addr().chip;
+//   if (dram_id >= 4) dram_id -= 4;
+//      if (mf_latency > mf_max_lat_table[dram_id][mf->get_tlx_addr().bk]) 
+//         mf_max_lat_table[dram_id][mf->get_tlx_addr().bk] = mf_latency;
       if (mf_latency > mf_max_lat_table[mf->get_tlx_addr().chip][mf->get_tlx_addr().bk]) 
          mf_max_lat_table[mf->get_tlx_addr().chip][mf->get_tlx_addr().bk] = mf_latency;
       unsigned icnt2sh_latency;
@@ -167,6 +174,7 @@ void memory_stats_t::memlatstat_read_done(mem_fetch *mf)
 void memory_stats_t::memlatstat_dram_access(mem_fetch *mf)
 {
    unsigned dram_id = mf->get_tlx_addr().chip;
+        
    unsigned bank = mf->get_tlx_addr().bk;
    if (m_memory_config->gpgpu_memlatency_stat) { 
       if (mf->get_is_write()) {

@@ -66,7 +66,10 @@ memory_partition_unit::memory_partition_unit( unsigned partition_id,
                                               unsigned long int *epoch_number)
 : m_id(partition_id), m_config(config), m_stats(stats), m_arbitration_metadata(config), m_epoch_number(epoch_number) 
 {
-    m_dram = new dram_t(m_id,m_config,m_stats,this);
+    unsigned dram_id = m_id;
+    if (config->type == 2) dram_id -= m_config->m_memory_config_types->memory_config_array[0].m_n_mem;
+    m_dram = new dram_t(dram_id,m_config,m_stats,this);
+//   m_dram = new dram_t(m_id,m_config,m_stats,this);
 
     m_sub_partition = new memory_sub_partition*[m_config->m_n_sub_partition_per_memory_channel]; 
     for (unsigned p = 0; p < m_config->m_n_sub_partition_per_memory_channel; p++) {
@@ -383,7 +386,7 @@ memory_sub_partition::memory_sub_partition( unsigned sub_partition_id,
     m_config=config;
     m_stats=stats;
 
-    assert(m_id < m_config->m_n_mem_sub_partition); 
+//    assert(m_id < m_config->m_n_mem_sub_partition); 
 
     char L2c_name[32];
     snprintf(L2c_name, 32, "L2_bank_%03d", m_id);

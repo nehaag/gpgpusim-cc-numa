@@ -73,6 +73,7 @@
 //Set a hard limit of 32 CTAs per shader [cuda only has 8]
 #define MAX_CTA_PER_SHADER 32
 
+
 class thread_ctx_t {
 public:
    unsigned m_cta_id; // hardware CTA this thread belongs
@@ -1126,7 +1127,7 @@ protected:
                opndcoll_rfu_t *operand_collector,
                Scoreboard *scoreboard,
                const shader_core_config *config,
-               const memory_config *mem_config,  
+               const memory_config* mem_config,  
                shader_core_stats *stats,
                unsigned sid,
                unsigned tpc,
@@ -1587,6 +1588,7 @@ public:
     }
    
     // accessors
+    const memory_config* get_mem_config() {return m_memory_config;}
     bool fetch_unit_response_buffer_full() const;
     bool ldst_unit_response_buffer_full() const;
     unsigned get_not_completed() const { return m_not_completed; }
@@ -1847,7 +1849,7 @@ public:
                        const struct shader_core_config *config, 
                        const struct memory_config *mem_config,
                        shader_core_stats *stats,
-                       memory_stats_t *mstats );
+                       memory_stats_t **mstats );
 
     //Neha
     std::map<unsigned long long, unsigned long> mem_accesses_ICNT;
@@ -1896,7 +1898,7 @@ private:
     gpgpu_sim *m_gpu;
     const shader_core_config *m_config;
     shader_core_stats *m_stats;
-    memory_stats_t *m_memory_stats;
+    memory_stats_t **m_memory_stats;
     shader_core_ctx **m_core;
 
     unsigned m_cta_issue_next_core;

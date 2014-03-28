@@ -50,18 +50,30 @@ linear_to_raw_address_translation::linear_to_raw_address_translation()
    addrdec_mask[3] = 0x000000000000E0FF;
    addrdec_mask[4] = 0x000000000000000F;
 }
-
-void linear_to_raw_address_translation::addrdec_setoption(option_parser_t opp)
+void option_parser_register_mem(option_parser_t opp, 
+                            std::string name, 
+                            enum option_dtype type, 
+                            void *variable, 
+                            const char *desc,  
+                            const char *defaultvalue,
+                            std::string  num)
 {
-   option_parser_register(opp, "-gpgpu_mem_addr_mapping", OPT_CSTR, &addrdec_option,
+    name += "_t";
+    name += num;
+    const char* pass_name = name.c_str();
+    option_parser_register(opp, pass_name, type, variable, desc, defaultvalue);
+}
+void linear_to_raw_address_translation::addrdec_setoption(option_parser_t opp, std::string num)
+{
+   option_parser_register_mem(opp, "-gpgpu_mem_addr_mapping", OPT_CSTR, &addrdec_option,
       "mapping memory address to dram model {dramid@<start bit>;<memory address map>}",
-      NULL);
-   option_parser_register(opp, "-gpgpu_mem_addr_test", OPT_BOOL, &run_test,
+      NULL, num);
+   option_parser_register_mem(opp, "-gpgpu_mem_addr_test", OPT_BOOL, &run_test,
       "run sweep test to check address mapping for aliased address",
-      "0");
-   option_parser_register(opp, "-gpgpu_mem_address_mask", OPT_INT32, &gpgpu_mem_address_mask, 
+      "0", num);
+   option_parser_register_mem(opp, "-gpgpu_mem_address_mask", OPT_INT32, &gpgpu_mem_address_mask, 
                "0 = old addressing mask, 1 = new addressing mask, 2 = new add. mask + flipped bank sel and chip sel bits",
-               "0");
+               "0", num);
 }
 
 new_addr_type linear_to_raw_address_translation::partition_address( new_addr_type addr ) const 
@@ -107,6 +119,12 @@ void linear_to_raw_address_translation::addrdec_tlx(new_addr_type addr, addrdec_
    unsigned sub_partition_addr_mask = m_n_sub_partition_in_channel - 1; 
    tlx->sub_partition = tlx->chip * m_n_sub_partition_in_channel
                         + (tlx->bk & sub_partition_addr_mask); 
+}
+
+void linear_to_raw_address_translation::addrdec_tlx_hetero(new_addr_type addr, addrdec_t *tlx, unsigned partition_offset) const {
+    addrdec_tlx(addr, tlx);
+    //tlx->sub_partition is the global subpartiton id
+    tlx->sub_partition += partition_offset;
 }
 
 void linear_to_raw_address_translation::addrdec_parseoption(const char *option)
@@ -273,7 +291,7 @@ void linear_to_raw_address_translation::init(unsigned int n_channel, unsigned in
    if (addrdec_option != NULL) 
       addrdec_parseoption(addrdec_option);
 
-   if (ADDR_CHIP_S != -1) { 
+   if (ADDR_CHIP_S != -1) {
       if (!gap) {
          // number of chip is power of two: 
          // - insert CHIP mask starting at the bit position ADDR_CHIP_S

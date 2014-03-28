@@ -93,6 +93,7 @@ unsigned int gpu_stall_icnt2sh = 0;
 #define  L2    0x02
 #define  DRAM  0x04
 #define  ICNT  0x08  
+#define  DRAM_t2  0x10
 
 
 #define MEM_LATENCY_STAT_IMPL
@@ -136,69 +137,81 @@ void power_config::reg_options(class OptionParser * opp)
 	                 	  "8:4");
 
 }
+//void option_parser_register_mem(option_parser_t opp, 
+//                            std::string name, 
+//                            enum option_dtype type, 
+//                            void *variable, 
+//                            const char *desc,  
+//                            const char *defaultvalue,
+//                            std::string  num)
+//{
+//    name += "_" + num;
+//    const char* pass_name = name.c_str();
+//    option_parser_register(opp, pass_name, type, variable, desc, defaultvalue);
+//}
 
-void memory_config::reg_options(class OptionParser * opp)
+void memory_config::reg_options(class OptionParser * opp, unsigned num)
 {
-    option_parser_register(opp, "-gpgpu_dram_scheduler", OPT_INT32, &scheduler_type, 
-                                "0 = fifo, 1 = FR-FCFS (defaul)", "1");
-    option_parser_register(opp, "-gpgpu_dram_partition_queues", OPT_CSTR, &gpgpu_L2_queue_config, 
+    char num_str[10];
+    sprintf(num_str, "%d", num);
+    type = num;
+    option_parser_register_mem(opp, "-gpgpu_dram_scheduler", OPT_INT32, &scheduler_type, 
+                                "0 = fifo, 1 = FR-FCFS (defaul)", "1", num_str);
+    option_parser_register_mem(opp, "-gpgpu_dram_partition_queues", OPT_CSTR, &gpgpu_L2_queue_config, 
                            "i2$:$2d:d2$:$2i",
-                           "8:8:8:8");
+                           "8:8:8:8", num_str);
 
-    option_parser_register(opp, "-l2_ideal", OPT_BOOL, &l2_ideal, 
+    option_parser_register_mem(opp, "-l2_ideal", OPT_BOOL, &l2_ideal, 
                            "Use a ideal L2 cache that always hit",
-                           "0");
-    option_parser_register(opp, "-gpgpu_cache:dl2", OPT_CSTR, &m_L2_config.m_config_string, 
+                           "0", num_str);
+    option_parser_register_mem(opp, "-gpgpu_cache:dl2", OPT_CSTR, &m_L2_config.m_config_string, 
                    "unified banked L2 data cache config "
                    " {<nsets>:<bsize>:<assoc>,<rep>:<wr>:<alloc>:<wr_alloc>,<mshr>:<N>:<merge>,<mq>}",
-                   "64:128:8,L:B:m:N,A:16:4,4");
-    option_parser_register(opp, "-gpgpu_cache:dl2_texture_only", OPT_BOOL, &m_L2_texure_only, 
+                   "64:128:8,L:B:m:N,A:16:4,4", num_str);
+    option_parser_register_mem(opp, "-gpgpu_cache:dl2_texture_only", OPT_BOOL, &m_L2_texure_only, 
                            "L2 cache used for texture only",
-                           "1");
-    option_parser_register(opp, "-gpgpu_n_mem", OPT_UINT32, &m_n_mem, 
+                           "1", num_str);
+    option_parser_register_mem(opp, "-gpgpu_n_mem", OPT_UINT32, &m_n_mem, 
                  "number of memory modules (e.g. memory controllers) in gpu",
-                 "8");
-    //option_parser_register(opp, "-gpgpu_n_mem_t2", OPT_UINT32, &m_n_mem_t2, 
-    //             "number of memory modules (e.g. memory controllers) in gpu of second type of memory",
-    //             "0");
-    option_parser_register(opp, "-gpgpu_n_sub_partition_per_mchannel", OPT_UINT32, &m_n_sub_partition_per_memory_channel, 
+                 "8", num_str);
+    option_parser_register_mem(opp, "-gpgpu_n_sub_partition_per_mchannel", OPT_UINT32, &m_n_sub_partition_per_memory_channel, 
                  "number of memory subpartition in each memory module",
-                 "1");
-    option_parser_register(opp, "-gpgpu_n_mem_per_ctrlr", OPT_UINT32, &gpu_n_mem_per_ctrlr, 
+                 "1", num_str);
+    option_parser_register_mem(opp, "-gpgpu_n_mem_per_ctrlr", OPT_UINT32, &gpu_n_mem_per_ctrlr, 
                  "number of memory chips per memory controller",
-                 "1");
-    option_parser_register(opp, "-gpgpu_memlatency_stat", OPT_INT32, &gpgpu_memlatency_stat, 
+                 "1", num_str);
+    option_parser_register_mem(opp, "-gpgpu_memlatency_stat", OPT_INT32, &gpgpu_memlatency_stat, 
                 "track and display latency statistics 0x2 enables MC, 0x4 enables queue logs",
-                "0");
-    option_parser_register(opp, "-gpgpu_frfcfs_dram_sched_queue_size", OPT_INT32, &gpgpu_frfcfs_dram_sched_queue_size, 
+                "0", num_str);
+    option_parser_register_mem(opp, "-gpgpu_frfcfs_dram_sched_queue_size", OPT_INT32, &gpgpu_frfcfs_dram_sched_queue_size, 
                 "0 = unlimited (default); # entries per chip",
-                "0");
-    option_parser_register(opp, "-gpgpu_dram_return_queue_size", OPT_INT32, &gpgpu_dram_return_queue_size, 
+                "0", num_str);
+    option_parser_register_mem(opp, "-gpgpu_dram_return_queue_size", OPT_INT32, &gpgpu_dram_return_queue_size, 
                 "0 = unlimited (default); # entries per chip",
-                "0");
-    option_parser_register(opp, "-gpgpu_dram_buswidth", OPT_UINT32, &busW, 
+                "0", num_str);
+    option_parser_register_mem(opp, "-gpgpu_dram_buswidth", OPT_UINT32, &busW, 
                  "default = 4 bytes (8 bytes per cycle at DDR)",
-                 "4");
-    option_parser_register(opp, "-gpgpu_dram_burst_length", OPT_UINT32, &BL, 
+                 "4", num_str);
+    option_parser_register_mem(opp, "-gpgpu_dram_burst_length", OPT_UINT32, &BL, 
                  "Burst length of each DRAM request (default = 4 data bus cycle)",
-                 "4");
-    option_parser_register(opp, "-dram_data_command_freq_ratio", OPT_UINT32, &data_command_freq_ratio, 
+                 "4", num_str);
+    option_parser_register_mem(opp, "-dram_data_command_freq_ratio", OPT_UINT32, &data_command_freq_ratio, 
                  "Frequency ratio between DRAM data bus and command bus (default = 2 times, i.e. DDR)",
-                 "2");
-    option_parser_register(opp, "-gpgpu_dram_timing_opt", OPT_CSTR, &gpgpu_dram_timing_opt, 
+                 "2", num_str);
+    option_parser_register_mem(opp, "-gpgpu_dram_timing_opt", OPT_CSTR, &gpgpu_dram_timing_opt, 
                 "DRAM timing parameters = {nbk:tCCD:tRRD:tRCD:tRAS:tRP:tRC:CL:WL:tCDLR:tWR:nbkgrp:tCCDL:tRTPL}",
-                "4:2:8:12:21:13:34:9:4:5:13:1:0:0");
-    //option_parser_register(opp, "-gpgpu_dram_timing_opt_t2", OPT_CSTR, &gpgpu_dram_timing_opt_t2, 
-    //            "Type2 timing parameters = {nbk:tCCD:tRRD:tRCD:tRAS:tRP:tRC:CL:WL:tCDLR:tWR:nbkgrp:tCCDL:tRTPL}",
-    //            "8:2:8:12:21:13:34:9:4:5:13:1:0:0");
-    option_parser_register(opp, "-rop_latency", OPT_UINT32, &rop_latency,
+                "4:2:8:12:21:13:34:9:4:5:13:1:0:0", num_str);
+    option_parser_register_mem(opp, "-rop_latency", OPT_UINT32, &rop_latency,
                      "ROP queue latency (default 85)",
-                     "85");
-    option_parser_register(opp, "-dram_latency", OPT_UINT32, &dram_latency,
+                     "85", num_str);
+    option_parser_register_mem(opp, "-dram_latency", OPT_UINT32, &dram_latency,
                      "DRAM latency (default 30)",
-                     "30");
+                     "30", num_str);
+    option_parser_register_mem(opp, "-addr_limit", OPT_UINT32, &addr_limit,
+                     "Address above this to be maaped to different type of memory",
+                     "0", num_str);
 
-    m_address_mapping.addrdec_setoption(opp);
+    m_address_mapping.addrdec_setoption(opp, num_str);
 }
 
 void shader_core_config::reg_options(class OptionParser * opp)
@@ -560,10 +573,22 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
 #endif
 
     m_shader_stats = new shader_core_stats(m_shader_config);
-    m_memory_stats = new memory_stats_t(m_config.num_shader(),m_shader_config,m_memory_config);
+    //Handle different memory types
+    m_memory_stats = new memory_stats_t*[m_memory_config->m_n_mem_types];
+//    m_power_stats = new power_stat_t*[m_memory_config->m_n_mem];
+    for (unsigned i=0;i<m_memory_config->m_n_mem_types;i++) {
+//        unsigned index = (m_memory_config->m_n_mem_types == 1) ? ((m_memory_config->m_n_mem_t1) ? i : 1) : i;
+        const memory_config* memory_config_type = &(m_memory_config->memory_config_array[i]);
+        m_memory_stats[i] = new memory_stats_t(m_config.num_shader(),m_shader_config,memory_config_type);
+//      m_power_stats[i] = new power_stat_t(m_shader_config,average_pipeline_duty_cycle,active_sms,m_shader_stats,memory_config_type,m_memory_stats[i]);
+
+    }
+    //TODO
+    m_power_stats = new power_stat_t(m_shader_config,average_pipeline_duty_cycle,active_sms,m_shader_stats,&(m_memory_config->memory_config_array[0]),m_memory_stats[0]);
+
     average_pipeline_duty_cycle = (float *)malloc(sizeof(float));
     active_sms=(float *)malloc(sizeof(float));
-    m_power_stats = new power_stat_t(m_shader_config,average_pipeline_duty_cycle,active_sms,m_shader_stats,m_memory_config,m_memory_stats);
+//    m_power_stats = new power_stat_t(m_shader_config,average_pipeline_duty_cycle,active_sms,m_shader_stats,m_memory_config,m_memory_stats);
 
     gpu_sim_insn = 0;
     gpu_tot_sim_insn = 0;
@@ -572,21 +597,40 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
 
 
     m_cluster = new simt_core_cluster*[m_shader_config->n_simt_clusters];
-    for (unsigned i=0;i<m_shader_config->n_simt_clusters;i++) 
-        m_cluster[i] = new simt_core_cluster(this,i,m_shader_config,m_memory_config,m_shader_stats,m_memory_stats);
+    for (unsigned i=0;i<m_shader_config->n_simt_clusters;i++)  {
+//        m_cluster[i] = new simt_core_cluster(this,i,m_shader_config,m_memory_config,m_shader_stats,m_memory_stats[0]);
+        m_cluster[i] = new simt_core_cluster(this,i,m_shader_config,&m_memory_config->memory_config_array[0],m_shader_stats,m_memory_stats);
+    }
 
+    //TODO: for now, assume all memories have same partition parameters except
+    //dram timing
     m_memory_partition_unit = new memory_partition_unit*[m_memory_config->m_n_mem];
-    m_memory_sub_partition = new memory_sub_partition*[m_memory_config->m_n_mem_sub_partition];
+    unsigned t1 = m_memory_config->memory_config_array[0].m_n_mem_sub_partition;
+    unsigned t2 = m_memory_config->memory_config_array[1].m_n_mem_sub_partition;
+    unsigned t = t1+t2;
+    m_memory_sub_partition = new memory_sub_partition*[t];
+//    m_memory_sub_partition = new memory_sub_partition*[&m_memory_config->memory_config_array[0].m_n_mem_sub_partition];
     for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
-        m_memory_partition_unit[i] = new memory_partition_unit(i, m_memory_config, m_memory_stats, &epoch_number);
-        for (unsigned p = 0; p < m_memory_config->m_n_sub_partition_per_memory_channel; p++) {
-            unsigned submpid = i * m_memory_config->m_n_sub_partition_per_memory_channel + p; 
+        //sdduming only 2 types of memory for now
+        unsigned type = 0;
+        if (i >= m_memory_config->memory_config_array[0].m_n_mem) {
+            type = 1;
+        }
+        const memory_config* memory_config_type = &(m_memory_config->memory_config_array[type]);
+        m_memory_partition_unit[i] = new memory_partition_unit(i, memory_config_type, m_memory_stats[type], &epoch_number);
+//        m_memory_partition_unit[i] = new memory_partition_unit(i, const_cast<memory_config*>(&memory_config_type), m_memory_stats, &epoch_number);
+        unsigned t3 = m_memory_config->memory_config_array[0].m_n_sub_partition_per_memory_channel;
+//        for (unsigned p = 0; p < &m_memory_config->memory_config_array[0].m_n_sub_partition_per_memory_channel; p++) {
+        for (unsigned p = 0; p < t3; p++) {
+            unsigned submpid = i * t3 + p; 
+//            unsigned submpid = i * m_memory_config->m_n_sub_partition_per_memory_channel + p; 
             m_memory_sub_partition[submpid] = m_memory_partition_unit[i]->get_sub_partition(p); 
         }
     }
 
     icnt_wrapper_init();
-    icnt_create(m_shader_config->n_simt_clusters,m_memory_config->m_n_mem_sub_partition);
+    icnt_create(m_shader_config->n_simt_clusters, t);
+//    icnt_create(m_shader_config->n_simt_clusters,m_memory_config->m_n_mem_sub_partition);
 
     time_vector_create(NUM_MEM_REQ_STAT);
     fprintf(stdout, "GPGPU-Sim uArch: performance model initialization complete.\n");
@@ -639,24 +683,29 @@ enum divergence_support_t gpgpu_sim::simd_model() const
 
 void gpgpu_sim_config::init_clock_domains(void ) 
 {
-   sscanf(gpgpu_clock_domains,"%lf:%lf:%lf:%lf", 
-          &core_freq, &icnt_freq, &l2_freq, &dram_freq);
+   sscanf(gpgpu_clock_domains,"%lf:%lf:%lf:%lf:%lf", 
+          &core_freq, &icnt_freq, &l2_freq, &dram_freq, &dram_freq_t2);
    core_freq = core_freq MhZ;
    icnt_freq = icnt_freq MhZ;
    l2_freq = l2_freq MhZ;
    dram_freq = dram_freq MhZ;        
+   dram_freq_t2 = dram_freq_t2 MhZ;        
    core_period = 1/core_freq;
    icnt_period = 1/icnt_freq;
    dram_period = 1/dram_freq;
+   dram_period_t2 = 1/dram_freq_t2;
    l2_period = 1/l2_freq;
-   printf("GPGPU-Sim uArch: clock freqs: %lf:%lf:%lf:%lf\n",core_freq,icnt_freq,l2_freq,dram_freq);
-   printf("GPGPU-Sim uArch: clock periods: %.20lf:%.20lf:%.20lf:%.20lf\n",core_period,icnt_period,l2_period,dram_period);
+//   printf("GPGPU-Sim uArch: clock freqs: %lf:%lf:%lf:%lf\n",core_freq,icnt_freq,l2_freq,dram_freq);
+//   printf("GPGPU-Sim uArch: clock periods: %.20lf:%.20lf:%.20lf:%.20lf\n",core_period,icnt_period,l2_period,dram_period);
+   printf("GPGPU-Sim uArch: clock freqs: %lf:%lf:%lf:%lf:%lf\n",core_freq,icnt_freq,l2_freq,dram_freq,dram_freq_t2);
+   printf("GPGPU-Sim uArch: clock periods: %.20lf:%.20lf:%.20lf:%.20lf:%.20lf\n",core_period,icnt_period,l2_period,dram_period,dram_period_t2);
 }
 
 void gpgpu_sim::reinit_clock_domains(void)
 {
    core_time = 0;
    dram_time = 0;
+   dram_time_t2 = 0;
    icnt_time = 0;
    l2_time = 0;
 }
@@ -723,7 +772,8 @@ void gpgpu_sim::init()
 }
 
 void gpgpu_sim::update_stats() {
-    m_memory_stats->memlatstat_lat_pw();
+    for (unsigned i=0; i<m_memory_config->m_n_mem_types; i++)
+        m_memory_stats[i]->memlatstat_lat_pw();
     gpu_tot_sim_cycle += gpu_sim_cycle;
     gpu_tot_sim_insn += gpu_sim_insn;
 }
@@ -932,12 +982,15 @@ void gpgpu_sim::gpu_print_stat()
 #endif
 
    // performance counter that are not local to one shader
-   m_memory_stats->memlatstat_print(m_memory_config->m_n_mem,m_memory_config->nbk);
+   unsigned t = m_memory_config->memory_config_array[0].nbk;
+    for (unsigned i=0; i<m_memory_config->m_n_mem_types; i++)
+        m_memory_stats[i]->memlatstat_print(m_memory_config->memory_config_array[i].m_n_mem,t);
+//   m_memory_stats->memlatstat_print(m_memory_config->m_n_mem,m_memory_config->nbk);
    for (unsigned i=0;i<m_memory_config->m_n_mem;i++)
       m_memory_partition_unit[i]->print(stdout);
 
    // L2 cache stats
-   if(!m_memory_config->m_L2_config.disabled()){
+   if(!m_memory_config->memory_config_array[0].m_L2_config.disabled()){
        cache_stats l2_stats;
        struct cache_sub_stats l2_css;
        struct cache_sub_stats total_l2_css;
@@ -946,7 +999,7 @@ void gpgpu_sim::gpu_print_stat()
        total_l2_css.clear();
 
        printf("\n========= L2 cache stats =========\n");
-       for (unsigned i=0;i<m_memory_config->m_n_mem_sub_partition;i++){
+       for (unsigned i=0;i<m_memory_config->memory_config_array[0].m_n_mem_sub_partition;i++){
            m_memory_sub_partition[i]->accumulate_L2cache_stats(l2_stats);
            m_memory_sub_partition[i]->get_L2cache_sub_stats(l2_css);
 
@@ -955,7 +1008,7 @@ void gpgpu_sim::gpu_print_stat()
 
            total_l2_css += l2_css;
        }
-       if (!m_memory_config->m_L2_config.disabled() && m_memory_config->m_L2_config.get_num_lines()) {
+       if (!m_memory_config->memory_config_array[0].m_L2_config.disabled() && m_memory_config->memory_config_array[0].m_L2_config.get_num_lines()) {
           //L2c_print_cache_stat();
           printf("L2_total_cache_accesses = %u\n", total_l2_css.accesses);
           printf("L2_total_cache_misses = %u\n", total_l2_css.misses);
@@ -1123,7 +1176,7 @@ void dram_t::dram_log( int task )
 //Find next clock domain and increment its time
 int gpgpu_sim::next_clock_domain(void) 
 {
-   double smallest = min3(core_time,icnt_time,dram_time);
+   double smallest = min4(core_time,icnt_time,dram_time,dram_time_t2);
    int mask = 0x00;
    if ( l2_time <= smallest ) {
       smallest = l2_time;
@@ -1137,6 +1190,10 @@ int gpgpu_sim::next_clock_domain(void)
    if ( dram_time <= smallest ) {
       mask |= DRAM;
       dram_time += m_config.dram_period;
+   }
+   if ( dram_time_t2 <= smallest ) {
+      mask |= DRAM_t2;
+      dram_time_t2 += m_config.dram_period_t2;
    }
    if ( core_time <= smallest ) {
       mask |= CORE;
@@ -1169,9 +1226,13 @@ void gpgpu_sim::cycle()
       for (unsigned i=0;i<m_shader_config->n_simt_clusters;i++) 
          m_cluster[i]->icnt_cycle(); 
    }
+    unsigned tot_mem_sub_partitions=0; 
+    for  (unsigned i=0; i<2; i++)
+        tot_mem_sub_partitions += m_memory_config->memory_config_array[i].m_n_mem_sub_partition;
     if (clock_mask & ICNT) {
         // pop from memory controller to interconnect
-        for (unsigned i=0;i<m_memory_config->m_n_mem_sub_partition;i++) {
+//        for (unsigned i=0;i<m_memory_config->memory_config_array[0].m_n_mem_sub_partition;i++) {
+        for (unsigned i=0;i<tot_mem_sub_partitions;i++) {
             mem_fetch* mf = m_memory_sub_partition[i]->top();
             if (mf) {
                 unsigned response_size = mf->get_is_write()?mf->get_ctrl_size():mf->size();
@@ -1191,19 +1252,33 @@ void gpgpu_sim::cycle()
     }
 
    if (clock_mask & DRAM) {
-      for (unsigned i=0;i<m_memory_config->m_n_mem;i++){
+      for (unsigned i=0;i<m_memory_config->memory_config_array[0].m_n_mem;i++){
+//      for (unsigned i=0;i<m_memory_config->m_n_mem;i++){
          m_memory_partition_unit[i]->dram_cycle(); // Issue the dram command (scheduler + delay model)
          // Update performance counters for DRAM
          m_memory_partition_unit[i]->set_dram_power_stats(m_power_stats->pwr_mem_stat->n_cmd[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_activity[CURRENT_STAT_IDX][i],
-                        m_power_stats->pwr_mem_stat->n_nop[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_act[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_pre[CURRENT_STAT_IDX][i],
-                        m_power_stats->pwr_mem_stat->n_rd[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_wr[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_req[CURRENT_STAT_IDX][i]);
+         m_power_stats->pwr_mem_stat->n_nop[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_act[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_pre[CURRENT_STAT_IDX][i],
+         m_power_stats->pwr_mem_stat->n_rd[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_wr[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_req[CURRENT_STAT_IDX][i]);
+      }
+   }
+
+   if (clock_mask & DRAM_t2) {
+       unsigned i = 0;
+      for (unsigned j=0;j<m_memory_config->memory_config_array[1].m_n_mem;j++){
+          i = j + m_memory_config->memory_config_array[0].m_n_mem;
+         m_memory_partition_unit[i]->dram_cycle(); // Issue the dram command (scheduler + delay model)
+//          Update performance counters for DRAM
+         m_memory_partition_unit[i]->set_dram_power_stats(m_power_stats->pwr_mem_stat->n_cmd[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_activity[CURRENT_STAT_IDX][i],
+         m_power_stats->pwr_mem_stat->n_nop[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_act[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_pre[CURRENT_STAT_IDX][i],
+         m_power_stats->pwr_mem_stat->n_rd[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_wr[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_req[CURRENT_STAT_IDX][i]);
       }
    }
 
    // L2 operations follow L2 clock domain
    if (clock_mask & L2) {
        m_power_stats->pwr_mem_stat->l2_cache_stats[CURRENT_STAT_IDX].clear();
-      for (unsigned i=0;i<m_memory_config->m_n_mem_sub_partition;i++) {
+//      for (unsigned i=0;i<m_memory_config->memory_config_array[0].m_n_mem_sub_partition;i++) {
+      for (unsigned i=0;i<tot_mem_sub_partitions;i++) {
           //move memory request from interconnect into memory partition (if not backed up)
           //Note:This needs to be called in DRAM clock domain if there is no L2 cache in the system
           if ( m_memory_sub_partition[i]->full() ) {
@@ -1279,9 +1354,10 @@ void gpgpu_sim::cycle()
               }
           }
 
-         if (all_threads_complete && !m_memory_config->m_L2_config.disabled() ) {
+          //TODO: assume both emories either enable or disabled
+         if (all_threads_complete && !m_memory_config->memory_config_array[0].m_L2_config.disabled() ) {
             printf("Flushed L2 caches...\n");
-            if (m_memory_config->m_L2_config.get_num_lines()) {
+            if (m_memory_config->memory_config_array[0].m_L2_config.get_num_lines()) {
                int dlc = 0;
                for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
                   dlc = m_memory_sub_partition[i]->flushL2();
@@ -1312,13 +1388,16 @@ void gpgpu_sim::cycle()
             last_liveness_message_time = elapsed_time; 
          }
          visualizer_printstat();
-         m_memory_stats->memlatstat_lat_pw();
+        for (unsigned i=0; i<m_memory_config->m_n_mem_types; i++)
+            m_memory_stats[i]->memlatstat_lat_pw();
          if (m_config.gpgpu_runtime_stat && (m_config.gpu_runtime_stat_flag != 0) ) {
             if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_BW_STAT) {
                for (unsigned i=0;i<m_memory_config->m_n_mem;i++) 
                   m_memory_partition_unit[i]->print_stat(stdout);
-               printf("maxmrqlatency = %d \n", m_memory_stats->max_mrq_latency);
-               printf("maxmflatency = %d \n", m_memory_stats->max_mf_latency);
+                for (unsigned i=0; i<m_memory_config->m_n_mem_types; i++) {
+                    printf("maxmrqlatency = %d \n", m_memory_stats[i]->max_mrq_latency);
+                    printf("maxmflatency = %d \n", m_memory_stats[i]->max_mf_latency);
+                }
             }
             if (m_config.gpu_runtime_stat_flag & GPU_RSTAT_SHD_INFO) 
                shader_print_runtime_stat( stdout );
@@ -1398,7 +1477,7 @@ const struct shader_core_config * gpgpu_sim::getShaderCoreConfig()
    return m_shader_config;
 }
 
-const struct memory_config * gpgpu_sim::getMemoryConfig()
+const struct memory_config_types * gpgpu_sim::getMemoryConfig()
 {
    return m_memory_config;
 }

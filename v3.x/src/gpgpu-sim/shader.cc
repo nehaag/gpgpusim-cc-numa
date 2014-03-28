@@ -3183,7 +3183,7 @@ simt_core_cluster::simt_core_cluster( class gpgpu_sim *gpu,
                                       const struct shader_core_config *config, 
                                       const struct memory_config *mem_config,
                                       shader_core_stats *stats, 
-                                      class memory_stats_t *mstats )
+                                      class memory_stats_t **mstats )
 {
     m_config = config;
     m_cta_issue_next_core=m_config->n_simt_cores_per_cluster-1; // this causes first launch to use hw cta 0
@@ -3212,8 +3212,8 @@ void simt_core_cluster::core_cycle()
 
 void simt_core_cluster::reinit()
 {
-    for( unsigned i=0; i < m_config->n_simt_cores_per_cluster; i++ ) 
-        m_core[i]->reinit(0,m_config->n_thread_per_shader,true);
+    for( unsigned j=0; j < m_config->n_simt_cores_per_cluster; j++ ) 
+        m_core[j]->reinit(0,m_config->n_thread_per_shader,true);
 }
 
 unsigned simt_core_cluster::max_cta( const kernel_info_t &kernel )
@@ -3345,7 +3345,11 @@ void simt_core_cluster::icnt_cycle()
             // data response
             if( !m_core[cid]->ldst_unit_response_buffer_full() ) {
                 m_response_fifo.pop_front();
-                m_memory_stats->memlatstat_read_done(mf);
+                unsigned i = 0;
+                //assume only 2 different types of memory for now
+                if (mf->get_tlx_addr().sub_partition >= m_core[0]->get_mem_config()->m_n_mem_sub_partition)
+                    i = 1;
+                m_memory_stats[i]->memlatstat_read_done(mf);
                 m_core[cid]->accept_ldst_unit_response(mf);
             }
         }

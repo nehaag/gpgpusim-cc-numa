@@ -66,7 +66,8 @@ void gpgpu_sim::visualizer_printstat()
    for (unsigned i=0;i<m_memory_config->m_n_mem;i++) 
       m_memory_partition_unit[i]->visualizer_print(visualizer_file);
    m_shader_stats->visualizer_print(visualizer_file);
-   m_memory_stats->visualizer_print(visualizer_file);
+    for (unsigned i=0; i<m_memory_config->m_n_mem_types; i++)
+        m_memory_stats[i]->visualizer_print(visualizer_file);
    m_power_stats->visualizer_print(visualizer_file);
    //proc->visualizer_print(visualizer_file);
    // other parameters for graphing

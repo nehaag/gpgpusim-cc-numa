@@ -143,21 +143,20 @@ struct power_config {
 };
 
 
+struct memory_config_types;
 
 struct memory_config {
    memory_config()
    {
        m_valid = false;
        gpgpu_dram_timing_opt=NULL;
-       //gpgpu_dram_timing_opt_t2=NULL;
        gpgpu_L2_queue_config=NULL;
    }
-   void init()
+   void init(const memory_config_types* t)
    {
+      m_memory_config_types = t;
       assert(gpgpu_dram_timing_opt);
-      //assert(gpgpu_dram_timing_opt_t2);
 
-      //Type 1 memory: default is DRAM
       if (strchr(gpgpu_dram_timing_opt, '=') == NULL) {
          // dram timing option in ordered variables (legacy)
          // Disabling bank groups if their values are not specified
@@ -167,6 +166,8 @@ struct memory_config {
          sscanf(gpgpu_dram_timing_opt,"%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
                 &nbk,&tCCD,&tRRD,&tRCD,&tRAS,&tRP,&tRC,&CL,&WL,&tCDLR,&tWR,&nbkgrp,&tCCDL,&tRTPL);
       } else {
+          //TODO: for heterogenous implementation, assuming we dont take this
+          //path
          // named dram timing options (unordered)
          option_parser_t dram_opp = option_parser_create(); 
 
@@ -194,43 +195,6 @@ struct memory_config {
          option_parser_destroy(dram_opp); 
       }
 
-      ////Type 2 memory
-      //if (strchr(gpgpu_dram_timing_opt_t2, '=') == NULL) {
-      //   // dram timing option in ordered variables (legacy)
-      //   // Disabling bank groups if their values are not specified
-      //   nbkgrp_t2 = 1;
-      //   tCCDL_t2 = 0;
-      //   tRTPL_t2 = 0;
-      //   sscanf(gpgpu_dram_timing_opt_t2,"%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
-      //          &nbk_t2,&tCCD_t2,&tRRD_t2,&tRCD_t2,&tRAS_t2,&tRP_t2,&tRC_t2,&CL_t2,&WL_t2,&tCDLR_t2,&tWR_t2,&nbkgrp_t2,&tCCDL_t2,&tRTPL_t2);
-      //} else {
-      //   // named dram timing options (unordered)
-      //   option_parser_t dram_opp = option_parser_create(); 
-
-      //   option_parser_register(dram_opp, "nbk",  OPT_UINT32, &nbk,   "number of banks", ""); 
-      //   option_parser_register(dram_opp, "CCD",  OPT_UINT32, &tCCD,  "column to column delay", ""); 
-      //   option_parser_register(dram_opp, "RRD",  OPT_UINT32, &tRRD,  "minimal delay between activation of rows in different banks", ""); 
-      //   option_parser_register(dram_opp, "RCD",  OPT_UINT32, &tRCD,  "row to column delay", ""); 
-      //   option_parser_register(dram_opp, "RAS",  OPT_UINT32, &tRAS,  "time needed to activate row", ""); 
-      //   option_parser_register(dram_opp, "RP",   OPT_UINT32, &tRP,   "time needed to precharge (deactivate) row", ""); 
-      //   option_parser_register(dram_opp, "RC",   OPT_UINT32, &tRC,   "row cycle time", ""); 
-      //   option_parser_register(dram_opp, "CDLR", OPT_UINT32, &tCDLR, "switching from write to read (changes tWTR)", ""); 
-      //   option_parser_register(dram_opp, "WR",   OPT_UINT32, &tWR,   "last data-in to row precharge", ""); 
-
-      //   option_parser_register(dram_opp, "CL", OPT_UINT32, &CL, "CAS latency", ""); 
-      //   option_parser_register(dram_opp, "WL", OPT_UINT32, &WL, "Write latency", ""); 
-
-      //   //Disabling bank groups if their values are not specified
-      //   option_parser_register(dram_opp, "nbkgrp", OPT_UINT32, &nbkgrp, "number of bank groups", "1"); 
-      //   option_parser_register(dram_opp, "CCDL",   OPT_UINT32, &tCCDL,  "column to column delay between accesses to different bank groups", "0"); 
-      //   option_parser_register(dram_opp, "RTPL",   OPT_UINT32, &tRTPL,  "read to precharge delay between accesses to different bank groups", "0"); 
-
-      //   option_parser_delimited_string(dram_opp, gpgpu_dram_timing_opt, "=:;"); 
-      //   fprintf(stdout, "DRAM Timing Options:\n"); 
-      //   option_parser_print(dram_opp, stdout); 
-      //   option_parser_destroy(dram_opp); 
-      //}
-
       int nbkt = nbk/nbkgrp;
       unsigned i;
       for (i=0; nbkt>0; i++) {
@@ -256,7 +220,7 @@ struct memory_config {
       m_valid = true;
       icnt_flit_size = 32; // Default 32
    }
-   void reg_options(class OptionParser * opp);
+   void reg_options(class OptionParser * opp, unsigned num);
 
    bool m_valid;
    mutable l2_cache_config m_L2_config;
@@ -311,7 +275,67 @@ struct memory_config {
    linear_to_raw_address_translation m_address_mapping;
 
    unsigned icnt_flit_size;
+
+   // for heterogeneous memory
+   const memory_config_types* m_memory_config_types;
+   unsigned long long addr_limit;
+   unsigned type;
 };
+
+struct memory_config_types {
+//    memory_config_types() {
+//       m_valid = false;
+//       gpgpu_dram_timing_opt_t1=NULL;
+//       gpgpu_dram_timing_opt_t2=NULL;
+//       gpgpu_L2_queue_config=NULL;
+//    }
+    void init() {
+        for (unsigned int i=0; i<2; i++) {
+             memory_config_array[i].init(this);  //TODO: send the mem type for parsing
+        }
+    }
+
+    public:
+    memory_config memory_config_array[6];
+    void reg_options(class OptionParser * opp) {
+        option_parser_register(opp, "-gpgpu_n_mem", OPT_UINT32, &m_n_mem, 
+                 "number of memory modules (e.g. memory controllers) in gpu",
+                 "8");
+        option_parser_register(opp, "-gpgpu_n_mem_t1", OPT_UINT32, &m_n_mem_t1, 
+                 "number of memory modules (e.g. memory controllers) in gpu",
+                 "8");
+        option_parser_register(opp, "-gpgpu_n_mem_t2", OPT_UINT32, &m_n_mem_t2, 
+                 "number of memory modules (e.g. memory controllers) in gpu",
+                 "8");
+        option_parser_register(opp, "-gpgpu_n_mem_types", OPT_UINT32, &m_n_mem_types, 
+                 "number of different types memory modules (e.g. DRAM, HBM etc) in gpu",
+                 "1");
+        option_parser_register(opp, "-enable_addr_limit", OPT_UINT32, &enable_addr_limit, 
+                 "enable addr separation",
+                 "0");
+        for (unsigned int i=0; i<2; i++) {
+            memory_config_array[i].reg_options(opp, i+1);
+        }
+    }
+
+   unsigned m_n_mem;
+   unsigned m_n_mem_t1;
+   unsigned m_n_mem_t2;
+   unsigned m_n_mem_types;
+   unsigned enable_addr_limit;
+//   unsigned m_n_sub_partition_per_memory_channel;
+//   unsigned m_n_mem_sub_partition;
+//   unsigned gpu_n_mem_per_ctrlr;
+//
+//   unsigned rop_latency;
+//   unsigned dram_latency;
+//
+//   unsigned BL;     //Burst Length in bytes (4 in GDDR3, 8 in GDDR5)
+//   unsigned busW;
+//   unsigned data_command_freq_ratio; // frequency ratio between DRAM data bus and command bus (2 for GDDR3, 4 for GDDR5)
+//   linear_to_raw_address_translation m_address_mapping;
+};
+
 
 // global counters and flags (please try not to add to this list!!!)
 extern unsigned long long  gpu_sim_cycle;
@@ -362,15 +386,17 @@ private:
 
     bool m_valid;
     shader_core_config m_shader_config;
-    memory_config m_memory_config;
+    memory_config_types m_memory_config;
     // clock domains - frequency
     double core_freq;
     double icnt_freq;
     double dram_freq;
+    double dram_freq_t2;
     double l2_freq;
     double core_period;
     double icnt_period;
     double dram_period;
+    double dram_period_t2;
     double l2_period;
 
     // GPGPU-Sim timing model options
@@ -451,7 +477,7 @@ public:
     /*!
     * Returning the memory configuration of the shader core, used by the functional simulation only so far
     */
-   const struct memory_config * getMemoryConfig();
+   const struct memory_config_types * getMemoryConfig();
    
    
    //! Get shader core SIMT cluster
@@ -494,6 +520,7 @@ private:
    double core_time;
    double icnt_time;
    double dram_time;
+   double dram_time_t2;
    double l2_time;
 
    // debug
@@ -504,11 +531,11 @@ private:
   
    const struct cudaDeviceProp     *m_cuda_properties;
    const struct shader_core_config *m_shader_config;
-   const struct memory_config      *m_memory_config;
+   const struct memory_config_types      *m_memory_config;
 
    // stats
    class shader_core_stats  *m_shader_stats;
-   class memory_stats_t     *m_memory_stats;
+   class memory_stats_t     **m_memory_stats;
    class power_stat_t *m_power_stats;
    class gpgpu_sim_wrapper *m_gpgpusim_wrapper;
    unsigned long long  gpu_tot_issued_cta;

@@ -52,15 +52,33 @@ mem_fetch::mem_fetch( const mem_access_t &access,
    m_sid = sid;
    m_tpc = tpc;
    m_wid = wid;
-   config->m_address_mapping.addrdec_tlx(access.get_addr(),&m_raw_addr);
-   m_partition_addr = config->m_address_mapping.partition_address(access.get_addr());
+
+   const class memory_config* config_type = config;
+   unsigned type = 0;
+//   if ((access.get_addr() > config->addr_limit) && (access.get_type() != INST_ACC_R)) {
+   if ((access.get_addr() >= config->addr_limit) && config->m_memory_config_types->enable_addr_limit) {
+       config_type = &(config->m_memory_config_types->memory_config_array[1]);
+       type = 1;
+   }
+
+   //partition_offset is a global sub partition id, when a mem_fetch object
+   //constructor is called for 1st time for an address, irrespective of its
+   //actual config, it is assigned config type 1, hence offset needs to be
+   //determied accordingly, however when for same object it is called 2nd time,
+   //it has its actual config, therefore offset needs to be calculated based on
+   //number of sub-partition in 1st type of memory. partition_offset should
+   //remain always the same for an address.
+   unsigned partition_offset = (config->type == 1) ? type * (config->m_n_mem_sub_partition) :
+                                                     type * (config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+   config_type->m_address_mapping.addrdec_tlx_hetero(access.get_addr(),&m_raw_addr, partition_offset);
+   m_partition_addr = config_type->m_address_mapping.partition_address(access.get_addr());
    m_type = m_access.is_write()?WRITE_REQUEST:READ_REQUEST;
    m_timestamp = gpu_sim_cycle + gpu_tot_sim_cycle;
    m_timestamp2 = 0;
    m_status = MEM_FETCH_INITIALIZED;
    m_status_change = gpu_sim_cycle + gpu_tot_sim_cycle;
-   m_mem_config = config;
-   icnt_flit_size = config->icnt_flit_size;
+   m_mem_config = config_type;
+   icnt_flit_size = config_type->icnt_flit_size;
 }
 
 mem_fetch::~mem_fetch()

@@ -35,6 +35,16 @@
 
 #include "../abstract_hardware_model.h"
 
+void option_parser_register_mem(option_parser_t opp, 
+                            std::string name, 
+                            enum option_dtype type, 
+                            void *variable, 
+                            const char *desc,  
+                            const char *defaultvalue,
+                            std::string  num);
+
+
+
 struct addrdec_t {
    void print( FILE *fp ) const;
     
@@ -50,11 +60,12 @@ struct addrdec_t {
 class linear_to_raw_address_translation {
 public:
    linear_to_raw_address_translation();
-   void addrdec_setoption(option_parser_t opp);
+   void addrdec_setoption(option_parser_t opp, std::string);
    void init(unsigned int n_channel, unsigned int n_sub_partition_in_channel); 
 
    // accessors
    void addrdec_tlx(new_addr_type addr, addrdec_t *tlx) const; 
+   void addrdec_tlx_hetero(new_addr_type addr, addrdec_t *tlx, unsigned patition_offset) const; 
    new_addr_type partition_address( new_addr_type addr ) const;
 
 private:
