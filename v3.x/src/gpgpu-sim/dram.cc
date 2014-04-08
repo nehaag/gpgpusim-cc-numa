@@ -34,6 +34,8 @@
 #include "mem_fetch.h"
 #include "l2cache.h"
 
+//#define DRAM_VERIFY
+
 #ifdef DRAM_VERIFY
 int PRINT_CYCLE = 0;
 #endif
@@ -113,6 +115,8 @@ dram_t::dram_t( unsigned int partition_id, const struct memory_config *config, m
       mrqq_Dist = StatCreate("mrqq_length",1, queue_limit());
    else //queue length is unlimited; 
       mrqq_Dist = StatCreate("mrqq_length",1,64); //track up to 64 entries
+
+   cycle_count = 0;
 }
 
 bool dram_t::full() const 
@@ -204,7 +208,7 @@ void dram_t::scheduler_fifo()
 
 void dram_t::cycle()
 {
-
+    cycle_count++;
    if( !returnq->full() ) {
        dram_req_t *cmd = rwq->pop();
        if( cmd ) {
@@ -289,8 +293,8 @@ void dram_t::cycle()
             bk[j]->n_access++;
 #ifdef DRAM_VERIFY
             PRINT_CYCLE=1;
-            printf("\tRD  Bk:%d Row:%03x Col:%03x \n",
-                   j, bk[j]->curr_row,
+            printf("\tcycle: %llu, channel: %d, \tRD  Bk:%d Row:%03x Col:%03x \n",
+                   cycle_count, id, j, bk[j]->curr_row,
                    bk[j]->mrq->col + bk[j]->mrq->txbytes - m_config->dram_atom_size);
 #endif            
             // transfer done
@@ -322,8 +326,8 @@ void dram_t::cycle()
             bwutil_partial += m_config->BL/m_config->data_command_freq_ratio;
 #ifdef DRAM_VERIFY
             PRINT_CYCLE=1;
-            printf("\tWR  Bk:%d Row:%03x Col:%03x \n",
-                   j, bk[j]->curr_row, 
+            printf("\tcycle: %llu, channel: %d, \tWR  Bk:%d Row:%03x Col:%03x \n",
+                   cycle_count, id, j, bk[j]->curr_row, 
                    bk[j]->mrq->col + bk[j]->mrq->txbytes - m_config->dram_atom_size);
 #endif  
             // transfer done 
@@ -339,8 +343,8 @@ void dram_t::cycle()
                  !bk[j]->RPc && !bk[j]->RCc ) {
 #ifdef DRAM_VERIFY
             PRINT_CYCLE=1;
-            printf("\tACT BK:%d NewRow:%03x From:%03x \n",
-                   j,bk[j]->mrq->row,bk[j]->curr_row);
+            printf("\tcycle: %llu, channel: %d, \tACT BK:%d NewRow:%03x From:%03x \n",
+                   cycle_count, id, j,bk[j]->mrq->row,bk[j]->curr_row);
 #endif
             // activate the row with current memory request 
             bk[j]->curr_row = bk[j]->mrq->row;
@@ -373,7 +377,7 @@ void dram_t::cycle()
             n_pre_partial++;
 #ifdef DRAM_VERIFY
             PRINT_CYCLE=1;
-            printf("\tPRE BK:%d Row:%03x \n", j,bk[j]->curr_row);
+            printf("cycle: %llu, channel: %d, \tPRE BK:%d Row:%03x \n", cycle_count, id, j,bk[j]->curr_row);
 #endif
          }
       } else {
@@ -418,6 +422,7 @@ void dram_t::cycle()
 #ifdef DRAM_VISUALIZE
    visualize();
 #endif
+   assert(n_cmd == cycle_count);
 }
 
 //if mrq is being serviced by dram, gets popped after CL latency fulfilled

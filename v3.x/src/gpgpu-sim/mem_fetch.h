@@ -56,6 +56,7 @@ public:
                unsigned sid, 
                unsigned tpc, 
                const class memory_config *config );
+    mem_fetch( mem_fetch *mf, const mem_access_t &access);
    ~mem_fetch();
 
    void set_status( enum mem_fetch_status status, unsigned long long cycle );

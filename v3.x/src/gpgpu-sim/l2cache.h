@@ -100,6 +100,7 @@ public:
 private: 
 
    unsigned m_id;
+   unsigned m_id_local; //local dram id for a given type of memory pool, eg: 2 of t1 an 2 of t2 memories, then m_id=3 => m_id_local=1
    const struct memory_config *m_config;
    class memory_stats_t *m_stats;
    class memory_sub_partition **m_sub_partition; 

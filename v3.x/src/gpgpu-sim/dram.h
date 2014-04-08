@@ -182,6 +182,7 @@ private:
    class Stats* mrqq_Dist; //memory request queue inside DRAM  
 
    friend class frfcfs_scheduler;
+   unsigned long long int cycle_count;
 };
 
 #endif /*DRAM_H*/

@@ -1286,6 +1286,11 @@ void gpgpu_sim::cycle()
           } else {
               mem_fetch* mf = (mem_fetch*) icnt_pop( m_shader_config->mem2device(i) );
               m_memory_sub_partition[i]->push( mf, gpu_sim_cycle + gpu_tot_sim_cycle );
+              if(mf != NULL) {
+                if (i != mf->get_sub_partition_id())
+                    printf("i: %d,mf_sub_part: %d\n", i, mf->get_sub_partition_id());
+                assert(i == mf->get_sub_partition_id());
+              }
           }
           m_memory_sub_partition[i]->cache_cycle(gpu_sim_cycle+gpu_tot_sim_cycle);
           m_memory_sub_partition[i]->accumulate_L2cache_stats(m_power_stats->pwr_mem_stat->l2_cache_stats[CURRENT_STAT_IDX]);

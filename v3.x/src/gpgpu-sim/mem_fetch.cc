@@ -33,6 +33,33 @@
 
 unsigned mem_fetch::sm_next_mf_request_uid=1;
 
+mem_fetch::mem_fetch( mem_fetch *mf,
+                      const mem_access_t &access)
+{
+   m_request_uid = sm_next_mf_request_uid++;
+   m_access = access;
+//   m_inst = NULL;
+   m_data_size = access.get_size();
+   m_ctrl_size = mf->get_ctrl_size();
+   m_sid = mf->get_sid();
+   m_tpc = mf->get_tpc();
+   m_wid = mf->get_wid();
+   m_mem_config = mf->get_mem_config();
+   m_raw_addr = mf->get_tlx_addr(); 
+   m_partition_addr = m_mem_config->m_address_mapping.partition_address(access.get_addr());
+   m_type = m_access.is_write()?WRITE_REQUEST:READ_REQUEST;
+   m_timestamp = gpu_sim_cycle + gpu_tot_sim_cycle;
+   m_timestamp2 = 0;
+   m_status = MEM_FETCH_INITIALIZED;
+   m_status_change = gpu_sim_cycle + gpu_tot_sim_cycle;
+   icnt_flit_size = m_mem_config->icnt_flit_size;
+
+   if (m_mem_config->type == 2) assert(m_raw_addr.sub_partition >= m_mem_config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+   if (m_mem_config->type == 1) assert(m_raw_addr.sub_partition < m_mem_config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
+}
+
+
 mem_fetch::mem_fetch( const mem_access_t &access, 
                       const warp_inst_t *inst,
                       unsigned ctrl_size, 
@@ -56,9 +83,17 @@ mem_fetch::mem_fetch( const mem_access_t &access,
    const class memory_config* config_type = config;
    unsigned type = 0;
 //   if ((access.get_addr() > config->addr_limit) && (access.get_type() != INST_ACC_R)) {
-   if ((access.get_addr() >= config->addr_limit) && config->m_memory_config_types->enable_addr_limit) {
+//    if (access.get_addr() == 2187299968) printf("addr: %lld, addr_limit: %lld", access.get_addr(), config->addr_limit);
+//   if ((access.get_addr() >= config->addr_limit) && config->m_memory_config_types->enable_addr_limit) {
+//   xsbench address limit
+//   if (((access.get_addr() >= config->addr_limit)  || (access.get_addr() >= 1069547520 && (access.get_addr() < 1069628928))) && config->m_memory_config_types->enable_addr_limit) {
+//   bfs address limit
+   if (access.get_addr() >= 2179483264 && config->m_memory_config_types->enable_addr_limit) {
        config_type = &(config->m_memory_config_types->memory_config_array[1]);
        type = 1;
+   } else {
+       config_type = &(config->m_memory_config_types->memory_config_array[0]);
+       type = 0;
    }
 
    //partition_offset is a global sub partition id, when a mem_fetch object
@@ -68,9 +103,19 @@ mem_fetch::mem_fetch( const mem_access_t &access,
    //it has its actual config, therefore offset needs to be calculated based on
    //number of sub-partition in 1st type of memory. partition_offset should
    //remain always the same for an address.
-   unsigned partition_offset = (config->type == 1) ? type * (config->m_n_mem_sub_partition) :
-                                                     type * (config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+   unsigned partition_offset = type * (config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+   assert(partition_offset <= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
+   if (type == 1) assert(partition_offset == config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+   if (type == 0) assert(partition_offset == 0);
+
+   assert(config->type == 1 || config->type == 2);
+
    config_type->m_address_mapping.addrdec_tlx_hetero(access.get_addr(),&m_raw_addr, partition_offset);
+
+   if (type == 1) assert(m_raw_addr.sub_partition >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+   if (type == 0) assert(m_raw_addr.sub_partition < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
    m_partition_addr = config_type->m_address_mapping.partition_address(access.get_addr());
    m_type = m_access.is_write()?WRITE_REQUEST:READ_REQUEST;
    m_timestamp = gpu_sim_cycle + gpu_tot_sim_cycle;
@@ -78,6 +123,13 @@ mem_fetch::mem_fetch( const mem_access_t &access,
    m_status = MEM_FETCH_INITIALIZED;
    m_status_change = gpu_sim_cycle + gpu_tot_sim_cycle;
    m_mem_config = config_type;
+   if (access.get_addr() == 2187299968) {
+       printf("addr: %lld, addr_limit: %lld, config_type: %d\n", access.get_addr(), config->addr_limit, m_mem_config->type);
+   }
+//   if ((access.get_addr() < config->addr_limit) && config->m_memory_config_types->enable_addr_limit) {
+//       assert(m_mem_config->type == 1);
+//   }
+
    icnt_flit_size = config_type->icnt_flit_size;
 }
 

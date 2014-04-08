@@ -28,6 +28,7 @@
 #include "gpu-cache.h"
 #include "stat-tool.h"
 #include <assert.h>
+#include "gpu-sim.h"
 
 #define MAX_DEFAULT_CACHE_SIZE_MULTIBLIER 4
 // used to allocate memory that is large enough to adapt the changes in cache size across kernels
@@ -635,6 +636,15 @@ bool baseline_cache::bandwidth_management::fill_port_free() const
 void baseline_cache::cycle(){
     if ( !m_miss_queue.empty() ) {
         mem_fetch *mf = m_miss_queue.front();
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        const class memory_config* config = mf->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
         if ( !m_memport->full(mf->size(),mf->get_is_write()) ) {
             m_miss_queue.pop_front();
             m_memport->push(mf);
@@ -718,6 +728,15 @@ void baseline_cache::send_read_request(new_addr_type addr, new_addr_type block_a
         m_extra_mf_fields[mf] = extra_mf_fields(block_addr,cache_index, mf->get_data_size());
         mf->set_data_size( m_config.get_line_sz() );
         m_miss_queue.push_back(mf);
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        const class memory_config* config = mf->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
         mf->set_status(m_miss_queue_status,time);
         if(!wa)
         	events.push_back(READ_REQUEST_SENT);
@@ -730,6 +749,15 @@ void baseline_cache::send_read_request(new_addr_type addr, new_addr_type block_a
 void data_cache::send_write_request(mem_fetch *mf, cache_event request, unsigned time, std::list<cache_event> &events){
     events.push_back(request);
     m_miss_queue.push_back(mf);
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        const class memory_config* config = mf->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
     mf->set_status(m_miss_queue_status,time);
 }
 
@@ -827,6 +855,16 @@ data_cache::wr_miss_wa( new_addr_type addr,
                     mf->get_sid(),
                     mf->get_tpc(),
                     mf->get_mem_config());
+//    mem_fetch *n_mf = new mem_fetch( mf, *ma);
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = n_mf->get_sub_partition_id(); 
+        const class memory_config* config = n_mf->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
 
     bool do_miss = false;
     bool wb = false;
@@ -843,6 +881,15 @@ data_cache::wr_miss_wa( new_addr_type addr,
             mem_fetch *wb = m_memfetch_creator->alloc(evicted.m_block_addr,
                 m_wrbk_type,m_config.get_line_sz(),true);
             m_miss_queue.push_back(wb);
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = wb->get_sub_partition_id(); 
+        const class memory_config* config = wb->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
             wb->set_status(m_miss_queue_status,time);
         }
         return MISS;
@@ -924,6 +971,15 @@ data_cache::rd_miss_base( new_addr_type addr,
         if(wb && (m_config.m_write_policy != WRITE_THROUGH) ){ 
             mem_fetch *wb = m_memfetch_creator->alloc(evicted.m_block_addr,
                 m_wrbk_type,m_config.get_line_sz(),true);
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = wb->get_sub_partition_id(); 
+        const class memory_config* config = wb->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
         send_write_request(wb, WRITE_BACK_REQUEST_SENT, time, events);
     }
         return MISS;

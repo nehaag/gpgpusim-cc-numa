@@ -1527,31 +1527,49 @@ public:
     	m_cluster_id = cluster_id;
     	m_memory_config = config;
     }
-    mem_fetch *alloc( new_addr_type addr, mem_access_type type, unsigned size, bool wr ) const 
-    {
-    	mem_access_t access( type, addr, size, wr );
-    	mem_fetch *mf = new mem_fetch( access, 
-    				       NULL,
-    				       wr?WRITE_PACKET_SIZE:READ_PACKET_SIZE, 
-    				       -1, 
-    				       m_core_id, 
-    				       m_cluster_id,
-    				       m_memory_config );
-    	return mf;
-    }
+    mem_fetch *alloc( new_addr_type addr, mem_access_type type, unsigned size, bool wr ) const ;
+//    {
+//    	mem_access_t access( type, addr, size, wr );
+//    	mem_fetch *mf = new mem_fetch( access, 
+//    				       NULL,
+//    				       wr?WRITE_PACKET_SIZE:READ_PACKET_SIZE, 
+//    				       -1, 
+//    				       m_core_id, 
+//    				       m_cluster_id,
+//    				       m_memory_config );
+
+//        //TODO: for debugging: delete this
+//        unsigned global_spid = mf->get_sub_partition_id(); 
+//        const memory_config* config = mf->get_mem_config();
+//        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+//            printf("global_spid: %d\n", global_spid);
+//        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+//        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
+//    	return mf;
+//    }
     
-    mem_fetch *alloc( const warp_inst_t &inst, const mem_access_t &access ) const
-    {
-        warp_inst_t inst_copy = inst;
-        mem_fetch *mf = new mem_fetch(access, 
-                                      &inst_copy, 
-                                      access.is_write()?WRITE_PACKET_SIZE:READ_PACKET_SIZE,
-                                      inst.warp_id(),
-                                      m_core_id, 
-                                      m_cluster_id, 
-                                      m_memory_config);
-        return mf;
-    }
+    mem_fetch *alloc( const warp_inst_t &inst, const mem_access_t &access ) const;
+//    {
+//        warp_inst_t inst_copy = inst;
+//        mem_fetch *mf = new mem_fetch(access, 
+//                                      &inst_copy, 
+//                                      access.is_write()?WRITE_PACKET_SIZE:READ_PACKET_SIZE,
+//                                      inst.warp_id(),
+//                                      m_core_id, 
+//                                      m_cluster_id, 
+//                                      m_memory_config);
+//
+//        //TODO: for debugging: delete this
+//        unsigned global_spid = mf->get_sub_partition_id(); 
+//        const memory_config *config = mf->get_mem_config();
+//        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+//            printf("global_spid: %d\n", global_spid);
+//        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+//        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+//
+//        return mf;
+//    }
 
 private:
     unsigned m_core_id;

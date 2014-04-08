@@ -560,6 +560,49 @@ void shader_core_stats::visualizer_print( gzFile visualizer_file )
    gzprintf(visualizer_file, "\n");
 }
 
+mem_fetch* shader_core_mem_fetch_allocator::alloc( new_addr_type addr, mem_access_type type, unsigned size, bool wr ) const {
+
+    	mem_access_t access( type, addr, size, wr );
+    	mem_fetch *mf = new mem_fetch( access, 
+    				       NULL,
+    				       wr?WRITE_PACKET_SIZE:READ_PACKET_SIZE, 
+    				       -1, 
+    				       m_core_id, 
+    				       m_cluster_id,
+    				       m_memory_config );
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        const memory_config* config = mf->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
+    	return mf;
+}
+mem_fetch* shader_core_mem_fetch_allocator::alloc( const warp_inst_t &inst, const mem_access_t &access ) const {
+
+        warp_inst_t inst_copy = inst;
+        mem_fetch *mf = new mem_fetch(access, 
+                                      &inst_copy, 
+                                      access.is_write()?WRITE_PACKET_SIZE:READ_PACKET_SIZE,
+                                      inst.warp_id(),
+                                      m_core_id, 
+                                      m_cluster_id, 
+                                      m_memory_config);
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        const memory_config *config = mf->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
+        return mf;
+}
+
 #define PROGRAM_MEM_START 0xF0000000 /* should be distinct from other memory spaces... 
                                         check ptx_ir.h to verify this does not overlap 
                                         other memory spaces */
@@ -640,6 +683,15 @@ void shader_core_ctx::fetch()
                                               m_sid,
                                               m_tpc,
                                               m_memory_config );
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        const class memory_config* config = mf->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
                 std::list<cache_event> events;
                 enum cache_request_status status = m_L1I->access( (new_addr_type)ppc, mf, gpu_sim_cycle+gpu_tot_sim_cycle,events);
                 if( status == MISS ) {
@@ -1344,6 +1396,7 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
     mem_fetch *mf = m_mf_allocator->alloc(inst,inst.accessq_back());
     std::list<cache_event> events;
     enum cache_request_status status = cache->access(mf->get_addr(),mf,gpu_sim_cycle+gpu_tot_sim_cycle,events);
+//    enum cache_request_status status = HIT;
 
     // Track per address accesses----------------------------------------------
     // Add uniques addresses to the tracking data structure

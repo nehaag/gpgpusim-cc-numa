@@ -57,6 +57,15 @@ mem_fetch * partition_mf_allocator::alloc(new_addr_type addr, mem_access_type ty
                                    -1, 
                                    -1,
                                    m_memory_config );
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        const memory_config* config = mf->get_mem_config();
+//        assert(config == m_memory_config);
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d, addr: %lld\n", global_spid, mf->get_addr());
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
     return mf;
 }
 
@@ -68,6 +77,7 @@ memory_partition_unit::memory_partition_unit( unsigned partition_id,
 {
     unsigned dram_id = m_id;
     if (config->type == 2) dram_id -= m_config->m_memory_config_types->memory_config_array[0].m_n_mem;
+    m_id_local = dram_id;
     m_dram = new dram_t(dram_id,m_config,m_stats,this);
 //   m_dram = new dram_t(m_id,m_config,m_stats,this);
 
@@ -207,6 +217,11 @@ void memory_partition_unit::dram_cycle()
     if (mf_return) {
         unsigned dest_global_spid = mf_return->get_sub_partition_id(); 
         int dest_spid = global_sub_partition_id_to_local_id(dest_global_spid); 
+//        assert(mf_return->get_mem_config() == m_config);
+        if (mf_return->get_mem_config() != m_config) {
+            printf("WARNING: there might be an error here, as memory packet is not in the correct memory subpartition");
+//            dest_spid = dest_global_spid - m_id_local * m_config->m_n_sub_partition_per_memory_channel;
+        }
         assert(m_sub_partition[dest_spid]->get_id() == dest_global_spid); 
         if (!m_sub_partition[dest_spid]->dram_L2_queue_full()) {
             if( mf_return->get_access_type() == L1_WRBK_ACC ) {
@@ -235,6 +250,15 @@ void memory_partition_unit::dram_cycle()
             int spid = (p + last_issued_partition + 1) % m_config->m_n_sub_partition_per_memory_channel; 
             if (!m_sub_partition[spid]->L2_dram_queue_empty() && can_issue_to_dram(spid)) {
                 mem_fetch *mf = m_sub_partition[spid]->L2_dram_queue_top();
+
+            //TODO: for debugging: delete this
+            unsigned global_spid = mf->get_sub_partition_id(); 
+            if (mf->get_mem_config()->type == 2 && global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition)
+                printf("addr: %lld, global_spid: %d", mf->get_addr(), global_spid);
+            if (mf->get_mem_config()->type == 2) assert(global_spid >= mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+            if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
+
                 m_sub_partition[spid]->L2_dram_queue_pop();
                 MEMPART_DPRINTF("Issue mem_fetch request %p from sub partition %d to dram\n", mf, spid); 
                 dram_delay_t d;
@@ -289,13 +313,32 @@ void memory_partition_unit::dram_cycle()
         mem_fetch* mf = m_dram_latency_queue.front().req;
         m_dram_latency_queue.pop_front();
         m_dram->push(mf);
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        if (mf->get_mem_config()->type == 2) assert(global_spid >= mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
     }
 }
 
 void memory_partition_unit::set_done( mem_fetch *mf )
 {
     unsigned global_spid = mf->get_sub_partition_id(); 
-    int spid = global_sub_partition_id_to_local_id(global_spid); 
+    int spid = global_sub_partition_id_to_local_id(global_spid);
+    if (mf->get_mem_config() != m_config) {
+        printf("WARNING: there might be an error here, as memory packet is not in the correct memory subpartition, faulitng addr = %lld\n", mf->get_addr());
+//        spid = global_spid - m_id_local * m_config->m_n_sub_partition_per_memory_channel;
+    }
+//    assert(mf->get_mem_config() == m_config);
+//    if (mf->get_mem_config()->type == 1)
+//        assert(m_id < mf->get_mem_config()->m_n_mem);
+    if (mf->get_mem_config()->type == 2) assert(global_spid >= mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+    if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+    if (spid >= mf->get_mem_config()->m_n_sub_partition_per_memory_channel || spid < 0) {
+        printf("addr: %ld, mem_type: %d, global_spid: %d, spid: %d, mid: %d\n", mf->get_addr(), mf->get_mem_config()->type, global_spid, spid, m_id);
+        assert(spid > 0);
+        assert(spid < mf->get_mem_config()->m_n_sub_partition_per_memory_channel);
+    }
     assert(m_sub_partition[spid]->get_id() == global_spid); 
     if (mf->get_access_type() == L1_WRBK_ACC || mf->get_access_type() == L2_WRBK_ACC) {
         m_arbitration_metadata.return_credit(spid); 
@@ -470,6 +513,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
                 bool write_sent = was_write_sent(events);
                 bool read_sent = was_read_sent(events);
 
+//                enum cache_request_status status = HIT;
                 if ( status == HIT ) {
                     if( !write_sent ) {
                         // L2 cache replies
@@ -501,6 +545,11 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
             mf->set_status(IN_PARTITION_L2_TO_DRAM_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
             m_L2_dram_queue->push(mf);
             m_icnt_L2_queue->pop();
+
+            //TODO: for debugging: delete this
+            unsigned global_spid = mf->get_sub_partition_id(); 
+            if (mf->get_mem_config()->type == 2) assert(global_spid >= mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+            if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
         }
     }
 
@@ -510,6 +559,11 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
         m_rop.pop();
         m_icnt_L2_queue->push(mf);
         mf->set_status(IN_PARTITION_ICNT_TO_L2_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = mf->get_sub_partition_id(); 
+        if (mf->get_mem_config()->type == 2) assert(global_spid >= mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
     }
 }
 
@@ -633,6 +687,14 @@ void memory_sub_partition::push( mem_fetch* req, unsigned long long cycle )
         m_stats->memlatstat_icnt2mem_pop(req);
         if( req->istexture() ) {
             m_icnt_L2_queue->push(req);
+
+            //TODO: for debugging: delete this
+            unsigned global_spid = req->get_sub_partition_id(); 
+            const memory_config* config = req->get_mem_config();
+            if (req->get_mem_config()->type == 2) 
+                assert(global_spid >= req->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+            if (req->get_mem_config()->type == 1) 
+                assert(global_spid < req->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
             req->set_status(IN_PARTITION_ICNT_TO_L2_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
         } else {
             rop_delay_t r;
