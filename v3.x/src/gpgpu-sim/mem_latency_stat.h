@@ -52,6 +52,10 @@ public:
    const struct shader_core_config *m_shader_config;
    const struct memory_config *m_memory_config;
 
+    //for counting stall information because of scheduler
+    unsigned stall_bk_conf;
+    unsigned stall_sched_conf;
+
    unsigned max_mrq_latency;
    unsigned max_dq_latency;
    unsigned max_mf_latency;

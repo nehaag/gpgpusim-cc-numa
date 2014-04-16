@@ -34,9 +34,24 @@
 
 
 static long int powli( long int x, long int y );
-static unsigned int LOGB2_32( unsigned int v );
 static new_addr_type addrdec_packbits( new_addr_type mask, new_addr_type val, unsigned char high, unsigned char low);
 static void addrdec_getmasklimit(new_addr_type mask, unsigned char *high, unsigned char *low); 
+
+unsigned int LOGB2_32( unsigned int v ) 
+{
+   unsigned int shift;
+   unsigned int r;
+
+   r = 0;
+
+   shift = (( v & 0xFFFF0000) != 0 ) << 4; v >>= shift; r |= shift;
+   shift = (( v & 0xFF00    ) != 0 ) << 3; v >>= shift; r |= shift;
+   shift = (( v & 0xF0      ) != 0 ) << 2; v >>= shift; r |= shift;
+   shift = (( v & 0xC       ) != 0 ) << 1; v >>= shift; r |= shift;
+   shift = (( v & 0x2       ) != 0 ) << 0; v >>= shift; r |= shift;
+
+   return r;
+}
 
 linear_to_raw_address_translation::linear_to_raw_address_translation()
 {
@@ -423,22 +438,6 @@ static long int powli( long int x, long int y ) // compute x to the y
    for (i = 0; i < y; ++i ) {
       r *= x;
    }
-   return r;
-}
-
-static unsigned int LOGB2_32( unsigned int v ) 
-{
-   unsigned int shift;
-   unsigned int r;
-
-   r = 0;
-
-   shift = (( v & 0xFFFF0000) != 0 ) << 4; v >>= shift; r |= shift;
-   shift = (( v & 0xFF00    ) != 0 ) << 3; v >>= shift; r |= shift;
-   shift = (( v & 0xF0      ) != 0 ) << 2; v >>= shift; r |= shift;
-   shift = (( v & 0xC       ) != 0 ) << 1; v >>= shift; r |= shift;
-   shift = (( v & 0x2       ) != 0 ) << 0; v >>= shift; r |= shift;
-
    return r;
 }
 

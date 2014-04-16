@@ -70,6 +70,8 @@ memory_stats_t::memory_stats_t( unsigned n_shader, const struct shader_core_conf
    total_n_access=0;
    total_n_reads=0;
    total_n_writes=0;
+    stall_bk_conf = 0;
+    stall_sched_conf = 0;
    max_mrq_latency = 0;
    max_dq_latency = 0;
    max_mf_latency = 0;
@@ -224,6 +226,8 @@ void memory_stats_t::memlatstat_print( unsigned n_mem, unsigned gpu_mem_n_bk )
    unsigned max_bank_accesses, min_bank_accesses, max_chip_accesses, min_chip_accesses;
 
    if (m_memory_config->gpgpu_memlatency_stat) {
+      printf("bk_conf = %d \n", stall_bk_conf);
+      printf("sched_conf = %d \n", stall_sched_conf);
       printf("maxmrqlatency = %d \n", max_mrq_latency);
       printf("maxdqlatency = %d \n", max_dq_latency);
       printf("maxmflatency = %d \n", max_mf_latency);

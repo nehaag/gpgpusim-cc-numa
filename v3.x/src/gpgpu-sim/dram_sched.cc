@@ -31,6 +31,8 @@
 #include "../abstract_hardware_model.h"
 #include "mem_latency_stat.h"
 
+//#define DEBUG_FAST_IDEAL_SCHED
+
 frfcfs_scheduler::frfcfs_scheduler( const memory_config *config, dram_t *dm, memory_stats_t *stats )
 {
    m_config = config;
@@ -107,9 +109,12 @@ dram_req_t *frfcfs_scheduler::schedule( unsigned bank, unsigned curr_row )
       m_last_row[bank] = NULL;
    }
 #ifdef DEBUG_FAST_IDEAL_SCHED
-   if ( req )
-      printf("%08u : DRAM(%u) scheduling memory request to bank=%u, row=%u\n", 
-             (unsigned)gpu_sim_cycle, m_dram->id, req->bk, req->row );
+   if ( req ) {
+        unsigned req_mem_type = req->data->get_mem_config()->type;
+      printf("%08u : DRAM(%u,%u) scheduling memory request to bank=%u, row=%u\n", 
+             (unsigned)gpu_sim_cycle, req_mem_type, m_dram->id, req->bk, req->row );
+//             (unsigned)gpu_sim_cycle, m_dram->id, req->bk, req->row );
+    }
 #endif
    assert( req != NULL && m_num_pending != 0 ); 
    m_num_pending--;
@@ -168,7 +173,7 @@ void dram_t::scheduler_frfcfs()
             }
 
             break;
-         }
-      }
+         } else {m_stats->stall_sched_conf++;}
+      } else {m_stats->stall_bk_conf++;}
    }
 }

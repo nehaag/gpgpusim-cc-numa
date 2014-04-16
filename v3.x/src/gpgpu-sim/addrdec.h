@@ -35,6 +35,7 @@
 
 #include "../abstract_hardware_model.h"
 
+unsigned int LOGB2_32( unsigned int v );
 void option_parser_register_mem(option_parser_t opp, 
                             std::string name, 
                             enum option_dtype type, 

@@ -283,12 +283,6 @@ struct memory_config {
 };
 
 struct memory_config_types {
-//    memory_config_types() {
-//       m_valid = false;
-//       gpgpu_dram_timing_opt_t1=NULL;
-//       gpgpu_dram_timing_opt_t2=NULL;
-//       gpgpu_L2_queue_config=NULL;
-//    }
     void init() {
         for (unsigned int i=0; i<2; i++) {
              memory_config_array[i].init(this);  //TODO: send the mem type for parsing
@@ -323,17 +317,6 @@ struct memory_config_types {
    unsigned m_n_mem_t2;
    unsigned m_n_mem_types;
    unsigned enable_addr_limit;
-//   unsigned m_n_sub_partition_per_memory_channel;
-//   unsigned m_n_mem_sub_partition;
-//   unsigned gpu_n_mem_per_ctrlr;
-//
-//   unsigned rop_latency;
-//   unsigned dram_latency;
-//
-//   unsigned BL;     //Burst Length in bytes (4 in GDDR3, 8 in GDDR5)
-//   unsigned busW;
-//   unsigned data_command_freq_ratio; // frequency ratio between DRAM data bus and command bus (2 for GDDR3, 4 for GDDR5)
-//   linear_to_raw_address_translation m_address_mapping;
 };
 
 
@@ -341,6 +324,7 @@ struct memory_config_types {
 extern unsigned long long  gpu_sim_cycle;
 extern unsigned long long  gpu_tot_sim_cycle;
 extern bool g_interactive_debugger_enabled;
+extern std::map<unsigned long long, unsigned> m_map;
 
 class gpgpu_sim_config : public power_config, public gpgpu_functional_sim_config {
 public:

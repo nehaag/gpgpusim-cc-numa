@@ -2208,7 +2208,7 @@ void gpgpu_sim::shader_print_cache_stats( FILE *fout ) const{
         sum = 0;
         for (int i=0; i<it->second.size(); ++i) {
             if (i>2) sum += it->second[i];
-            fprintf(fout, "%ld ", it->second[i]);
+//            fprintf(fout, "%ld ", it->second[i]);
         }
         fprintf(fout, " %d\n", sum);
     }

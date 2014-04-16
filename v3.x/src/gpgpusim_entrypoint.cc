@@ -28,6 +28,9 @@
 #include "gpgpusim_entrypoint.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <fstream.h>
+#include <sstream>
+#include <string>
 
 #include "option_parser.h"
 #include "cuda-sim/cuda-sim.h"
@@ -60,6 +63,31 @@ stream_manager *g_stream_manager;
 
 static int sg_argc = 3;
 static const char *sg_argv[] = {"", "-config","gpgpusim.config"};
+std::map<unsigned long long, unsigned> m_map;
+
+void read_memory_map() {
+    // read the mem_map file
+    const char* mem_map_str = "mem-map.txt";
+   if(getenv("MEM_MAP_FILE"))
+       mem_map_str = getenv("MEM_MAP_FILE");
+   ifstream m_file(mem_map_str);
+   std::string line;
+   if (m_file.is_open()) {
+        while ( getline (m_file,line) ) {
+            std::stringstream ss(line);
+            std::string buf;
+            unsigned int val[2];
+            for (unsigned i = 0; i < 2; i++) {
+                ss >> buf;
+                val[i] = atoi(buf.c_str());
+            }
+            unsigned long long addr = val[0];
+            unsigned partition = val[1];
+            m_map[addr] = partition;
+        }
+        m_file.close();
+   }
+}
 
 
 
@@ -205,6 +233,9 @@ gpgpu_sim *gpgpu_ptx_sim_init_perf()
    if(getenv("GPGPUSIM_CFG_FILE"))
        sg_argv[2] = getenv("GPGPUSIM_CFG_FILE");
    printf("\nGPGPUSIM_CFG_FILE: %s\n", sg_argv[2]);
+    //read memory map
+    read_memory_map();
+
    option_parser_cmdline(opp, sg_argc, sg_argv); // parse configuration options
    fprintf(stdout, "GPGPU-Sim: Configuration options:\n\n");
    option_parser_print(opp, stdout);

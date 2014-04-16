@@ -32,6 +32,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <fstream.h>
+#include <sstream>
+#include <string>
 #include "zlib.h"
 
 
@@ -81,7 +84,6 @@ bool g_interactive_debugger_enabled=false;
 
 unsigned long long  gpu_sim_cycle = 0;
 unsigned long long  gpu_tot_sim_cycle = 0;
-
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -137,18 +139,6 @@ void power_config::reg_options(class OptionParser * opp)
 	                 	  "8:4");
 
 }
-//void option_parser_register_mem(option_parser_t opp, 
-//                            std::string name, 
-//                            enum option_dtype type, 
-//                            void *variable, 
-//                            const char *desc,  
-//                            const char *defaultvalue,
-//                            std::string  num)
-//{
-//    name += "_" + num;
-//    const char* pass_name = name.c_str();
-//    option_parser_register(opp, pass_name, type, variable, desc, defaultvalue);
-//}
 
 void memory_config::reg_options(class OptionParser * opp, unsigned num)
 {
@@ -982,45 +972,50 @@ void gpgpu_sim::gpu_print_stat()
 #endif
 
    // performance counter that are not local to one shader
-   unsigned t = m_memory_config->memory_config_array[0].nbk;
+   unsigned t[2];
+   t[0] = m_memory_config->memory_config_array[0].nbk;
+   t[1] = m_memory_config->memory_config_array[1].nbk;
     for (unsigned i=0; i<m_memory_config->m_n_mem_types; i++)
-        m_memory_stats[i]->memlatstat_print(m_memory_config->memory_config_array[i].m_n_mem,t);
+        m_memory_stats[i]->memlatstat_print(m_memory_config->memory_config_array[i].m_n_mem,t[i]);
 //   m_memory_stats->memlatstat_print(m_memory_config->m_n_mem,m_memory_config->nbk);
    for (unsigned i=0;i<m_memory_config->m_n_mem;i++)
       m_memory_partition_unit[i]->print(stdout);
 
    // L2 cache stats
-   if(!m_memory_config->memory_config_array[0].m_L2_config.disabled()){
-       cache_stats l2_stats;
-       struct cache_sub_stats l2_css;
-       struct cache_sub_stats total_l2_css;
-       l2_stats.clear();
-       l2_css.clear();
-       total_l2_css.clear();
+   // Partition type 1:
+    for (unsigned j=0; j<m_memory_config->m_n_mem_types; j++) {
+        if(!m_memory_config->memory_config_array[j].m_L2_config.disabled()) {
+            cache_stats l2_stats;
+            struct cache_sub_stats l2_css;
+            struct cache_sub_stats total_l2_css;
+            l2_stats.clear();
+            l2_css.clear();
+            total_l2_css.clear();
 
-       printf("\n========= L2 cache stats =========\n");
-       for (unsigned i=0;i<m_memory_config->memory_config_array[0].m_n_mem_sub_partition;i++){
-           m_memory_sub_partition[i]->accumulate_L2cache_stats(l2_stats);
-           m_memory_sub_partition[i]->get_L2cache_sub_stats(l2_css);
+            printf("\n========= L2 cache stats =========\n");
+            for (unsigned i=0;i<m_memory_config->memory_config_array[j].m_n_mem_sub_partition;i++){
+                m_memory_sub_partition[i]->accumulate_L2cache_stats(l2_stats);
+                m_memory_sub_partition[i]->get_L2cache_sub_stats(l2_css);
 
-           fprintf( stdout, "L2_cache_bank[%d]: Access = %u, Miss = %u, Miss_rate = %.3lf, Pending_hits = %u, Reservation_fails = %u\n",
-                    i, l2_css.accesses, l2_css.misses, (double)l2_css.misses / (double)l2_css.accesses, l2_css.pending_hits, l2_css.res_fails);
+                fprintf( stdout, "L2_cache_bank[%d]: Access = %u, Miss = %u, Miss_rate = %.3lf, Pending_hits = %u, Reservation_fails = %u\n",
+                         i, l2_css.accesses, l2_css.misses, (double)l2_css.misses / (double)l2_css.accesses, l2_css.pending_hits, l2_css.res_fails);
 
-           total_l2_css += l2_css;
-       }
-       if (!m_memory_config->memory_config_array[0].m_L2_config.disabled() && m_memory_config->memory_config_array[0].m_L2_config.get_num_lines()) {
-          //L2c_print_cache_stat();
-          printf("L2_total_cache_accesses = %u\n", total_l2_css.accesses);
-          printf("L2_total_cache_misses = %u\n", total_l2_css.misses);
-          if(total_l2_css.accesses > 0)
-              printf("L2_total_cache_miss_rate = %.4lf\n", (double)total_l2_css.misses/(double)total_l2_css.accesses);
-          printf("L2_total_cache_pending_hits = %u\n", total_l2_css.pending_hits);
-          printf("L2_total_cache_reservation_fails = %u\n", total_l2_css.res_fails);
-          printf("L2_total_cache_breakdown:\n");
-          l2_stats.print_stats(stdout, "L2_cache_stats_breakdown");
-          total_l2_css.print_port_stats(stdout, "L2_cache");
-       }
-   }
+                total_l2_css += l2_css;
+            }
+            if (!m_memory_config->memory_config_array[j].m_L2_config.disabled() && m_memory_config->memory_config_array[j].m_L2_config.get_num_lines()) {
+               //L2c_print_cache_stat();
+               printf("L2_total_cache_accesses = %u\n", total_l2_css.accesses);
+               printf("L2_total_cache_misses = %u\n", total_l2_css.misses);
+               if(total_l2_css.accesses > 0)
+                   printf("L2_total_cache_miss_rate = %.4lf\n", (double)total_l2_css.misses/(double)total_l2_css.accesses);
+               printf("L2_total_cache_pending_hits = %u\n", total_l2_css.pending_hits);
+               printf("L2_total_cache_reservation_fails = %u\n", total_l2_css.res_fails);
+               printf("L2_total_cache_breakdown:\n");
+               l2_stats.print_stats(stdout, "L2_cache_stats_breakdown");
+               total_l2_css.print_port_stats(stdout, "L2_cache");
+            }
+        }
+    }
 
    if (m_config.gpgpu_cflog_interval != 0) {
       spill_log_to_file (stdout, 1, gpu_sim_cycle);

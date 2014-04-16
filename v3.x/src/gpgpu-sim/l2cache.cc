@@ -389,7 +389,7 @@ void memory_partition_unit::print( FILE *fp )
         sum = 0;
         for (int i=0; i<it->second.size(); ++i) {
             if (i>2) sum += it->second[i];
-            fprintf(fp, "%ld ", it->second[i]);
+//            fprintf(fp, "%ld ", it->second[i]);
         }
         fprintf(fp, " %d\n", sum);
     }
