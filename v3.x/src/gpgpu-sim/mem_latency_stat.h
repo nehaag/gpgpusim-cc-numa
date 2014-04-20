@@ -95,6 +95,7 @@ public:
 
    // DRAM access row locality stats 
    unsigned int **concurrent_row_access; //concurrent_row_access[dram chip id][bank id]
+   unsigned long long int **concurrent_row_access_total; //concurrent_row_access[dram chip id][bank id]
    unsigned int **num_activates; //num_activates[dram chip id][bank id]
    unsigned int **row_access; //row_access[dram chip id][bank id]
    unsigned int **max_conc_access2samerow; //max_conc_access2samerow[dram chip id][bank id]

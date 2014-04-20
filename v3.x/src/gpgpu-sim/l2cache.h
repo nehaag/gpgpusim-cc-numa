@@ -29,6 +29,7 @@
 #define MC_PARTITION_INCLUDED
 
 #include "dram.h"
+#include "gpu-sim.h"
 #include "../abstract_hardware_model.h"
 
 #include <list>
@@ -93,6 +94,7 @@ public:
    unsigned get_mpid() const { return m_id; }
 
    std::map <unsigned long long int, std::vector<unsigned long int> > num_access_per_cacheline;
+//   std::vector <unsigned long long int> latency_breakdown_all_req;
    unsigned long int *m_epoch_number;
    //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_per_epoch;
    //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_across_epoch;
@@ -226,7 +228,8 @@ public:
     }
     virtual void push(mem_fetch *mf) 
     {
-        mf->set_status(IN_PARTITION_L2_TO_DRAM_QUEUE,0/*FIXME*/);
+//        mf->set_status(IN_PARTITION_L2_TO_DRAM_QUEUE,0/*FIXME*/);
+        mf->set_status(IN_PARTITION_L2_TO_DRAM_QUEUE, gpu_sim_cycle+gpu_tot_sim_cycle);
         m_unit->m_L2_dram_queue->push(mf);
     }
 private:

@@ -34,6 +34,7 @@
 #include <zlib.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <map>
 
 #define READ 'R'  //define read and write states
 #define WRITE 'W'
@@ -123,7 +124,13 @@ public:
 								unsigned &wr,
 								unsigned &req) const;
 
+    // Distribution of request for every 1000 gpu-clock-cycles in terms of banks
+    // and rows. Data structure: for every bank, keep tarck of number of
+    // accesses per row
+    std::map<unsigned int, std::map<unsigned int, unsigned long long> > request_dist;
+
 private:
+    void print_req_dist_stats();
    void scheduler_fifo();
    void scheduler_frfcfs();
 

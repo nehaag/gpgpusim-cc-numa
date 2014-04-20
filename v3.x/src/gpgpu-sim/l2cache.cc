@@ -45,6 +45,7 @@
 #include "mem_latency_stat.h"
 #include "l2cache_trace.h"
 
+std::vector <unsigned long long int> latency_breakdown_all_req(10, 0);
 
 mem_fetch * partition_mf_allocator::alloc(new_addr_type addr, mem_access_type type, unsigned size, bool wr ) const 
 {
@@ -394,6 +395,12 @@ void memory_partition_unit::print( FILE *fp )
         fprintf(fp, " %d\n", sum);
     }
 
+    printf("total latency breakdown: ");
+    for (unsigned i = 10; i < 19; i++) {
+        printf("%llu ", latency_breakdown_all_req[i]);
+    }
+    printf("\n");
+
     //// re-use distance stats
     //fprintf(fp, "Re-use distance in this kernel\n");
     //it = reuse_distance_per_epoch.begin();
@@ -461,6 +468,22 @@ memory_sub_partition::~memory_sub_partition()
     delete m_L2interface;
 }
 
+void print_latency_breakdown_stat(mem_fetch* mf) {
+    // Print the latency break up map now
+    unsigned sum = 0;
+    for (unsigned i = 10; i < 19; i++) {
+        sum += mf->request_status_vector[i];
+    }
+    if (sum > 0) {
+        printf("latency breakdown: %llu: ch:%d bk:%d row:%d ", mf->get_addr(), mf->get_tlx_addr().chip, mf->get_tlx_addr().bk, mf->get_tlx_addr().row);
+        for (unsigned i = 10; i < 19; i++) {
+            printf("%llu ", mf->request_status_vector[i]);
+            latency_breakdown_all_req[i] += mf->request_status_vector[i];
+        }
+        printf("\n");
+    }
+}
+
 void memory_sub_partition::cache_cycle( unsigned cycle )
 {
     // L2 fill responses
@@ -470,6 +493,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
            if(mf->get_access_type() != L2_WR_ALLOC_R){ // Don't pass write allocate read request back to upper level cache
 				mf->set_reply();
 				mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
+                print_latency_breakdown_stat(mf);
 				m_L2_icnt_queue->push(mf);
            }else{
 				m_request_tracker.erase(mf);
@@ -489,6 +513,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
             }
         } else if ( !m_L2_icnt_queue->full() ) {
             mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
+            print_latency_breakdown_stat(mf);
             m_L2_icnt_queue->push(mf);
             m_dram_L2_queue->pop();
         }
@@ -524,6 +549,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
                         } else {
                             mf->set_reply();
                             mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
+                            print_latency_breakdown_stat(mf);
                             m_L2_icnt_queue->push(mf);
                         }
                         m_icnt_L2_queue->pop();

@@ -188,6 +188,32 @@ void dram_t::push( class mem_fetch *data )
       max_mrqs_temp = (max_mrqs_temp > mrqq->get_length())? max_mrqs_temp : mrqq->get_length();
    }
    m_stats->memlatstat_dram_access(data);
+
+   // for every request in MC queue, do
+   unsigned row = data->get_tlx_addr().row;
+   unsigned bank = data->get_tlx_addr().bk;
+   request_dist[bank][row]++;
+}
+
+void dram_t::print_req_dist_stats() {
+    // print the stats to the file
+    std::map<unsigned, std::map<unsigned, unsigned long long> >::iterator it = request_dist.begin();
+    unsigned sum_channel = 0;
+    for (it; it != request_dist.end(); it++) {
+        printf("channel:%d, bank:%d, ", id, it->first);
+        unsigned sum = 0;
+        std::map<unsigned, unsigned long long>::iterator it2 = it->second.begin();
+        for (it2; it2 != it->second.end(); it2++) {
+            printf("%d:%llu ", it2->first, it2->second);
+            sum += it2->second;
+        }
+        printf("total:%lld\n", sum);
+        sum_channel += sum;
+    }
+    if (sum_channel != 0)
+        printf("cycle:%lld, channel:%d total: %lld\n", cycle_count, id, sum_channel);
+    // reset request_distribution
+    request_dist.clear();
 }
 
 void dram_t::scheduler_fifo()
@@ -209,6 +235,8 @@ void dram_t::scheduler_fifo()
 void dram_t::cycle()
 {
     cycle_count++;
+    if ((cycle_count % 10000) == 0) 
+        print_req_dist_stats();
    if( !returnq->full() ) {
        dram_req_t *cmd = rwq->pop();
        if( cmd ) {
@@ -258,6 +286,7 @@ void dram_t::cycle()
       ave_mrqs += mrqq->get_length();
       ave_mrqs_partial +=  mrqq->get_length();
    }
+
 
    unsigned k=m_config->nbk;
    bool issued = false;

@@ -112,6 +112,9 @@ public:
    const memory_config *get_mem_config(){return m_mem_config;}
 
    unsigned get_num_flits(bool simt_to_mem);
+
+   //to keep track of time spent in various places of the machine
+   std::vector<unsigned long long> request_status_vector;
 private:
    // request source information
    unsigned m_request_uid;

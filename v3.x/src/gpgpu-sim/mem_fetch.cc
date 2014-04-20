@@ -67,7 +67,7 @@ mem_fetch::mem_fetch( const mem_access_t &access,
                       unsigned wid,
                       unsigned sid, 
                       unsigned tpc, 
-                      const class memory_config *config )
+                      const class memory_config *config ) : request_status_vector(28, 0) 
 {
    m_request_uid = sm_next_mf_request_uid++;
    m_access = access;
@@ -233,6 +233,8 @@ void mem_fetch::print( FILE *fp, bool print_inst ) const
 
 void mem_fetch::set_status( enum mem_fetch_status status, unsigned long long cycle ) 
 {
+    assert(cycle >= m_status_change);
+    request_status_vector[(unsigned)m_status] = cycle - m_status_change;
     m_status = status;
     m_status_change = cycle;
 }

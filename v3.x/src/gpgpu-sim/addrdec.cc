@@ -108,27 +108,57 @@ new_addr_type linear_to_raw_address_translation::partition_address( new_addr_typ
 
 void linear_to_raw_address_translation::addrdec_tlx(new_addr_type addr, addrdec_t *tlx) const
 {  
-   unsigned long long int addr_for_chip,rest_of_addr;
-   if (!gap) {
-      tlx->chip = addrdec_packbits(addrdec_mask[CHIP], addr, addrdec_mkhigh[CHIP], addrdec_mklow[CHIP]);
-      tlx->bk   = addrdec_packbits(addrdec_mask[BK], addr, addrdec_mkhigh[BK], addrdec_mklow[BK]);
-      tlx->row  = addrdec_packbits(addrdec_mask[ROW], addr, addrdec_mkhigh[ROW], addrdec_mklow[ROW]);
-      tlx->col  = addrdec_packbits(addrdec_mask[COL], addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
-      tlx->burst= addrdec_packbits(addrdec_mask[BURST], addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
-   } else {
-      // Split the given address at ADDR_CHIP_S into (MSBs,LSBs)
-      // - extract chip address using modulus of MSBs
-      // - recreate the rest of the address by stitching the quotient of MSBs and the LSBs 
-      addr_for_chip = (addr>>ADDR_CHIP_S) % m_n_channel; 
-      rest_of_addr = ( (addr>>ADDR_CHIP_S) / m_n_channel) << ADDR_CHIP_S; 
-      rest_of_addr |= addr & ((1 << ADDR_CHIP_S) - 1); 
+//    RRRRRRRRRRRR.BBBB.DDD.CCCCCC.SSSSSS
+    tlx->burst = addr % 64ULL;
+    tlx->col = (addr >> 6) % 64ULL; 
+    uint64_t rest_of_addr = addr >> 12ULL;
+    srand(rest_of_addr);
+    rand();
+    rand();
+    int robach = rand();
+    tlx->chip = robach % m_n_channel;
+    int roba = robach / m_n_channel;
+    unsigned num_bk_bits = __builtin_popcountl(addrdec_mask[BK]);
+    unsigned num_banks = 1ULL << num_bk_bits;
+    tlx->bk = roba % num_banks; 
+    tlx->row = (roba / num_banks) % 4096ULL; // 2^12 rows
+//    return;
 
-      tlx->chip = addr_for_chip; 
-      tlx->bk   = addrdec_packbits(addrdec_mask[BK], rest_of_addr, addrdec_mkhigh[BK], addrdec_mklow[BK]);
-      tlx->row  = addrdec_packbits(addrdec_mask[ROW], rest_of_addr, addrdec_mkhigh[ROW], addrdec_mklow[ROW]);
-      tlx->col  = addrdec_packbits(addrdec_mask[COL], rest_of_addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
-      tlx->burst= addrdec_packbits(addrdec_mask[BURST], rest_of_addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
-   }
+
+//   unsigned long long int addr_for_chip,rest_of_addr;
+//   unsigned nchipbits = (m_n_channel == 1) ? 0 : (::LOGB2_32(m_n_channel - 1) + 1);
+//   unsigned xor_bits = (addr>>(ADDR_CHIP_S + nchipbits)) & ((1 << nchipbits) - 1);
+//   if (!gap) {
+//      tlx->chip = addrdec_packbits(addrdec_mask[CHIP], addr, addrdec_mkhigh[CHIP], addrdec_mklow[CHIP]);
+//      tlx->chip ^= xor_bits; 
+//
+//      tlx->bk   = addrdec_packbits(addrdec_mask[BK], addr, addrdec_mkhigh[BK], addrdec_mklow[BK]);
+//      tlx->row  = addrdec_packbits(addrdec_mask[ROW], addr, addrdec_mkhigh[ROW], addrdec_mklow[ROW]);
+//      tlx->col  = addrdec_packbits(addrdec_mask[COL], addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
+//      tlx->burst= addrdec_packbits(addrdec_mask[BURST], addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
+//   } else {
+//      // Split the given address at ADDR_CHIP_S into (MSBs,LSBs)
+//      // - extract chip address using modulus of MSBs
+//      // - recreate the rest of the address by stitching the quotient of MSBs and the LSBs
+//      unsigned addr_till_ch_1 = (addr>>ADDR_CHIP_S);
+//      unsigned addr_till_ch_2 = (addr>>(ADDR_CHIP_S + nchipbits));
+//      unsigned addr_ch_bits = addr_till_ch_1 & ((1 << nchipbits) - 1);
+//      unsigned addr_ch_xor_bits = addr_till_ch_2 & ((1 << nchipbits) - 1);
+//      addr_for_chip = (addr_till_ch_2<<nchipbits | (addr_ch_xor_bits ^ addr_ch_bits)) % m_n_channel;
+//
+////      addr_for_chip = (addr>>ADDR_CHIP_S) % m_n_channel; 
+//      rest_of_addr = ( (addr>>ADDR_CHIP_S) / m_n_channel) << ADDR_CHIP_S; 
+//      rest_of_addr |= addr & ((1 << ADDR_CHIP_S) - 1); 
+//
+//      tlx->chip = addr_for_chip; 
+//      tlx->bk   = addrdec_packbits(addrdec_mask[BK], rest_of_addr, addrdec_mkhigh[BK], addrdec_mklow[BK]);
+//      tlx->row  = addrdec_packbits(addrdec_mask[ROW], rest_of_addr, addrdec_mkhigh[ROW], addrdec_mklow[ROW]);
+//      tlx->col  = addrdec_packbits(addrdec_mask[COL], rest_of_addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
+//      tlx->burst= addrdec_packbits(addrdec_mask[BURST], rest_of_addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
+//   }
+//    unsigned num_bk_bits = __builtin_popcountl(addrdec_mask[BK]);
+//    unsigned row_bits = tlx->row & ((1 << num_bk_bits) - 1);
+//    tlx->bk ^= row_bits; 
 
    // combine the chip address and the lower bits of DRAM bank address to form the subpartition ID
    unsigned sub_partition_addr_mask = m_n_sub_partition_in_channel - 1; 
