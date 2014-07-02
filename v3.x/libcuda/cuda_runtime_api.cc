@@ -111,6 +111,7 @@
 #include <string>
 #include <sstream>
 #include <fstream>
+#include <inttypes.h>
 #ifdef OPENGL_SUPPORT
 #define GL_GLEXT_PROTOTYPES
 #ifdef __APPLE__
@@ -467,7 +468,7 @@ __host__ cudaError_t CUDARTAPI cudaMallocArray(struct cudaArray **array, const s
 	(*array)->size = size;
 	(*array)->dimensions = 2;
 	((*array)->devPtr32)= (int) (long long)context->get_device()->get_gpgpu()->gpu_mallocarray(size);
-	printf("GPGPU-Sim PTX: cudaMallocArray: devPtr32 = %d\n", ((*array)->devPtr32));
+	printf("GPGPU-Sim PTX: cudaMallocArray: devPtr32 = %llu\n", ((*array)->devPtr32));
 	((*array)->devPtr) = (void*) (long long) ((*array)->devPtr32);
 	if ( ((*array)->devPtr) ) {
 		return g_last_cudaError = cudaSuccess;
