@@ -64,12 +64,15 @@ stream_manager *g_stream_manager;
 static int sg_argc = 3;
 static const char *sg_argv[] = {"", "-config","gpgpusim.config"};
 std::map<unsigned long long, unsigned> m_map;
+std::map<unsigned long long, unsigned> m_map_online;
+unsigned long long int num_lines_hbm;
 
 void read_memory_map() {
     // read the mem_map file
     const char* mem_map_str = "mem-map.txt";
    if(getenv("MEM_MAP_FILE"))
        mem_map_str = getenv("MEM_MAP_FILE");
+   printf("MEM_MAP_FILE: %s\n", mem_map_str);
    ifstream m_file(mem_map_str);
    std::string line;
    if (m_file.is_open()) {

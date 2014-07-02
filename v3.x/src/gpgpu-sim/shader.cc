@@ -2161,6 +2161,7 @@ void gpgpu_sim::shader_print_cache_stats( FILE *fout ) const{
         fprintf(fout, "\tL1T_total_cache_reservation_fails = %u\n", total_css.res_fails);
     }
 
+    /*
     //Neha
     //Reporting cumulative access to l1d, const, texture caches
     for ( unsigned i = 0; i < m_shader_config->n_simt_clusters; ++i ) {
@@ -2212,6 +2213,7 @@ void gpgpu_sim::shader_print_cache_stats( FILE *fout ) const{
         }
         fprintf(fout, " %d\n", sum);
     }
+    */
 }
 
 void gpgpu_sim::shader_print_l1_miss_stat( FILE *fout ) const

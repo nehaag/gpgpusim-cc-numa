@@ -307,6 +307,15 @@ struct memory_config_types {
         option_parser_register(opp, "-enable_addr_limit", OPT_UINT32, &enable_addr_limit, 
                  "enable addr separation",
                  "0");
+        option_parser_register(opp, "-line_ratio", OPT_UINT32, &line_ratio, 
+                 "limit the capacity of HBM",
+                 "0");
+        option_parser_register(opp, "-data_ratio", OPT_UINT32, &data_ratio, 
+                 "select the data ratio to be mapped",
+                 "0");
+        option_parser_register(opp, "-cachelines", OPT_UINT32, &cachelines, 
+                 "total number of cachelines accessed by a workload",
+                 "0");
         for (unsigned int i=0; i<2; i++) {
             memory_config_array[i].reg_options(opp, i+1);
         }
@@ -317,6 +326,9 @@ struct memory_config_types {
    unsigned m_n_mem_t2;
    unsigned m_n_mem_types;
    unsigned enable_addr_limit;
+   unsigned line_ratio;
+   unsigned data_ratio;
+   unsigned long long cachelines;
 };
 
 
@@ -325,6 +337,9 @@ extern unsigned long long  gpu_sim_cycle;
 extern unsigned long long  gpu_tot_sim_cycle;
 extern bool g_interactive_debugger_enabled;
 extern std::map<unsigned long long, unsigned> m_map;
+extern std::map<unsigned long long, unsigned> m_map_online;
+extern unsigned long long int num_lines_hbm;
+extern unsigned int bw_equal;
 
 class gpgpu_sim_config : public power_config, public gpgpu_functional_sim_config {
 public:

@@ -84,6 +84,7 @@ bool g_interactive_debugger_enabled=false;
 
 unsigned long long  gpu_sim_cycle = 0;
 unsigned long long  gpu_tot_sim_cycle = 0;
+unsigned int bw_equal = 0;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 

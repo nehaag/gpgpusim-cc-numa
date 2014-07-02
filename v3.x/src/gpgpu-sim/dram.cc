@@ -200,18 +200,18 @@ void dram_t::print_req_dist_stats() {
     std::map<unsigned, std::map<unsigned, unsigned long long> >::iterator it = request_dist.begin();
     unsigned sum_channel = 0;
     for (it; it != request_dist.end(); it++) {
-        printf("channel:%d, bank:%d, ", id, it->first);
+//        printf("channel:%d, bank:%d, ", id, it->first);
         unsigned sum = 0;
         std::map<unsigned, unsigned long long>::iterator it2 = it->second.begin();
         for (it2; it2 != it->second.end(); it2++) {
-            printf("%d:%llu ", it2->first, it2->second);
+//            printf("%d:%llu ", it2->first, it2->second);
             sum += it2->second;
         }
-        printf("total:%lld\n", sum);
+//        printf("total:%lld\n", sum);
         sum_channel += sum;
     }
     if (sum_channel != 0)
-        printf("cycle:%lld, channel:%d total: %lld\n", cycle_count, id, sum_channel);
+//        printf("cycle:%lld, channel:%d total: %lld\n", cycle_count, id, sum_channel);
     // reset request_distribution
     request_dist.clear();
 }

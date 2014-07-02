@@ -262,6 +262,10 @@ void memory_partition_unit::dram_cycle()
 
                 m_sub_partition[spid]->L2_dram_queue_pop();
                 MEMPART_DPRINTF("Issue mem_fetch request %p from sub partition %d to dram\n", mf, spid); 
+
+//                //DRAM memory trace
+//                printf("MEM_TRACE: %lld, %d, %lld\n", gpu_sim_cycle+gpu_tot_sim_cycle, mf->is_write(), mf->get_addr());
+
                 dram_delay_t d;
                 d.req = mf;
                 d.ready_cycle = gpu_sim_cycle+gpu_tot_sim_cycle + m_config->dram_latency;
@@ -276,12 +280,13 @@ void memory_partition_unit::dram_cycle()
                 int diff = 0;
                 // check if an element already exists
                 if (num_access_per_cacheline.count(cacheline))
-                    diff = *m_epoch_number - (num_access_per_cacheline[cacheline].size() - 3);
+                    diff = *m_epoch_number - (num_access_per_cacheline[cacheline].size() - 4);
                 else {
                     diff = *m_epoch_number;
 
                     // Store the address decoding at dram level in the map
                     const addrdec_t &tlx = mf->get_tlx_addr();
+                    num_access_per_cacheline[cacheline].push_back(mf->get_addr());
                     num_access_per_cacheline[cacheline].push_back(tlx.bk);
                     num_access_per_cacheline[cacheline].push_back(tlx.row);
                     num_access_per_cacheline[cacheline].push_back(tlx.col);
@@ -296,7 +301,7 @@ void memory_partition_unit::dram_cycle()
                     //    reuse_distance_across_epoch[cacheline].push_back(gpu_tot_sim_cycle + gpu_sim_cycle);
                 }
                 // Increment the acccesses per epoch
-                num_access_per_cacheline[cacheline][*m_epoch_number+3] += 1;
+                num_access_per_cacheline[cacheline][*m_epoch_number+4] += 1;
 
                 // update last access re-use distance stats
                 // local update
@@ -389,17 +394,20 @@ void memory_partition_unit::print( FILE *fp )
         fprintf(fp, "%lld ", it->first);
         sum = 0;
         for (int i=0; i<it->second.size(); ++i) {
-            if (i>2) sum += it->second[i];
-//            fprintf(fp, "%ld ", it->second[i]);
+            if (i>3) 
+                sum += it->second[i];
+            else {
+                fprintf(fp, "%ld ", it->second[i]);
+            }
         }
         fprintf(fp, " %d\n", sum);
     }
 
-    printf("total latency breakdown: ");
-    for (unsigned i = 10; i < 19; i++) {
-        printf("%llu ", latency_breakdown_all_req[i]);
-    }
-    printf("\n");
+//    printf("total latency breakdown: ");
+//    for (unsigned i = 10; i < 19; i++) {
+//        printf("%llu ", latency_breakdown_all_req[i]);
+//    }
+//    printf("\n");
 
     //// re-use distance stats
     //fprintf(fp, "Re-use distance in this kernel\n");
@@ -475,12 +483,12 @@ void print_latency_breakdown_stat(mem_fetch* mf) {
         sum += mf->request_status_vector[i];
     }
     if (sum > 0) {
-        printf("latency breakdown: %llu: ch:%d bk:%d row:%d ", mf->get_addr(), mf->get_tlx_addr().chip, mf->get_tlx_addr().bk, mf->get_tlx_addr().row);
+//        printf("latency breakdown: %llu: ch:%d bk:%d row:%d ", mf->get_addr(), mf->get_tlx_addr().chip, mf->get_tlx_addr().bk, mf->get_tlx_addr().row);
         for (unsigned i = 10; i < 19; i++) {
-            printf("%llu ", mf->request_status_vector[i]);
+//            printf("%llu ", mf->request_status_vector[i]);
             latency_breakdown_all_req[i] += mf->request_status_vector[i];
         }
-        printf("\n");
+//        printf("\n");
     }
 }
 
