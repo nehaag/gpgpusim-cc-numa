@@ -60,6 +60,29 @@ mem_fetch::mem_fetch( mem_fetch *mf,
 
 }
 
+mem_fetch::mem_fetch( const mem_access_t &access, unsigned ctrl_size, const class memory_config *config, unsigned type) : request_status_vector(28, 0)
+{
+   m_request_uid = sm_next_mf_request_uid++;
+   m_access = access;
+   m_data_size = access.get_size();
+   m_ctrl_size = get_ctrl_size();
+   m_sid = 0; // TODO: fake id
+   m_tpc = -1;
+   m_wid = -1;
+   m_mem_config = config;
+   unsigned partition_offset = type * (config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+   config->m_address_mapping.addrdec_tlx_hetero(access.get_addr(), &m_raw_addr, partition_offset);
+   m_partition_addr = m_mem_config->m_address_mapping.partition_address(access.get_addr());
+   m_type = m_access.is_write()?WRITE_REQUEST:READ_REQUEST;
+   m_timestamp = gpu_sim_cycle + gpu_tot_sim_cycle;
+   m_timestamp2 = 0;
+   m_status = MEM_FETCH_INITIALIZED;
+   m_status_change = gpu_sim_cycle + gpu_tot_sim_cycle;
+   icnt_flit_size = m_mem_config->icnt_flit_size;
+
+   if (m_mem_config->type == 2) assert(m_raw_addr.sub_partition >= m_mem_config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+   if (m_mem_config->type == 1) assert(m_raw_addr.sub_partition < m_mem_config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+}
 
 mem_fetch::mem_fetch( const mem_access_t &access, 
                       const warp_inst_t *inst,
@@ -83,20 +106,6 @@ mem_fetch::mem_fetch( const mem_access_t &access,
 
    const class memory_config* config_type = config;
    unsigned type = 0;
-//   if ((access.get_addr() > config->addr_limit) && (access.get_type() != INST_ACC_R)) {
-//    if (access.get_addr() == 2187299968) printf("addr: %lld, addr_limit: %lld", access.get_addr(), config->addr_limit);
-//   if ((access.get_addr() >= config->addr_limit) && config->m_memory_config_types->enable_addr_limit) {
-//   xsbench address limit
-//   if (((access.get_addr() >= config->addr_limit)  || (access.get_addr() >= 1069547520 && (access.get_addr() < 1069628928))) && config->m_memory_config_types->enable_addr_limit) {
-//   bfs address limit
-//   CORRECT IMPLEMENTATION FOR PERFECT SEPARATION
-//   if (access.get_addr() >= 2179483264 && config->m_memory_config_types->enable_addr_limit) {
-//       config_type = &(config->m_memory_config_types->memory_config_array[1]);
-//       type = 1;
-//   } else {
-//       config_type = &(config->m_memory_config_types->memory_config_array[0]);
-//       type = 0;
-//   }
 //   FOR 3-level address mapping
     unsigned long long addr_temp = access.get_addr();
     unsigned long long line_addr_temp = (access.get_addr() & (~127UL));
@@ -106,19 +115,30 @@ mem_fetch::mem_fetch( const mem_access_t &access,
     if (config->m_memory_config_types->enable_addr_limit > 0) {
         if (config->m_memory_config_types->enable_addr_limit == 1) {
             type = (m_map[line_addr_temp]-1);
+            m_map_online[line_addr_temp] = type;
             if (type != 1 && type !=0)
                 printf("addr: %lld, type: %d", line_addr_temp, type);
         } else if (config->m_memory_config_types->enable_addr_limit == 2) {
-            //Perform a bandwidth equal, capacity equal linux standard mapping
-            if (rand_num < config->m_memory_config_types->data_ratio)
-                type = 0;   //send to sddr
-            else type = 1;  //send to hbm
+            if (m_map_online.count(line_addr_temp))
+                type = m_map_online[line_addr_temp];
+            else {
+                //Perform a bandwidth equal, capacity equal linux standard mapping
+                if (rand_num < config->m_memory_config_types->data_ratio)
+                    type = 0;   //send to sddr
+                else type = 1;  //send to hbm
+                m_map_online[line_addr_temp] = type;
+            }
         } else if (config->m_memory_config_types->enable_addr_limit == 3) {
             //Capacity limited random allocation in certain ratio
             //l: number of cacheline accesses so far put into hbm
             //lines: total number of cacheline for this workload
-            if (m_map_online.count(line_addr_temp))
+            if (m_map_online.count(line_addr_temp)) {
+                // second touch to the address
                 type = m_map_online[line_addr_temp];
+                //trigger migration on second touch
+                //migrate(addr1, addr2); //call this function in memory
+                //controller to swap the pages starting at these addresses
+            }
             else {
                 if (num_lines_hbm < (config->m_memory_config_types->line_ratio/100.0*config->m_memory_config_types->cachelines)) {
                     if (rand_num < config->m_memory_config_types->data_ratio)

@@ -78,7 +78,7 @@ dram_t::dram_t( unsigned int partition_id, const struct memory_config *config, m
    }
    prio = 0;  
    rwq = new fifo_pipeline<dram_req_t>("rwq",m_config->CL,m_config->CL+1);
-   mrqq = new fifo_pipeline<dram_req_t>("mrqq",0,2);
+   mrqq = new fifo_pipeline<dram_req_t>("mrqq",0,32);
    returnq = new fifo_pipeline<mem_fetch>("dramreturnq",0,m_config->gpgpu_dram_return_queue_size==0?1024:m_config->gpgpu_dram_return_queue_size); 
    m_frfcfs_scheduler = NULL;
    if ( m_config->scheduler_type == DRAM_FRFCFS )
@@ -117,6 +117,9 @@ dram_t::dram_t( unsigned int partition_id, const struct memory_config *config, m
       mrqq_Dist = StatCreate("mrqq_length",1,64); //track up to 64 entries
 
    cycle_count = 0;
+   migrateReqCountR = 0;
+   migrateReqCountW = 0;
+   migrationTriggered = 0;
 }
 
 bool dram_t::full() const 
@@ -171,7 +174,8 @@ dram_req_t::dram_req_t( class mem_fetch *mf )
 
 void dram_t::push( class mem_fetch *data ) 
 {
-   assert(id == data->get_tlx_addr().chip); // Ensure request is in correct memory partition
+    if (data->get_access_type() != MEM_MIGRATE_W && data->get_access_type() != MEM_MIGRATE_R)
+        assert(id == data->get_tlx_addr().chip); // Ensure request is in correct memory partition
 
    dram_req_t *mrq = new dram_req_t(data);
    data->set_status(IN_PARTITION_MC_INTERFACE_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
@@ -247,9 +251,26 @@ void dram_t::cycle()
            if (cmd->dqbytes >= cmd->nbytes) {
               mem_fetch *data = cmd->data; 
               data->set_status(IN_PARTITION_MC_RETURNQ,gpu_sim_cycle+gpu_tot_sim_cycle); 
-              if( data->get_access_type() != L1_WRBK_ACC && data->get_access_type() != L2_WRBK_ACC ) {
+              if( data->get_access_type() != L1_WRBK_ACC && data->get_access_type() != L2_WRBK_ACC && data->get_access_type() != MEM_MIGRATE_R && data->get_access_type() != MEM_MIGRATE_W) {
                  data->set_reply();
                  returnq->push(data);
+              } else if (data->get_access_type() == MEM_MIGRATE_R) {
+                  migrateReqCountR++;
+                  //TODO:after 16 read reqs are done => data is in mem controller now
+                  //and we need to write this page to the destination memory
+                  //controller
+                  if (migrateReqCountR == 16) {
+                      //TODO: pass last parameter mem_type correctly here
+                      this->migratePage(destAddr, 0, destDramCtlr, 1, memConfigRemote, NULL, destMemType);
+                      migrateReqCountR = 0;
+                  }
+              } else if (data->get_access_type() == MEM_MIGRATE_W) {
+                  migrateReqCountW++;
+                  if (migrateReqCountW == 16) {
+                      //TODO:Send migration unit the call back that migration is done
+                      //for this memroy controller unit, Write Part!
+                      migrateReqCountW = 0;
+                  }
               } else {
                  m_memory_partition_unit->set_done(data);
                  delete data;
@@ -586,4 +607,52 @@ void dram_t::set_dram_power_stats(	unsigned &cmd,
 	rd = n_rd;
 	wr = n_wr;
 	req = n_req;
+}
+
+unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned long long int dest_addr, dram_t *dest_dram_ctrl, unsigned int reqType, const class memory_config *mem_config_local, const class memory_config *mem_config_remote, unsigned mem_type) {
+    assert(reqType == 0 || reqType == 1);
+    migrationTriggered = 1;
+    destDramCtlr = dest_dram_ctrl;
+    destAddr = dest_addr;
+    memConfigLocal = mem_config_local;
+    memConfigRemote = mem_config_remote;
+    destMemType = 1U ^ mem_type;
+
+    //determine which dram controller request needs to be sent, if it is a read
+    //request, then it is local controller, else if it is a write request then
+    //it is destination controller
+    dram_t *dram_ctrl;
+    if (reqType == 0)   //0: Read request
+        dram_ctrl = this;
+    else
+        dram_ctrl = dest_dram_ctrl;
+
+    //Push 16 read request to the channel to a given source address
+    int i;
+    for (i=0; i<16; i++) {
+        if (!dram_ctrl->full()) {
+            mem_fetch *mf;
+            //create a new mf for the next packet
+            if (reqType == 0) {
+               mem_access_t access(MEM_MIGRATE_R, source_addr + (i) * 128ULL, 128U, 0);
+                mf = new mem_fetch( access, 
+                                    READ_PACKET_SIZE,
+                                    memConfigLocal, mem_type);
+            } else {
+              mem_access_t access(MEM_MIGRATE_W, source_addr + (i) * 128ULL, 128U, 0);
+              mf = new mem_fetch( access, 
+                                  WRITE_PACKET_SIZE,
+                                  memConfigLocal, mem_type);
+            }
+
+            //push the request in the memory controller
+            dram_ctrl->push(mf);
+        } else {
+            //TODO:Try in the next cycle, call back to the migration uniti, for
+            //now assume it doesnt happen,
+            printf("ERROR: dram queue full, migration not completed, req sent till now: %d\n", i-1);
+            exit(EXIT_FAILURE);
+        }
+    }
+    return i;
 }

@@ -38,6 +38,7 @@
 #include <list>
 #include <stdio.h>
 
+#include "migrate.h"
 
 
 // constants for statistics printouts
@@ -507,6 +508,11 @@ private:
    class memory_partition_unit **m_memory_partition_unit;
    class memory_sub_partition **m_memory_sub_partition;
 
+    /*
+     * Migration unit
+     */
+   class migrate *migration_unit;
+
    std::vector<kernel_info_t*> m_running_kernels;
    unsigned m_last_issued_kernel;
 
@@ -567,5 +573,4 @@ public:
     unsigned long int epoch_number;
 
 };
-
 #endif

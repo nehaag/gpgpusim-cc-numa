@@ -99,6 +99,9 @@ public:
    //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_per_epoch;
    //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_across_epoch;
    
+    //return the dram pointer, this is for migration purposes
+    class dram_t* get_dram() {return m_dram;}
+   
 private: 
 
    unsigned m_id;

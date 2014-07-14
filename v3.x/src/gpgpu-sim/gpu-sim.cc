@@ -85,6 +85,7 @@ bool g_interactive_debugger_enabled=false;
 unsigned long long  gpu_sim_cycle = 0;
 unsigned long long  gpu_tot_sim_cycle = 0;
 unsigned int bw_equal = 0;
+bool tryMigrateOnce = true;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -618,6 +619,11 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
             m_memory_sub_partition[submpid] = m_memory_partition_unit[i]->get_sub_partition(p); 
         }
     }
+
+    /*
+     * Migration unit
+     */
+    migration_unit = new migrate(&(m_memory_config->memory_config_array[0]), &(m_memory_config->memory_config_array[1]), m_memory_partition_unit);
 
     icnt_wrapper_init();
     icnt_create(m_shader_config->n_simt_clusters, t);
@@ -1243,6 +1249,38 @@ void gpgpu_sim::cycle()
                 }
             } else {
                m_memory_sub_partition[i]->pop();
+            }
+        }
+    }
+
+    /*
+     * Page monitoring unit
+     */
+    if (tryMigrateOnce) {
+        if (clock_mask & L2) {
+            //Migrate page once to see if the migration mechanism is working
+            //Use a mapping table and determine a page in each memory and migrate it
+            std::map<unsigned long long, unsigned>::iterator it = m_map_online.begin();
+            unsigned found_pages_to_migrate = 0;
+            bool found_page_HBM = false;
+            bool found_page_SDDR = false;
+            unsigned long long int addrHBM;
+            unsigned long long int addrSDDR;
+
+            for (; it != m_map_online.end() && (found_pages_to_migrate < 2); it++) {
+                if (it->second == 1 && !found_page_HBM) {    //page in HBM
+                    addrHBM = it->first;
+                    found_pages_to_migrate++;
+                    found_page_HBM = true;
+                } else if (it->second == 0 && !found_page_SDDR) {
+                    addrSDDR = it->first;
+                    found_pages_to_migrate++;
+                    found_page_SDDR = true;
+                }
+            }
+            if (found_pages_to_migrate == 2) {
+                migration_unit->migratePage(addrSDDR, addrHBM);
+                tryMigrateOnce = false;
             }
         }
     }

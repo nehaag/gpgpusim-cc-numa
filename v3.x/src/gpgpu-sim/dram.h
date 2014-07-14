@@ -129,6 +129,19 @@ public:
     // accesses per row
     std::map<unsigned int, std::map<unsigned int, unsigned long long> > request_dist;
 
+    //Migrate address in this memory channel to another address in a specified
+    //memroy channel
+    unsigned int migratePage(unsigned long long int source_addr, unsigned long long int dest_addr, dram_t *dest_dram_ctrl, unsigned int reqType, const class memory_config *memConfigLocal, const class memory_config *memConfigRemote, unsigned mem_type);
+    unsigned int migrateReqCountR;
+    unsigned int migrateReqCountW;
+
+    unsigned migrationTriggered;
+    dram_t *destDramCtlr;
+    unsigned long long int destAddr;
+    const class memory_config *memConfigLocal;
+    const class memory_config *memConfigRemote;
+    unsigned destMemType;
+
 private:
     void print_req_dist_stats();
    void scheduler_fifo();

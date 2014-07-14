@@ -57,6 +57,12 @@ public:
                unsigned tpc, 
                const class memory_config *config );
     mem_fetch( mem_fetch *mf, const mem_access_t &access);
+    /*
+     * For request generation during migration
+     * type = 0: SDDR, type = 1: HBM
+     */
+    mem_fetch( const mem_access_t &access, unsigned ctrl_size, const class memory_config *config, unsigned type);
+
    ~mem_fetch();
 
    void set_status( enum mem_fetch_status status, unsigned long long cycle );

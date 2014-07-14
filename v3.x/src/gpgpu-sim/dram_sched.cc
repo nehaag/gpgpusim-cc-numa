@@ -86,13 +86,13 @@ dram_req_t *frfcfs_scheduler::schedule( unsigned bank, unsigned curr_row )
 
       std::map<unsigned,std::list<std::list<dram_req_t*>::iterator> >::iterator bin_ptr = m_bins[bank].find( curr_row );
       if ( bin_ptr == m_bins[bank].end()) {
-         dram_req_t *req = m_queue[bank].back();
+         dram_req_t *req = m_queue[bank].back(); //frFCfs: FC part here
          bin_ptr = m_bins[bank].find( req->row );
          assert( bin_ptr != m_bins[bank].end() ); // where did the request go???
          m_last_row[bank] = &(bin_ptr->second);
          data_collection(bank);
       } else {
-         m_last_row[bank] = &(bin_ptr->second);
+         m_last_row[bank] = &(bin_ptr->second); //Frfcfs: FR part
 
       }
    }
