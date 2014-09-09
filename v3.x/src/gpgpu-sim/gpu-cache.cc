@@ -317,8 +317,10 @@ bool mshr_table::full( new_addr_type block_addr ) const{
 }
 
 /// Add or merge this access
-void mshr_table::add( new_addr_type block_addr, mem_fetch *mf ){
+void mshr_table::add( new_addr_type block_addr, mem_fetch *mf, bool wa){
 	m_data[block_addr].m_list.push_back(mf);
+    m_data[block_addr].wa_list.push_back(wa);
+    mf->wa = wa;
 	assert( m_data.size() <= m_num_entries );
 	assert( m_data[block_addr].m_list.size() <= m_max_merged );
 	// indicate that this MSHR entry contains an atomic operation
@@ -365,6 +367,27 @@ void mshr_table::display( FILE *fp ) const{
             fprintf(fp," no memory requests???\n");
         }
     }
+}
+
+unsigned mshr_table::flush(new_addr_type block_addr) {
+    bool mshr_hit = probe(block_addr);
+    if (mshr_hit) {
+        /* Fetch the mf entry and check if it is a write request
+         * If yes, then delete the corresponding read entry in MSHR
+         */
+//        std::list<mem_fetch*>::iterator it = m_data[block_addr].m_list.begin();
+//        for (; it != m_data[block_addr].m_list.end(); ++it) {
+//            if ((*it)->wa)
+//                m_data[block_addr].m_list.erase(it);
+//            else {
+                /* if reads to a page to be migrated are pending then wait for
+                 * the data to be returned form the lower level.
+                 */
+                return 2;
+//            }
+//        }
+    }
+    return 3;
 }
 /***************************************************************** Caches *****************************************************************/
 cache_stats::cache_stats(){
@@ -632,10 +655,22 @@ bool baseline_cache::bandwidth_management::fill_port_free() const
     return (m_fill_port_occupied_cycles == 0); 
 }
 
+/* Print miss queue of the cace
+ */
+void baseline_cache::print_miss_queue() {
+    std::list<mem_fetch*>::iterator it = m_miss_queue.begin();
+    for (; it != m_miss_queue.end(); ++it) {
+        printf("addr: %lld; ", (*it)->get_addr());
+    }
+    printf("\n");
+}
+
 /// Sends next request to lower level of memory
-void baseline_cache::cycle(){
+void baseline_cache::cycle(bool level2){
     if ( !m_miss_queue.empty() ) {
         mem_fetch *mf = m_miss_queue.front();
+
+        new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
 
         //TODO: for debugging: delete this
         unsigned global_spid = mf->get_sub_partition_id(); 
@@ -644,7 +679,19 @@ void baseline_cache::cycle(){
             printf("global_spid: %d\n", global_spid);
         if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
         if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+    
+        bool allow_access = true;
+        /* if it is a level-1 cache then don't send the request if page is
+         * migrating
+         */
+        if (!level2 && migrationQueue.count(page_addr))
+//            && 
+//                checkAllBitsBelowReset(migrationQueue[page_addr], 15)) {
+        {
+            allow_access = false;
+        }
 
+//        if ( !m_memport->full(mf->size(),mf->get_is_write()) && allow_access) {
         if ( !m_memport->full(mf->size(),mf->get_is_write()) ) {
             m_miss_queue.pop_front();
             m_memport->push(mf);
@@ -716,7 +763,7 @@ void baseline_cache::send_read_request(new_addr_type addr, new_addr_type block_a
     	else
     		m_tag_array->access(block_addr,time,cache_index,wb,evicted);
 
-        m_mshrs.add(block_addr,mf);
+        m_mshrs.add(block_addr,mf, wa);
         do_miss = true;
     } else if ( !mshr_hit && mshr_avail && (m_miss_queue.size() < m_config.m_miss_queue_size) ) {
     	if(read_only)
@@ -724,7 +771,7 @@ void baseline_cache::send_read_request(new_addr_type addr, new_addr_type block_a
     	else
     		m_tag_array->access(block_addr,time,cache_index,wb,evicted);
 
-        m_mshrs.add(block_addr,mf);
+        m_mshrs.add(block_addr,mf, wa);
         m_extra_mf_fields[mf] = extra_mf_fields(block_addr,cache_index, mf->get_data_size());
         mf->set_data_size( m_config.get_line_sz() );
         m_miss_queue.push_back(mf);
@@ -1087,6 +1134,76 @@ data_cache::access( new_addr_type addr,
     m_stats.inc_stats(mf->get_access_type(),
         m_stats.select_stats_status(probe_status, access_status));
     return access_status;
+}
+
+unsigned
+data_cache::flushOnMigrate(new_addr_type page_addr)
+{
+    /* Check if any request to this page are pending in the mshr's, WB requests
+     * and read requests. If WB are outstanding, then cancel the corresponding
+     * read request and send the write back to the memory controller. If
+     * read-only requests is pending then wait for it to come back from lower
+     * level of the memory
+     *
+     * Also, if any lines in the cache are in a valid state, INVALIDATE them
+     */
+
+    /* Invalidate all lines which belong to the page to be migrated
+     * TODO: Dirty lines WB lines to be handeled separately
+     */
+    new_addr_type block_addr;
+    unsigned num_line = m_config.get_num_lines();
+    bool flag = true;
+    for (unsigned i=0; i < num_line; i++) {
+        block_addr = m_tag_array->get_block(i).m_block_addr;
+        new_addr_type page_block_addr = block_addr & (~4095ULL);
+        if (page_block_addr == page_addr) {
+            cache_block_state status = m_tag_array->get_block(i).m_status;
+            /* Check MSHR for ON_MISS cache fill policy
+             */
+            bool mshr_hit = m_mshrs.probe(block_addr);
+            if (!mshr_hit) {
+                if (status == MODIFIED) {   //it's a dirty line, evict it
+                    //TODO: L2_WRBK_ACC, change it to L1_WRBK_ACC 
+                    mem_fetch *wb = m_memfetch_creator->alloc(block_addr,
+                       L2_WRBK_ACC, m_config.get_line_sz(),true);
+                    m_miss_queue.push_back(wb);
+                    m_tag_array->get_block(i).m_status = INVALID; 
+                    flag &= false;
+                }
+                else
+                    m_tag_array->get_block(i).m_status = INVALID; 
+            } else {
+                flag &= false;
+            }
+        }
+    }
+
+    /* Check MSHR's requests
+     */
+    for (unsigned i=0; i < 32; i++) {
+        block_addr = page_addr + 128ULL * i;
+        //new_addr_type page_block_addr = block_addr & (~4095ULL);
+        //if (page_block_addr == page_addr) {
+            bool mshr_hit = m_mshrs.probe(block_addr);
+            if (mshr_hit)
+                flag &= false;
+        //}
+    }
+
+    std::list<mem_fetch*>::iterator it = m_miss_queue.begin();
+    for (; it != m_miss_queue.end(); ++it) {
+        new_addr_type block_page_addr = ((*it)->get_addr()) & (~4095ULL);
+        if (block_page_addr == page_addr)
+            flag &= false;
+    }
+
+
+//    unsigned state = m_mshrs.flush(block_addr);
+    if (flag) {
+        return 3;
+    }
+    else return 2;
 }
 
 /// This is meant to model the first level data cache in Fermi.

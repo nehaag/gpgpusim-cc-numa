@@ -1120,6 +1120,10 @@ public:
     std::map<unsigned long long, unsigned long> mem_accesses_DATA;
     std::map <unsigned long long int, std::vector<unsigned long int> > num_access_per_address;
 
+    // For migration
+    unsigned flush_caches(cache_t *cache, unsigned long long addr);
+    unsigned get_sid(){return m_sid;}
+    void flushOnMigration();
 protected:
     ldst_unit( mem_fetch_interface *icnt,
                shader_core_mem_fetch_allocator *mf_allocator,

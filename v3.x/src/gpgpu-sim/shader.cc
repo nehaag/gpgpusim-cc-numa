@@ -715,7 +715,7 @@ void shader_core_ctx::fetch()
         }
     }
 
-    m_L1I->cycle();
+    m_L1I->cycle(false);
 
     if( m_L1I->access_ready() ) {
         mem_fetch *mf = m_L1I->next_access();
@@ -1394,6 +1394,14 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
 
     //const mem_access_t &access = inst.accessq_back();
     mem_fetch *mf = m_mf_allocator->alloc(inst,inst.accessq_back());
+    
+    /* If a request comes to a page in migration, then stall the request
+     */
+    new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
+    if (migrationQueue.count(page_addr)) {
+        return COAL_STALL;
+    }
+        ; // then stall the request
     std::list<cache_event> events;
     enum cache_request_status status = cache->access(mf->get_addr(),mf,gpu_sim_cycle+gpu_tot_sim_cycle,events);
 //    enum cache_request_status status = HIT;
@@ -1409,15 +1417,17 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
     unsigned long int epoch_number = m_core->get_cluster()->get_gpu()->epoch_number;
     // check if an element already exists
     if (num_access_per_address.count(address))
-        diff = epoch_number - (num_access_per_address[address].size() - 3);
+        diff = epoch_number - (num_access_per_address[address].size() - 4);
     else {
         diff = epoch_number;
 
-    // Store the address decoding at dram level in the map
-    const addrdec_t &tlx = mf->get_tlx_addr();
+        // Store the address decoding at dram level in the map
+        const addrdec_t &tlx = mf->get_tlx_addr();
         num_access_per_address[address].push_back(tlx.bk);
         num_access_per_address[address].push_back(tlx.row);
         num_access_per_address[address].push_back(tlx.col);
+        // To store the sum of accesses in all epochs
+        num_access_per_address[address].push_back(0);
     }
 
     // push 0(s) for all the epochs till now
@@ -1425,7 +1435,9 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
         num_access_per_address[address].push_back(0);
     }
     // Increment the acccesses per epoch
-    num_access_per_address[address][epoch_number+3] += 1;
+    num_access_per_address[address][epoch_number+4] += 1;
+    // Total number of accesses, summing all the epochs
+    num_access_per_address[address][3] += 1;
     //-------------------------------------------------------------------------
 
     return process_cache_access( cache, mf->get_addr(), inst, events, mf, status );
@@ -1460,6 +1472,25 @@ bool ldst_unit::texture_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail,
       fail_type = T_MEM;
    }
    return inst.accessq_empty(); //done if empty.
+}
+
+void ldst_unit::flushOnMigration()
+{
+    std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+    for (; it != migrationQueue.end(); ++it) {
+        if (it->second != 0 && it->second != (1<<20))
+//            && 
+ //               ((it->second | ~((1U << 16)-1)) != ~((1U << 16)-1))) {
+        {
+            if (flush_caches(m_L1D, it->first) == 3) {
+                /* if L1 has flushed all the dirty lines and all the pending
+                 * reads are done, then clear bit 0 of the second variable of map
+                 */
+                unsigned sid = get_sid();
+                resetBit(it->second, sid);
+            }
+        }
+    }
 }
 
 bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_reason, mem_stage_access_type &access_type )
@@ -1519,9 +1550,15 @@ bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_rea
       else 
          access_type = (iswrite)?G_MEM_ST:G_MEM_LD;
    }
+
    return inst.accessq_empty(); 
 }
 
+unsigned ldst_unit::flush_caches( cache_t *cache, unsigned long long addr)
+{
+    unsigned long long page_addr = addr & ~(4095ULL);
+    return m_L1D->flushOnMigrate(page_addr);
+}
 
 bool ldst_unit::response_buffer_full() const
 {
@@ -1871,6 +1908,9 @@ void ldst_unit::issue( register_set &reg_set )
 */
 void ldst_unit::cycle()
 {
+    if (enableMigration && !migrationQueue.empty()) {
+        flushOnMigration();
+    }
    writeback();
    m_operand_collector->step();
    for( unsigned stage=0; (stage+1)<m_pipeline_depth; stage++ ) 
@@ -1922,8 +1962,8 @@ void ldst_unit::cycle()
    }
 
    m_L1T->cycle();
-   m_L1C->cycle();
-   if( m_L1D ) m_L1D->cycle();
+   m_L1C->cycle(false);
+   if( m_L1D ) m_L1D->cycle(false);
 
    warp_inst_t &pipe_reg = *m_dispatch_reg;
    enum mem_stage_stall_type rc_fail = NO_RC_FAIL;
@@ -2175,7 +2215,7 @@ void gpgpu_sim::shader_print_cache_stats( FILE *fout ) const{
         std::map<unsigned long long, std::vector<unsigned long int> > temp_num_access_per_address = m_cluster[i]->cluster_num_access_per_address;
         it = temp_num_access_per_address.begin();
         for (; it != temp_num_access_per_address.end(); ++it) {
-            unsigned int vector_size = it->second.size() - 1;
+            unsigned int vector_size = it->second.size();
             // to check if vector has elements already, if not then catch it and
             // then insert required number of elements
             try {
@@ -2203,15 +2243,14 @@ void gpgpu_sim::shader_print_cache_stats( FILE *fout ) const{
     fprintf(fout, "Total lane addresses map size: %ld \n", total_num_access_per_address.size());
     //std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it = total_num_access_per_address.begin();
     it = total_num_access_per_address.begin();
-    unsigned int sum = 0;
     for (; it != total_num_access_per_address.end(); ++it) {
         fprintf(fout, "%lld ", it->first);
-        sum = 0;
+        // Print the number of accesses per epoch
         for (int i=0; i<it->second.size(); ++i) {
-            if (i>2) sum += it->second[i];
-//            fprintf(fout, "%ld ", it->second[i]);
+            fprintf(fout, "%ld ", it->second[i]);
         }
-        fprintf(fout, " %d\n", sum);
+//        fprintf(fout, " %d\n", it->second[3]);
+        fprintf(fout, "\n");
     }
     */
 }
@@ -3542,7 +3581,7 @@ void simt_core_cluster::get_cumulative_stats(FILE *fp) {
 
         it = temp_num_access_per_address.begin();
         for (; it != temp_num_access_per_address.end(); ++it) {
-            unsigned int vector_size = it->second.size() - 1;
+            unsigned int vector_size = it->second.size();
             // to check if vector has elements already, if not then catch it and
             // then insert required number of elements
             try {
@@ -3552,10 +3591,9 @@ void simt_core_cluster::get_cumulative_stats(FILE *fp) {
                 cluster_num_access_per_address[it->first].resize(it->second.size());
             }
                     
-                    
             for (int i=0; i<it->second.size(); ++i) {
                 // Address decoding thing
-                if (i<3) 
+                if (i<3)
                     //cluster_num_access_per_address[it->first][i] = it->second[i];
                     cluster_num_access_per_address[it->first].at(i) = it->second[i];
                 // Actual accesses per epoch
@@ -3568,21 +3606,21 @@ void simt_core_cluster::get_cumulative_stats(FILE *fp) {
     fprintf(fp, "All instruction hits = %ld \n", map_L1I_hits.size());
     fprintf(fp, "All CTD hits = %ld \n", map_L1CTD_hits.size());
 
-    //// Unique address accesses map 
-    //fprintf(fp, "Total lane addresses map size: %ld \n", total_num_access_per_address.size());
-    //fprintf(fp, "Addr Accesses\n");
-    ////std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it = total_num_access_per_address.begin();
-    //it = total_num_access_per_address.begin();
-    //unsigned int sum = 0;
-    //for (; it != total_num_access_per_address.end(); ++it) {
-    //    fprintf(fp, "%lld: ", it->first);
-    //    sum = 0;
-    //    for (int i=0; i<it->second.size(); ++i) {
-    //        if (i>2) sum += it->second[i];
-    //        fprintf(fp, "%ld ", it->second[i]);
-    //    }
-    //    fprintf(fp, " %d\n", sum);
-    //}
+//    // Unique address accesses map 
+//    fprintf(fp, "Total lane addresses map size: %ld \n", total_num_access_per_address.size());
+//    fprintf(fp, "Addr Accesses\n");
+//    //std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it = total_num_access_per_address.begin();
+//    it = total_num_access_per_address.begin();
+//    unsigned int sum = 0;
+//    for (; it != total_num_access_per_address.end(); ++it) {
+//        fprintf(fp, "%lld: ", it->first);
+//        sum = 0;
+//        for (int i=0; i<it->second.size(); ++i) {
+//            if (i>2) sum += it->second[i];
+//            fprintf(fp, "%ld ", it->second[i]);
+//        }
+//        fprintf(fp, " %d\n", sum);
+//    }
 }
 
 void shader_core_ctx::checkExecutionStatusAndUpdate(warp_inst_t &inst, unsigned t, unsigned tid)

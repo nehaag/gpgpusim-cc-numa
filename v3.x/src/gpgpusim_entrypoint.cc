@@ -28,7 +28,7 @@
 #include "gpgpusim_entrypoint.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <fstream.h>
+#include <fstream>
 #include <sstream>
 #include <string>
 
@@ -73,7 +73,7 @@ void read_memory_map() {
    if(getenv("MEM_MAP_FILE"))
        mem_map_str = getenv("MEM_MAP_FILE");
    printf("MEM_MAP_FILE: %s\n", mem_map_str);
-   ifstream m_file(mem_map_str);
+   std::ifstream m_file(mem_map_str);
    std::string line;
    if (m_file.is_open()) {
         while ( getline (m_file,line) ) {

@@ -121,6 +121,10 @@ public:
 
    //to keep track of time spent in various places of the machine
    std::vector<unsigned long long> request_status_vector;
+
+   /* To keep track if this request is an write allocate request*/
+   bool wa;
+
 private:
    // request source information
    unsigned m_request_uid;

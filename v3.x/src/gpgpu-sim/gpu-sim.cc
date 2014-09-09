@@ -32,9 +32,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <fstream.h>
+#include <fstream>
 #include <sstream>
 #include <string>
+#include <map>
+#include <bitset>
 #include "zlib.h"
 
 
@@ -85,7 +87,21 @@ bool g_interactive_debugger_enabled=false;
 unsigned long long  gpu_sim_cycle = 0;
 unsigned long long  gpu_tot_sim_cycle = 0;
 unsigned int bw_equal = 0;
-bool tryMigrateOnce = true;
+bool enableMigration = true;
+/* Implementing a state machine for migration
+ * 3 state FSM: evicting -> probing mshr -> migrating
+ * 1. evicting: evict all dirty lines by trying to find mshrs
+ * 2. probing: probe only mshrs of l1 and l2 until no reqs left... also
+ * mark all read reqs to this page as bypass so that they dont get inserted
+ * 3. migrating: migrate
+ * migrationQueue data structure is a map, with memory address as the key and
+ * state as the value
+ */
+std::list<unsigned long long> sendForMigration;
+std::map<unsigned long long, unsigned> migrationQueue;
+std::map<unsigned long long, unsigned> migrationWaitCycle;
+std::map<unsigned long long, unsigned> migrationFinished;
+bool readyForNextMigration = true;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -824,7 +840,7 @@ void gpgpu_sim::deadlock_check()
       }
       printf("\nRe-run the simulator in gdb and use debug routines in .gdbinit to debug this\n");
       fflush(stdout);
-      abort();
+      //abort();
    }
 }
 
@@ -1256,31 +1272,80 @@ void gpgpu_sim::cycle()
     /*
      * Page monitoring unit
      */
-    if (tryMigrateOnce) {
+    if (enableMigration) {
         if (clock_mask & L2) {
-            //Migrate page once to see if the migration mechanism is working
-            //Use a mapping table and determine a page in each memory and migrate it
-            std::map<unsigned long long, unsigned>::iterator it = m_map_online.begin();
-            unsigned found_pages_to_migrate = 0;
-            bool found_page_HBM = false;
-            bool found_page_SDDR = false;
-            unsigned long long int addrHBM;
-            unsigned long long int addrSDDR;
+            bool checkMigration = false;
+            if (checkMigration) {
+                //Migrate page once to check if the migration mechanism is working
+                //Use a mapping table and determine a page in each memory and migrate it
+                std::map<unsigned long long, unsigned>::iterator it = m_map_online.begin();
+                unsigned found_pages_to_migrate = 0;
+                bool found_page_HBM = false;
+                bool found_page_SDDR = false;
+                unsigned long long int addrHBM;
+                unsigned long long int addrSDDR;
 
-            for (; it != m_map_online.end() && (found_pages_to_migrate < 2); it++) {
-                if (it->second == 1 && !found_page_HBM) {    //page in HBM
-                    addrHBM = it->first;
-                    found_pages_to_migrate++;
-                    found_page_HBM = true;
-                } else if (it->second == 0 && !found_page_SDDR) {
-                    addrSDDR = it->first;
-                    found_pages_to_migrate++;
-                    found_page_SDDR = true;
+                for (; it != m_map_online.end() && (found_pages_to_migrate < 2); it++) {
+                    if (it->second == 1 && !found_page_HBM) {    //page in HBM
+                        addrHBM = it->first;
+                        found_pages_to_migrate++;
+                        found_page_HBM = true;
+                    } else if (it->second == 0 && !found_page_SDDR) {
+                        addrSDDR = it->first;
+                        found_pages_to_migrate++;
+                        found_page_SDDR = true;
+                    }
                 }
-            }
-            if (found_pages_to_migrate == 2) {
-                migration_unit->migratePage(addrSDDR, addrHBM);
-                tryMigrateOnce = false;
+                if (found_pages_to_migrate == 2) {
+                    migration_unit->migratePage(addrSDDR, addrHBM);
+                    checkMigration = false;
+                }
+            } else {
+                // TODO: For now write the code here, later on call it as a
+                // fuction: triggerMigrate()
+                
+                /* Policy1: Migrate after a threshold is met
+                 * Assume everything is located in DDR/CO memory. Migrate a page
+                 * from CO to BO memory when a page(4kB) is touched 128 in the
+                 * runtime. Assume for now a perfect table which can track the counter for
+                 * all the pages in the application. In this policy we are only
+                 * migrating pages from CO -> BO memory, not swapping.
+                 */
+                /* Currently the table of counters is maintained in l2cache.cc,
+                 * it should be able to send a message to this piece of code to
+                 * perform migration. The key is to get access to pointer of
+                 * migration_unit. TODO: get the pointer reference in l2 class
+                 */
+                /* addrHBM = NULL, since it is unidirectional migration
+                 * addrSDDR will be sent by the l2cache.cc unit
+                 * or maybe we can put it in a queue of things to migrate and
+                 * then migrate from here
+                 */
+                /* Migration queue: migrationQueue is structure which will contain addresses to
+                 * migrate from CO memory to BO memory
+                 */
+                std::list<unsigned long long>::iterator it = sendForMigration.begin();
+                for (; it != sendForMigration.end(); it++) {
+                    // TODO: some asserts checking page actually resides in CO
+                    // memory will be good
+                    //unsigned state = canMigrate(it->first, it->second);
+                    if (migrationQueue[(*it)] == 0) {
+                        if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
+                            // clear migration wait cycle
+                            migrationWaitCycle[(*it)] = 0;
+                            // If the page reaches "migrating" state then migrate it
+                            migration_unit->migratePage((*it));
+                            readyForNextMigration = false;
+                            migrationQueue[(*it)] = (1<<20);
+                            // Remove the address from the map
+//                            migrationQueue.erase(it);
+                            // Migrate one page in a cycle and try for others in the
+                            // next cycle
+                            break;
+                        }
+                        else migrationWaitCycle[(*it)]++;
+                    }
+                }
             }
         }
     }
@@ -1324,6 +1389,8 @@ void gpgpu_sim::cycle()
                 if (i != mf->get_sub_partition_id())
                     printf("i: %d,mf_sub_part: %d\n", i, mf->get_sub_partition_id());
                 assert(i == mf->get_sub_partition_id());
+                if (mf->get_addr() == 2152209920)
+                      printf("break me here \n");
               }
           }
           m_memory_sub_partition[i]->cache_cycle(gpu_sim_cycle+gpu_tot_sim_cycle);
@@ -1425,6 +1492,8 @@ void gpgpu_sim::cycle()
                    ctime(&curr_time));
             fflush(stdout);
             last_liveness_message_time = elapsed_time; 
+            if (gpu_tot_sim_insn + gpu_sim_insn == 6477530)
+                printf("break me here");
          }
          visualizer_printstat();
         for (unsigned i=0; i<m_memory_config->m_n_mem_types; i++)
@@ -1526,3 +1595,67 @@ simt_core_cluster * gpgpu_sim::getSIMTCluster()
    return *m_cluster;
 }
 
+unsigned gpgpu_sim::canMigrate(unsigned long long addr, unsigned migrationState)
+{
+    unsigned state = migrationState;
+    // Check all the L1 caches
+    // Check all the L2 caches
+    // Check in all the sub-partitions that no pages have request to the page to
+   // be migrated.
+    unsigned tot_mem_sub_partitions = 0;
+    for (unsigned i=0; i<2; i++)
+        tot_mem_sub_partitions += m_memory_config->memory_config_array[i].m_n_mem_sub_partition;
+    for (unsigned i=0;i<tot_mem_sub_partitions;i++) {
+        // TODO check the logic
+//       state = migrationState && m_memory_sub_partition[i]->checkIfPresent(addr);
+        ;
+    }
+    return state;
+}
+
+bool checkBit(unsigned int x, unsigned int pos) {
+    return x & (1U<<pos);
+}
+
+bool checkAllBitsBelow(unsigned int x, unsigned int pos) {
+    return ((x & ((1U << pos)-1)) == ((1U << pos)-1));
+}
+
+bool checkAllBitsBelowReset(unsigned int x, unsigned int pos) {
+    return ((x | ~((1U << pos)-1)) == ~((1U << pos)-1));
+}
+
+void setBit(unsigned int &x, unsigned int pos) {
+    x |= (1U << pos);
+}
+
+void resetBit(unsigned int &x, unsigned int pos) {
+    x &= ~(1U << pos);
+}
+
+void printMigrationQueue() {
+    std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+    for (; it != migrationQueue.end(); ++it) {
+        printf("addr: %llu, state: 0x%x\n", it->first, it->second);
+    }
+    printf("Migration done for addresses: \n");
+    std::map<unsigned long long, unsigned>::iterator it1 = migrationFinished.begin();
+    for (; it1 != migrationFinished.end(); ++it1) {
+        printf("addr: %llu, state: %u\n", it1->first, it1->second);
+    }
+}
+
+void printMap() {
+    std::map<unsigned long long, unsigned>::iterator it = m_map_online.begin();
+    for (; it != m_map_online.end(); ++it) {
+        printf("addr: %llu, partition: %u\n", it->first, it->second);
+    }
+}
+
+void printPartFromMap(unsigned long long addr) {
+    if (m_map_online.count(addr)) {
+        printf("addr: %llu, part: %u\n", addr, m_map_online[addr]);
+    } else {
+        printf("addr not found\n");
+    }
+}

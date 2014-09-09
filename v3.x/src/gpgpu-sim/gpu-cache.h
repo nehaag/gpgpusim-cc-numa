@@ -403,7 +403,7 @@ public:
     /// Checks if there is space for tracking a new memory access
     bool full( new_addr_type block_addr ) const;
     /// Add or merge this access
-    void add( new_addr_type block_addr, mem_fetch *mf );
+    void add( new_addr_type block_addr, mem_fetch *mf, bool wa);
     /// Returns true if cannot accept new fill responses
     bool busy() const {return false;}
     /// Accept a new cache fill response: mark entry ready for processing
@@ -420,6 +420,8 @@ public:
     	assert(m_max_merged==max_merged && "Change of MSHR parameters between kernels is not allowed");
     }
 
+    // For migration
+    unsigned flush(new_addr_type block_addr); 
 private:
 
     // finite sized, fully associative table, with a finite maximum number of merged requests
@@ -428,6 +430,7 @@ private:
 
     struct mshr_entry {
         std::list<mem_fetch*> m_list;
+        std::list<bool> wa_list;
         bool m_has_atomic; 
         mshr_entry() : m_has_atomic(false) { }
     }; 
@@ -582,7 +585,7 @@ public:
 
     virtual enum cache_request_status access( new_addr_type addr, mem_fetch *mf, unsigned time, std::list<cache_event> &events ) =  0;
     /// Sends next request to lower level of memory
-    void cycle();
+    void cycle(bool level2);
     /// Interface for response from lower memory level (model bandwidth restictions in caller)
     void fill( mem_fetch *mf, unsigned time );
     /// Checks if mf is waiting to be filled by lower memory level
@@ -610,6 +613,8 @@ public:
     // accessors for cache bandwidth availability 
     bool data_port_free() const { return m_bandwidth_management.data_port_free(); } 
     bool fill_port_free() const { return m_bandwidth_management.fill_port_free(); } 
+
+    void print_miss_queue();
 
 protected:
     // Constructor that can be used by derived classes with custom tag arrays
@@ -771,6 +776,9 @@ public:
                                               mem_fetch *mf,
                                               unsigned time,
                                               std::list<cache_event> &events );
+
+    unsigned flushOnMigrate(new_addr_type page_addr);
+
 protected:
     data_cache( const char *name,
                 cache_config &config,

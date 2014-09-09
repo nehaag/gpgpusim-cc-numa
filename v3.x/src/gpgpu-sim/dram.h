@@ -41,6 +41,7 @@
 #define BANK_IDLE 'I'
 #define BANK_ACTIVE 'A'
 
+typedef unsigned long long int new_addr_type;
 class dram_req_t {
 public:
    dram_req_t( class mem_fetch *data );
@@ -141,6 +142,8 @@ public:
     const class memory_config *memConfigLocal;
     const class memory_config *memConfigRemote;
     unsigned destMemType;
+
+    unsigned outstandingRequest(new_addr_type page_addr);
 
 private:
     void print_req_dist_stats();

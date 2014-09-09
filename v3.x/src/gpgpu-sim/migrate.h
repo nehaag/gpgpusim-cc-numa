@@ -32,8 +32,15 @@ class migrate{
 
         /*Constructor */
         migrate(const class memory_config *config_SDDR, const class memory_config *config_HBM, class memory_partition_unit **m_memory_partition_unit);
-        /*Migrate addresses as trigerred by the policy */
+        /*Migrate addresses as trigerred by the policy
+         * Swap pages of BO and CO memory
+         */
         void migratePage(mem_addr addrToHBM, mem_addr addrToSDDR);
+        /* Migrate addresses from CO -> BO memory
+         * unidirectional
+         * overloaded function
+         */
+        void migratePage(mem_addr addrToHBM);
 
         /*Select a victim page in HBM to be migrated to SDDR */
         mem_addr selectHBMVictim();

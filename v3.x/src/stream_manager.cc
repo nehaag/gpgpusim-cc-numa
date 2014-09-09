@@ -201,7 +201,7 @@ bool stream_manager::operation( bool * sim)
 {
     pthread_mutex_lock(&m_lock);
     bool check=check_finished_kernel();
-    //if(check)m_gpu->print_stats();
+//    if(check)m_gpu->print_stats();
     stream_operation op =front();
     op.do_operation( m_gpu );
     pthread_mutex_unlock(&m_lock);

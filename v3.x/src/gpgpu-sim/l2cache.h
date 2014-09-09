@@ -94,6 +94,7 @@ public:
    unsigned get_mpid() const { return m_id; }
 
    std::map <unsigned long long int, std::vector<unsigned long int> > num_access_per_cacheline;
+   std::map <unsigned long long int, std::vector<unsigned long long int> > threshold_cycle;
 //   std::vector <unsigned long long int> latency_breakdown_all_req;
    unsigned long int *m_epoch_number;
    //std::map<unsigned long long int, std::vector<unsigned long int> > reuse_distance_per_epoch;
@@ -101,6 +102,8 @@ public:
    
     //return the dram pointer, this is for migration purposes
     class dram_t* get_dram() {return m_dram;}
+
+    void printNumAccess(unsigned long long);
    
 private: 
 
@@ -188,6 +191,9 @@ public:
    void accumulate_L2cache_stats(class cache_stats &l2_stats) const;
    void get_L2cache_sub_stats(struct cache_sub_stats &css) const;
 
+   bool snoop_L2_dram_queue(unsigned long long page_addr);
+
+    
 private:
 // data
    unsigned m_id;  //< the global sub partition ID

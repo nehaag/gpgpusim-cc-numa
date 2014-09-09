@@ -124,6 +124,15 @@ public:
       }
    }
 
+   fifo_data<T>* fifo_data_top() const
+   {
+      if (m_head) {
+         return m_head;
+      } else {
+         return NULL;
+      }
+   }
+
    void set_min_length(unsigned int new_min_len) 
    {
       if (new_min_len == m_min_len) return;

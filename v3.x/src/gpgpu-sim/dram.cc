@@ -78,7 +78,11 @@ dram_t::dram_t( unsigned int partition_id, const struct memory_config *config, m
    }
    prio = 0;  
    rwq = new fifo_pipeline<dram_req_t>("rwq",m_config->CL,m_config->CL+1);
-   mrqq = new fifo_pipeline<dram_req_t>("mrqq",0,32);
+//   mrqq = new fifo_pipeline<dram_req_t>("mrqq",0,32:);
+//   Changing size of mrqq to 64 from 32, for taking into account
+//   migration
+//   requests   
+   mrqq = new fifo_pipeline<dram_req_t>("mrqq",0,64);
    returnq = new fifo_pipeline<mem_fetch>("dramreturnq",0,m_config->gpgpu_dram_return_queue_size==0?1024:m_config->gpgpu_dram_return_queue_size); 
    m_frfcfs_scheduler = NULL;
    if ( m_config->scheduler_type == DRAM_FRFCFS )
@@ -174,8 +178,13 @@ dram_req_t::dram_req_t( class mem_fetch *mf )
 
 void dram_t::push( class mem_fetch *data ) 
 {
-    if (data->get_access_type() != MEM_MIGRATE_W && data->get_access_type() != MEM_MIGRATE_R)
+//    if (data->get_access_type() != MEM_MIGRATE_W && data->get_access_type() != MEM_MIGRATE_R) {
+        if (data->get_addr() == 2152209376)
+            printf("break here \n");
+        if (id != data->get_tlx_addr().chip)
+            printf("addr: %lld, id = %d, chip = %d, access_type: %d \n", data->get_addr(), id, data->get_tlx_addr().chip, data->get_access_type());
         assert(id == data->get_tlx_addr().chip); // Ensure request is in correct memory partition
+//    }
 
    dram_req_t *mrq = new dram_req_t(data);
    data->set_status(IN_PARTITION_MC_INTERFACE_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
@@ -256,20 +265,26 @@ void dram_t::cycle()
                  returnq->push(data);
               } else if (data->get_access_type() == MEM_MIGRATE_R) {
                   migrateReqCountR++;
-                  //TODO:after 16 read reqs are done => data is in mem controller now
+                  //TODO:after 32 read reqs are done => data is in mem controller now
                   //and we need to write this page to the destination memory
                   //controller
-                  if (migrateReqCountR == 16) {
+                  if (migrateReqCountR == 32) {
                       //TODO: pass last parameter mem_type correctly here
                       this->migratePage(destAddr, 0, destDramCtlr, 1, memConfigRemote, NULL, destMemType);
                       migrateReqCountR = 0;
                   }
               } else if (data->get_access_type() == MEM_MIGRATE_W) {
                   migrateReqCountW++;
-                  if (migrateReqCountW == 16) {
+                  if (migrateReqCountW == 32) {
                       //TODO:Send migration unit the call back that migration is done
                       //for this memroy controller unit, Write Part!
                       migrateReqCountW = 0;
+                      unsigned long long page_addr = data->get_addr() & ~(4095ULL);
+                      migrationQueue.erase(page_addr);
+                      migrationWaitCycle.erase(page_addr);
+                      migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
+                      sendForMigration.remove(page_addr);
+                      readyForNextMigration = true;
                   }
               } else {
                  m_memory_partition_unit->set_done(data);
@@ -473,6 +488,38 @@ void dram_t::cycle()
    visualize();
 #endif
    assert(n_cmd == cycle_count);
+
+   /* Wait for in-flight outstanding requests to clear up from the memory
+    * controller and then only flag for migration
+    */
+    if (enableMigration && !migrationQueue.empty()) {
+        std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+        for (; it != migrationQueue.end(); ++it) {
+            if (it->second != 0 && it->second != (1<<20)) {
+                new_addr_type page_addr = it->first & ~(4095ULL);
+                if (outstandingRequest(it->first) == 3) {
+                    /* if L2 has flushed all the dirty lines and all the pending
+                     * reads are done, then clear bit 1 of the second variable of map
+                     */
+                    if (checkAllBitsBelowReset(it->second,18))
+                        resetBit(it->second, 18);
+                }
+            }
+        }
+    }
+}
+
+unsigned dram_t::outstandingRequest(new_addr_type page_addr)
+{
+    // Scan through mrqq list and check if there are any request to this page
+    fifo_data<dram_req_t> *head_mrqq = mrqq->fifo_data_top();
+    while (head_mrqq != NULL) {
+        unsigned long long mrqq_page_addr = head_mrqq->m_data->addr & ~(4095ULL);
+        if (mrqq_page_addr == page_addr)
+            return 2;
+        head_mrqq = head_mrqq->m_next;
+    }
+    return 3;
 }
 
 //if mrq is being serviced by dram, gets popped after CL latency fulfilled
@@ -609,7 +656,8 @@ void dram_t::set_dram_power_stats(	unsigned &cmd,
 	req = n_req;
 }
 
-unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned long long int dest_addr, dram_t *dest_dram_ctrl, unsigned int reqType, const class memory_config *mem_config_local, const class memory_config *mem_config_remote, unsigned mem_type) {
+unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned long long int dest_addr, dram_t *dest_dram_ctrl, unsigned int reqType, const class memory_config *mem_config_local, const class memory_config *mem_config_remote, unsigned mem_type) 
+{
     assert(reqType == 0 || reqType == 1);
     migrationTriggered = 1;
     destDramCtlr = dest_dram_ctrl;
@@ -627,9 +675,9 @@ unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned lo
     else
         dram_ctrl = dest_dram_ctrl;
 
-    //Push 16 read request to the channel to a given source address
+    //Push 32 read request to the channel to a given source address
     int i;
-    for (i=0; i<16; i++) {
+    for (i=0; i<32; i++) {
         if (!dram_ctrl->full()) {
             mem_fetch *mf;
             //create a new mf for the next packet
@@ -638,6 +686,8 @@ unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned lo
                 mf = new mem_fetch( access, 
                                     READ_PACKET_SIZE,
                                     memConfigLocal, mem_type);
+// TODO: chnage the memconfig here as we will be putting the packet to remote
+// memory now.. so it should have correct chip number. mistake!!!
             } else {
               mem_access_t access(MEM_MIGRATE_W, source_addr + (i) * 128ULL, 128U, 0);
               mf = new mem_fetch( access, 

@@ -90,6 +90,7 @@ memory_partition_unit::memory_partition_unit( unsigned partition_id,
 
     //// Initialize the epoch number
     //epoch_number = 0;
+
 }
 
 memory_partition_unit::~memory_partition_unit() 
@@ -274,7 +275,7 @@ void memory_partition_unit::dram_cycle()
                 // Add uniques addresses to the cacheline tracking data structure
                 // If address is not present then add 0 accesses for all
                 // previous epochs and also current
-                unsigned long long int cacheline = mf->get_addr() / 128;
+                unsigned long long int cacheline = mf->get_addr() / 4096;
 
                 // number of epochs this address was not accessed
                 int diff = 0;
@@ -286,10 +287,11 @@ void memory_partition_unit::dram_cycle()
 
                     // Store the address decoding at dram level in the map
                     const addrdec_t &tlx = mf->get_tlx_addr();
-                    num_access_per_cacheline[cacheline].push_back(mf->get_addr());
                     num_access_per_cacheline[cacheline].push_back(tlx.bk);
                     num_access_per_cacheline[cacheline].push_back(tlx.row);
                     num_access_per_cacheline[cacheline].push_back(tlx.col);
+                    // To store the sum of accesses in all epochs
+                    num_access_per_cacheline[cacheline].push_back(0);
                 }
 
 
@@ -302,6 +304,34 @@ void memory_partition_unit::dram_cycle()
                 }
                 // Increment the acccesses per epoch
                 num_access_per_cacheline[cacheline][*m_epoch_number+4] += 1;
+                
+                // Total number of accesses, summing all the epochs
+                num_access_per_cacheline[cacheline][3] += 1;
+
+                // Track cycle/timestamp when number of accesses to a page becomes 1, 32,
+                // 64, 96, 128, 160 and 192
+                unsigned long int access_local = num_access_per_cacheline[cacheline][3]/32;
+                unsigned access_bin = (access_local >= 6) ? 6 : access_local;
+                if(!threshold_cycle.count(cacheline)) {
+                    for (int i=0; i<7; i++)
+                        threshold_cycle[cacheline].push_back(0);
+                } else if (threshold_cycle[cacheline][access_bin] == 0) {
+                    threshold_cycle[cacheline][access_bin] = gpu_tot_sim_cycle + gpu_sim_cycle;
+                }
+
+                /* Trigger migration
+                 * TODO: do not migrate if request is already in the correct
+                 * portion, currently hardcoded to 2 subpartitions
+                 */
+                unsigned threshold = 128;
+                if (enableMigration && (num_access_per_cacheline[cacheline][3] == threshold) && mf->get_sub_partition_id() < 8) {
+                    // Put the request in migrationQueue, in the state
+                    // evicting(1)
+                    new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
+                    migrationQueue[page_addr] = ((1 << 19) - 1);
+                    migrationWaitCycle[page_addr] = 0;
+                    sendForMigration.push_back(page_addr);
+                }
 
                 // update last access re-use distance stats
                 // local update
@@ -324,6 +354,31 @@ void memory_partition_unit::dram_cycle()
         unsigned global_spid = mf->get_sub_partition_id(); 
         if (mf->get_mem_config()->type == 2) assert(global_spid >= mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
         if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+    }
+
+    if (enableMigration && !migrationQueue.empty()) {
+        std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+        for (; it != migrationQueue.end(); ++it) {
+            if (it->second != 0 && it->second != (1<<20)) {
+                new_addr_type page_addr = it->first & ~(4095ULL);
+
+                bool flag = true;
+
+                for (unsigned p = 0; p < m_config->m_n_sub_partition_per_memory_channel; p++) {
+                    flag = m_sub_partition[p]->snoop_L2_dram_queue(page_addr);
+                }
+                // Check if any requests are there in DRAM latency queue
+                std::list<dram_delay_t>::iterator it1 = m_dram_latency_queue.begin();
+                for (; it1 != m_dram_latency_queue.end(); ++it1) {
+                    new_addr_type req_page_addr = it1->req->get_addr() & ~(4095ULL);
+                    if (req_page_addr == page_addr)
+                        flag = false;
+                }
+                if (flag && checkAllBitsBelowReset(it->second,17)){
+                    resetBit(it->second, 17);
+                }
+            }
+        }
     }
 }
 
@@ -382,26 +437,34 @@ void memory_partition_unit::print( FILE *fp )
             fprintf(fp, " <NULL mem_fetch?>\n"); 
     }
     m_dram->print(fp); 
-    
+
+//    /*
     // Unique accesses stats
     fprintf(fp, "Cache line map size: %ld \n", num_access_per_cacheline.size());
     fprintf(fp, "Addr Accesses\n");
     std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it = num_access_per_cacheline.begin();
+    std::map<unsigned long long int, std::vector<unsigned long long int> >::iterator it_cycle = threshold_cycle.begin();
     //std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it1 = reuse_distance_per_epoch.begin();
     //std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it2 = reuse_distance_across_epoch.begin();
     unsigned int sum = 0;
     for (; it != num_access_per_cacheline.end(); ++it) {
         fprintf(fp, "%lld ", it->first);
-        sum = 0;
-        for (int i=0; i<it->second.size(); ++i) {
-            if (i>3) 
-                sum += it->second[i];
-            else {
-                fprintf(fp, "%ld ", it->second[i]);
-            }
+        for (int i=0; i<it_cycle->second.size(); ++i) {
+            fprintf(fp, "%lld ", it_cycle->second[i]);
         }
-        fprintf(fp, " %d\n", sum);
+        ++it_cycle;
+//        sum = 0;
+        for (int i=0; i<it->second.size(); ++i) {
+//            if (i>3) 
+//                sum += it->second[i];
+//            else {
+                fprintf(fp, "%ld ", it->second[i]);
+//            }
+        }
+//        fprintf(fp, " %d\n", sum);
+        fprintf(fp, "\n");
     }
+//    */
 
 //    printf("total latency breakdown: ");
 //    for (unsigned i = 10; i < 19; i++) {
@@ -529,7 +592,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
 
     // prior L2 misses inserted into m_L2_dram_queue here
     if( !m_config->m_L2_config.disabled() )
-       m_L2cache->cycle();
+       m_L2cache->cycle(true);
 
     // new L2 texture accesses and/or non-texture accesses
     if ( !m_L2_dram_queue->full() && !m_icnt_L2_queue->empty() ) {
@@ -598,6 +661,40 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
         unsigned global_spid = mf->get_sub_partition_id(); 
         if (mf->get_mem_config()->type == 2) assert(global_spid >= mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
         if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+    }
+
+    if (enableMigration && !migrationQueue.empty()) {
+        std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+        for (; it != migrationQueue.end(); ++it) {
+            if (it->second != 0 && it->second != (1<<20)) {
+                new_addr_type page_addr = it->first & ~(4095ULL);
+                /* check icnt to l2 queue
+                 */
+                // Scan through mrqq list and check if there are any request to this page
+                fifo_data<mem_fetch> *head_icnt_L2_queue = m_icnt_L2_queue->fifo_data_top();
+                bool flag = true;
+                while (head_icnt_L2_queue != NULL) {
+                    unsigned long long req_page_addr = head_icnt_L2_queue->m_data->get_addr() & ~(4095ULL);
+                    if (req_page_addr == page_addr)
+                        flag = false;
+                    head_icnt_L2_queue = head_icnt_L2_queue->m_next;
+                }
+                if (flag && checkAllBitsBelowReset(it->second,15)){
+                    resetBit(it->second, 15);
+                }
+
+                /* check mshrs of L2 caches
+                 */
+                if (m_L2cache->flushOnMigrate(it->first) == 3) {
+                    /* if L2 has flushed all the dirty lines and all the pending
+                     * reads are done, then clear bit 1 of the second variable of map
+                     */
+                    if (flag && checkAllBitsBelowReset(it->second,16)){
+                        resetBit(it->second, 16);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -787,3 +884,22 @@ void memory_sub_partition::visualizer_print( gzFile visualizer_file )
     // TODO: Add visualizer stats for L2 cache 
 }
 
+void memory_partition_unit::printNumAccess(unsigned long long addr) {
+    if (num_access_per_cacheline.count(addr)) {
+        printf("addr: %llu, accesses: %u \n", addr, num_access_per_cacheline[addr][3]);
+    }
+}
+
+bool memory_sub_partition::snoop_L2_dram_queue(unsigned long long page_addr) {
+    // Check if there are any requests in L2->dram queue in the
+    // subpartitions
+    bool flag = true;
+    fifo_data<mem_fetch> *head_L2_dram_queue = m_L2_dram_queue->fifo_data_top();
+    while (head_L2_dram_queue != NULL) {
+        new_addr_type req_page_addr = head_L2_dram_queue->m_data->get_addr() & ~(4095ULL);
+        if (req_page_addr == page_addr)
+            flag = false;
+        head_L2_dram_queue = head_L2_dram_queue->m_next;
+    }
+    return flag;
+}

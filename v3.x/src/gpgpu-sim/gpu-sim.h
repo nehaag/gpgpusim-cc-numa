@@ -37,6 +37,8 @@
 #include <fstream>
 #include <list>
 #include <stdio.h>
+#include <deque>
+#include <bitset>
 
 #include "migrate.h"
 
@@ -342,6 +344,20 @@ extern std::map<unsigned long long, unsigned> m_map_online;
 extern unsigned long long int num_lines_hbm;
 extern unsigned int bw_equal;
 
+extern std::list<unsigned long long> sendForMigration;
+extern std::map<unsigned long long, unsigned> migrationQueue;
+extern bool enableMigration;
+extern bool readyForNextMigration;
+extern std::map<unsigned long long, unsigned> migrationWaitCycle;
+extern std::map<unsigned long long, unsigned> migrationFinished;
+
+extern bool checkBit(unsigned int x, unsigned int pos);
+extern bool checkAllBitsBelow(unsigned int x, unsigned int pos);
+extern bool checkAllBitsBelowReset(unsigned int x, unsigned int pos);
+extern void setBit(unsigned int &x, unsigned int pos);
+extern void resetBit(unsigned int &x, unsigned int pos);
+void printMigrationQueue();
+
 class gpgpu_sim_config : public power_config, public gpgpu_functional_sim_config {
 public:
     gpgpu_sim_config() { m_valid = false; }
@@ -485,6 +501,9 @@ public:
     * Returning the cluster of of the shader core, used by the functional simulation so far
     */
     simt_core_cluster * getSIMTCluster();
+
+
+    unsigned canMigrate(unsigned long long addr, unsigned migrationState);
 
 
 private:
