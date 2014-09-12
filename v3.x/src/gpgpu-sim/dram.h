@@ -132,7 +132,7 @@ public:
 
     //Migrate address in this memory channel to another address in a specified
     //memroy channel
-    unsigned int migratePage(unsigned long long int source_addr, unsigned long long int dest_addr, dram_t *dest_dram_ctrl, unsigned int reqType, const class memory_config *memConfigLocal, const class memory_config *memConfigRemote, unsigned mem_type);
+    unsigned int migratePage(unsigned long long int source_addr, unsigned long long int dest_addr, dram_t *dest_dram_ctrl, unsigned int req_type, const class memory_config *memConfigLocal, const class memory_config *memConfigRemote, unsigned mem_type_func);
     unsigned int migrateReqCountR;
     unsigned int migrateReqCountW;
 
@@ -142,8 +142,22 @@ public:
     const class memory_config *memConfigLocal;
     const class memory_config *memConfigRemote;
     unsigned destMemType;
+    dram_t *dram_ctrl;
+    unsigned mem_type;
+
+    /* Track pending migration requests
+     */
+    bool pendingMigration;
+    unsigned numRequestPending;
+    unsigned long long sourceAddr;
+    unsigned isWritePending;
+    unsigned reqType;
+
+    void resumeMigration();
+    bool sendMigrationRequest(unsigned long long addr);
 
     unsigned outstandingRequest(new_addr_type page_addr);
+
 
 private:
     void print_req_dist_stats();

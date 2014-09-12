@@ -115,7 +115,8 @@ enum allocation_policy_t {
 
 enum write_allocate_policy_t {
 	NO_WRITE_ALLOCATE,
-	WRITE_ALLOCATE
+	WRITE_ALLOCATE,
+	WRITE_ALLOCATE_NO_INSERT
 };
 
 enum mshr_config_t {
@@ -184,6 +185,7 @@ public:
         switch(wap){
         case 'W': m_write_alloc_policy = WRITE_ALLOCATE; break;
         case 'N': m_write_alloc_policy = NO_WRITE_ALLOCATE; break;
+        case 'M': m_write_alloc_policy = WRITE_ALLOCATE_NO_INSERT; break;
         default: exit_parse_error();
         }
 
@@ -422,6 +424,15 @@ public:
 
     // For migration
     unsigned flush(new_addr_type block_addr); 
+
+    // set MSHR entry not to fill in the cache when response comes back from the
+    // lower emmory level, this case is specially used in migration
+    void setNoFill(new_addr_type block_addr);
+    bool isNoFillSet(new_addr_type block_addr);
+
+    void setNoFillForMF(new_addr_type block_addr, unsigned req_uid);
+    bool isFillSetForMF(new_addr_type block_addr, unsigned req_uid);
+
 private:
 
     // finite sized, fully associative table, with a finite maximum number of merged requests
@@ -430,8 +441,9 @@ private:
 
     struct mshr_entry {
         std::list<mem_fetch*> m_list;
-        std::list<bool> wa_list;
+        std::map<unsigned, bool> no_insert_map;
         bool m_has_atomic; 
+        bool noFill;
         mshr_entry() : m_has_atomic(false) { }
     }; 
     typedef tr1_hash_map<new_addr_type,mshr_entry> table;
@@ -644,17 +656,19 @@ protected:
 
     struct extra_mf_fields {
         extra_mf_fields()  { m_valid = false;}
-        extra_mf_fields( new_addr_type a, unsigned i, unsigned d ) 
+        extra_mf_fields( new_addr_type a, unsigned i, unsigned d , unsigned uid) 
         {
             m_valid = true;
             m_block_addr = a;
             m_cache_index = i;
             m_data_size = d;
+            m_request_uid = uid;
         }
         bool m_valid;
         new_addr_type m_block_addr;
         unsigned m_cache_index;
         unsigned m_data_size;
+        unsigned m_request_uid;
     };
 
     typedef std::map<mem_fetch*,extra_mf_fields> extra_mf_fields_lookup;
@@ -673,6 +687,10 @@ protected:
     /// Read miss handler. Check MSHR hit or MSHR available
     void send_read_request(new_addr_type addr, new_addr_type block_addr, unsigned cache_index, mem_fetch *mf,
     		unsigned time, bool &do_miss, bool &wb, cache_block_t &evicted, std::list<cache_event> &events, bool read_only, bool wa);
+    /// Read miss handler. Check MSHR hit or MSHR available, for
+    //write-allocate-no-insert policy
+    void send_read_request(new_addr_type addr, new_addr_type block_addr, mem_fetch *mf,
+    		unsigned time, bool &do_miss, std::list<cache_event> &events, bool wa);
 
     /// Sub-class containing all metadata for port bandwidth management 
     class bandwidth_management 
@@ -766,6 +784,7 @@ public:
         switch(m_config.m_write_alloc_policy){
         case WRITE_ALLOCATE: m_wr_miss = &data_cache::wr_miss_wa; break;
         case NO_WRITE_ALLOCATE: m_wr_miss = &data_cache::wr_miss_no_wa; break;
+        case WRITE_ALLOCATE_NO_INSERT: m_wr_miss = &data_cache::wr_miss_wa_no_insert; break;
         default:
             assert(0 && "Error: Must set valid cache write miss policy\n");
             break; // Need to set a write miss function
@@ -890,6 +909,14 @@ protected:
                        unsigned time,
                        std::list<cache_event> &events,
                        enum cache_request_status status ); // no write-allocate
+
+    enum cache_request_status
+        wr_miss_wa_no_insert( new_addr_type addr,
+                       unsigned cache_index,
+                       mem_fetch *mf,
+                       unsigned time,
+                       std::list<cache_event> &events,
+                       enum cache_request_status status ); // write-allocate-no-insert
 
     // Currently no separate functions for reads
     /******* Read-hit configs *******/

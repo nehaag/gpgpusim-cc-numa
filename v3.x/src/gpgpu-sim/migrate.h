@@ -48,4 +48,42 @@ class migrate{
         /*Monitor the accesses to all pages in the memory */
         void monitorPages();
 };
+
+//class migrationReq {
+//   /* Data members */
+//   unsigned long long addr;
+//   const class memory_config *memConfigSource;
+//   const class memory_config *memConfigDest;
+//   dram_t *sourceCtrl;
+//   dram_t *destCtrl;
+//   /* request type 0 means its a read, 1 == write */
+//   bool reqType;
+//   unsigned totalNumReqs;
+//   unsigned numReqsInMigration;
+//   unsigned numReqsPendingForMigration;
+//   unsigned numReqsMigrationDone;
+//   /* state can take 4 values:
+//    * 1: Waiting for sending atleast 1 cacheline for migration
+//    * 2: Sent more than 1 but less than 32 requests for migration
+//    * 3: Sent all 32 req for migration
+//    * 4: Migration complete
+//    */
+//   unsigned state;
+//
+//   /* Member functions */
+//   migrationReq(unsigned long long req_addr, const class memory_config *mem_config_source, const class memory_config *mem_config_dest, dram_t * source_ctrl, dram_t *dest_ctrl, bool req_type) {
+//        addr = addr;
+//        memConfigSource = mem_config_source;
+//        memConfigDest = mem_config_dest;
+//        sourceCtrl = source_ctrl;
+//        destCtrl = dest_ctrl;
+//        reqType = req_type;
+//        totalNumReqs = 32;
+//        numReqsInMigration = 0;
+//        numReqsPendingForMigration = 32;
+//        numReqsMigrationDone = 0;
+//        state = 1;
+//   }
+//   unsigned sendMigrationRequest();
+//};
 #endif

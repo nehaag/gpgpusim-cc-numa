@@ -104,6 +104,7 @@ public:
     class dram_t* get_dram() {return m_dram;}
 
     void printNumAccess(unsigned long long);
+    void printNumAccessToPage();
    
 private: 
 

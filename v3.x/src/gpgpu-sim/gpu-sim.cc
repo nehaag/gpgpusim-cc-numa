@@ -101,6 +101,7 @@ std::list<unsigned long long> sendForMigration;
 std::map<unsigned long long, unsigned> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
 std::map<unsigned long long, unsigned> migrationFinished;
+std::map<unsigned long long, unsigned> reCheckForMigration;
 bool readyForNextMigration = true;
 
 // performance counter for stalls due to congestion.
@@ -1329,7 +1330,10 @@ void gpgpu_sim::cycle()
                     // TODO: some asserts checking page actually resides in CO
                     // memory will be good
                     //unsigned state = canMigrate(it->first, it->second);
-                    if (migrationQueue[(*it)] == 0) {
+                    if (migrationQueue[(*it)] == 0  && reCheckForMigration[(*it)] == false) {
+                        migrationQueue[(*it)] = ((1 << 19) - 1);
+                        reCheckForMigration[(*it)] = true;
+                    } else if (migrationQueue[(*it)] == 0 && reCheckForMigration[(*it)] == true) {
                         if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
                             // clear migration wait cycle
                             migrationWaitCycle[(*it)] = 0;

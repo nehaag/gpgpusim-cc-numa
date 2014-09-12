@@ -641,6 +641,8 @@ public:
        case L1_WRBK_ACC:   fprintf(fp,"L1_WRBK "); break;
        case MEM_MIGRATE_R:   fprintf(fp,"MEM_MIGRATE_R "); break;
        case MEM_MIGRATE_W:   fprintf(fp,"MEM_MIGRATE_W "); break;
+       case L1_WR_ALLOC_R:   fprintf(fp,"L1_WR_ALLOC_R "); break;
+       case L2_WR_ALLOC_R:   fprintf(fp,"L2_WR_ALLOC_R "); break;
        default:            fprintf(fp,"unknown "); break;
        }
    }

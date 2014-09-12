@@ -324,11 +324,13 @@ void memory_partition_unit::dram_cycle()
                  * portion, currently hardcoded to 2 subpartitions
                  */
                 unsigned threshold = 128;
-                if (enableMigration && (num_access_per_cacheline[cacheline][3] == threshold) && mf->get_sub_partition_id() < 8) {
+                new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
+                if (enableMigration && (migrationQueue.size() < 25) &&
+                        (num_access_per_cacheline[cacheline][3] >= threshold) && (mf->get_sub_partition_id() < 8) ) {
                     // Put the request in migrationQueue, in the state
                     // evicting(1)
-                    new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
                     migrationQueue[page_addr] = ((1 << 19) - 1);
+                    reCheckForMigration[page_addr] = false;
                     migrationWaitCycle[page_addr] = 0;
                     sendForMigration.push_back(page_addr);
                 }
@@ -902,4 +904,11 @@ bool memory_sub_partition::snoop_L2_dram_queue(unsigned long long page_addr) {
         head_L2_dram_queue = head_L2_dram_queue->m_next;
     }
     return flag;
+}
+
+void memory_partition_unit::printNumAccessToPage() {
+    std::map<unsigned long long int, std::vector<unsigned long int> >::iterator it = num_access_per_cacheline.begin();
+    for (; it != num_access_per_cacheline.end(); ++it) {
+        printf("addr: %llu, accesses: %u\n", it->first, (it->second)[3]);
+    }
 }

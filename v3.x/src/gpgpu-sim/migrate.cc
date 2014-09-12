@@ -130,3 +130,15 @@ mem_addr migrate::selectHBMVictim() {
 
 void migrate::monitorPages() {
 }
+/*
+unsigned migrationReq::sendMigrationRequest() {
+    int num_req_sent = numReqsMigrationDone;
+    for (; num_req_sent < totalNumReqs; num_req_sent++) {
+        mem_fetch *mf;
+        if (reqType == 0) {
+            ;
+        } else {
+            ;
+        }
+    }
+}*/

@@ -122,8 +122,8 @@ public:
    //to keep track of time spent in various places of the machine
    std::vector<unsigned long long> request_status_vector;
 
-   /* To keep track if this request is an write allocate request*/
-   bool wa;
+   void set_wa(bool value) {wa = value;}
+   bool get_wa() {return wa;}
 
 private:
    // request source information
@@ -156,6 +156,9 @@ private:
 
    const class memory_config *m_mem_config;
    unsigned icnt_flit_size;
+
+   /* To keep track if this request is an write allocate request*/
+   bool wa;
 };
 
 #endif

@@ -350,6 +350,7 @@ extern bool enableMigration;
 extern bool readyForNextMigration;
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
 extern std::map<unsigned long long, unsigned> migrationFinished;
+extern std::map<unsigned long long, unsigned> reCheckForMigration;
 
 extern bool checkBit(unsigned int x, unsigned int pos);
 extern bool checkAllBitsBelow(unsigned int x, unsigned int pos);

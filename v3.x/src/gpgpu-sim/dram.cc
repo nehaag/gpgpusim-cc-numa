@@ -124,13 +124,15 @@ dram_t::dram_t( unsigned int partition_id, const struct memory_config *config, m
    migrateReqCountR = 0;
    migrateReqCountW = 0;
    migrationTriggered = 0;
+   pendingMigration = false;
 }
 
 bool dram_t::full() const 
 {
     if(m_config->scheduler_type == DRAM_FRFCFS ){
         if(m_config->gpgpu_frfcfs_dram_sched_queue_size == 0 ) return false;
-        return m_frfcfs_scheduler->num_pending() >= m_config->gpgpu_frfcfs_dram_sched_queue_size;
+//        return m_frfcfs_scheduler->num_pending() >= m_config->gpgpu_frfcfs_dram_sched_queue_size;
+        return ((m_frfcfs_scheduler->num_pending() >= m_config->gpgpu_frfcfs_dram_sched_queue_size) || (mrqq->full()));
     }
    else return mrqq->full();
 }
@@ -489,6 +491,12 @@ void dram_t::cycle()
 #endif
    assert(n_cmd == cycle_count);
 
+   /* Check if there are any pending migration requests, if yes then send them
+    * if possible
+    */
+   if (pendingMigration)
+       resumeMigration();
+
    /* Wait for in-flight outstanding requests to clear up from the memory
     * controller and then only flag for migration
     */
@@ -656,53 +664,106 @@ void dram_t::set_dram_power_stats(	unsigned &cmd,
 	req = n_req;
 }
 
-unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned long long int dest_addr, dram_t *dest_dram_ctrl, unsigned int reqType, const class memory_config *mem_config_local, const class memory_config *mem_config_remote, unsigned mem_type) 
+unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned long long int dest_addr, dram_t *dest_dram_ctrl, unsigned int req_type, const class memory_config *mem_config_local, const class memory_config *mem_config_remote, unsigned mem_type_func) 
 {
-    assert(reqType == 0 || reqType == 1);
-    migrationTriggered = 1;
-    destDramCtlr = dest_dram_ctrl;
-    destAddr = dest_addr;
-    memConfigLocal = mem_config_local;
-    memConfigRemote = mem_config_remote;
-    destMemType = 1U ^ mem_type;
+    assert(req_type == 0 || req_type == 1);
 
     //determine which dram controller request needs to be sent, if it is a read
     //request, then it is local controller, else if it is a write request then
     //it is destination controller
-    dram_t *dram_ctrl;
-    if (reqType == 0)   //0: Read request
+    if (req_type == 0)   //0: Read request
         dram_ctrl = this;
     else
         dram_ctrl = dest_dram_ctrl;
 
+    dram_ctrl->migrationTriggered = 1;
+    dram_ctrl->destDramCtlr = dest_dram_ctrl;
+    dram_ctrl->sourceAddr = source_addr;
+    dram_ctrl->destAddr = dest_addr;
+    dram_ctrl->memConfigLocal = mem_config_local;
+    dram_ctrl->memConfigRemote = mem_config_remote;
+    dram_ctrl->destMemType = 1U ^ mem_type_func;
+    dram_ctrl->mem_type = mem_type_func;
+    dram_ctrl->reqType = req_type;
+
+
     //Push 32 read request to the channel to a given source address
     int i;
     for (i=0; i<32; i++) {
-        if (!dram_ctrl->full()) {
-            mem_fetch *mf;
-            //create a new mf for the next packet
-            if (reqType == 0) {
-               mem_access_t access(MEM_MIGRATE_R, source_addr + (i) * 128ULL, 128U, 0);
-                mf = new mem_fetch( access, 
-                                    READ_PACKET_SIZE,
-                                    memConfigLocal, mem_type);
-// TODO: chnage the memconfig here as we will be putting the packet to remote
-// memory now.. so it should have correct chip number. mistake!!!
-            } else {
-              mem_access_t access(MEM_MIGRATE_W, source_addr + (i) * 128ULL, 128U, 0);
-              mf = new mem_fetch( access, 
-                                  WRITE_PACKET_SIZE,
-                                  memConfigLocal, mem_type);
-            }
-
-            //push the request in the memory controller
-            dram_ctrl->push(mf);
-        } else {
-            //TODO:Try in the next cycle, call back to the migration uniti, for
-            //now assume it doesnt happen,
-            printf("ERROR: dram queue full, migration not completed, req sent till now: %d\n", i-1);
-            exit(EXIT_FAILURE);
+        if (dram_ctrl->sendMigrationRequest(source_addr + (i) * 128ULL))
+            continue;
+        else {
+            dram_ctrl->pendingMigration = true;
+            dram_ctrl->numRequestPending = 32 - i;
+            dram_ctrl->isWritePending = reqType;
+            break;
         }
+//        if (!dram_ctrl->full()) {
+//            mem_fetch *mf;
+//            //create a new mf for the next packet
+//            if (reqType == 0) {
+//               mem_access_t access(MEM_MIGRATE_R, source_addr + (i) * 128ULL, 128U, 0);
+//                mf = new mem_fetch( access, 
+//                                    READ_PACKET_SIZE,
+//                                    memConfigLocal, mem_type);
+//// TODO: chnage the memconfig here as we will be putting the packet to remote
+//// memory now.. so it should have correct chip number. mistake!!!
+//            } else {
+//              mem_access_t access(MEM_MIGRATE_W, source_addr + (i) * 128ULL, 128U, 0);
+//              mf = new mem_fetch( access, 
+//                                  WRITE_PACKET_SIZE,
+//                                  memConfigLocal, mem_type);
+//            }
+//
+//            //push the request in the memory controller
+//            dram_ctrl->push(mf);
+//        } else {
+//            //TODO:Try in the next cycle, call back to the migration unit, for
+//            //now assume it doesnt happen,
+//            printf("ERROR: dram queue full, migration not completed, req sent till now: %d\n", i-1);
+//            pendingMigration = true;
+//            numRequestPending = 32 - i;
+//            isWritePending = reqType;
+////            exit(EXIT_FAILURE);
+//        }
     }
     return i;
+}
+
+void dram_t::resumeMigration() {
+    for (int i=(32 - numRequestPending); i < 32; i++) {
+         if (sendMigrationRequest(sourceAddr + (i) * 128ULL))
+            continue;
+        else {
+            pendingMigration = true;
+            numRequestPending = 32 - i;
+            isWritePending = reqType;
+            return;
+        }
+    }
+    pendingMigration = false;
+}
+
+bool dram_t::sendMigrationRequest(unsigned long long addr) {
+   if (!full() && !mrqq->full()) {
+       mem_fetch *mf;
+       //create a new mf for the next packet
+       if (reqType == 0) {
+          mem_access_t access(MEM_MIGRATE_R, addr, 128U, 0);
+           mf = new mem_fetch( access, 
+                               READ_PACKET_SIZE,
+                               memConfigLocal, mem_type);
+       } else {
+         mem_access_t access(MEM_MIGRATE_W, addr, 128U, 0);
+         mf = new mem_fetch( access, 
+                             WRITE_PACKET_SIZE,
+                             memConfigLocal, mem_type);
+       }
+
+       //push the request in the memory controller
+       push(mf);
+       return true;
+   } else {
+       return false; 
+   }
 }
