@@ -750,8 +750,6 @@ void baseline_cache::fill(mem_fetch *mf, unsigned time){
             block.m_status = MODIFIED; // mark line as dirty for atomic operation
         }
         m_bandwidth_management.use_fill_port(mf); 
-    } else {
-        m_mshrs.next_access();
     }
     m_extra_mf_fields.erase(mf);
 }
