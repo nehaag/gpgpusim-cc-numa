@@ -97,12 +97,18 @@ bool enableMigration = true;
  * migrationQueue data structure is a map, with memory address as the key and
  * state as the value
  */
+typedef unsigned long long new_addr_type;
 std::list<unsigned long long> sendForMigration;
-std::map<unsigned long long, unsigned> migrationQueue;
+std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
 std::map<unsigned long long, unsigned> migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
 bool readyForNextMigration = true;
+
+/* request_uid->address map*/
+std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
+std::map<unsigned, new_addr_type>  l1_wb_map;
+std::map<unsigned, new_addr_type>  l2_wb_map;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -1331,7 +1337,7 @@ void gpgpu_sim::cycle()
                     // memory will be good
                     //unsigned state = canMigrate(it->first, it->second);
                     if (migrationQueue[(*it)] == 0  && reCheckForMigration[(*it)] == false) {
-                        migrationQueue[(*it)] = ((1 << 19) - 1);
+                        migrationQueue[(*it)] = ((1ULL << 42) - 1);
                         reCheckForMigration[(*it)] = true;
                     } else if (migrationQueue[(*it)] == 0 && reCheckForMigration[(*it)] == true) {
                         if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
@@ -1340,7 +1346,7 @@ void gpgpu_sim::cycle()
                             // If the page reaches "migrating" state then migrate it
                             migration_unit->migratePage((*it));
                             readyForNextMigration = false;
-                            migrationQueue[(*it)] = (1<<20);
+                            migrationQueue[(*it)] = (1<<43);
                             // Remove the address from the map
 //                            migrationQueue.erase(it);
                             // Migrate one page in a cycle and try for others in the
@@ -1413,6 +1419,16 @@ void gpgpu_sim::cycle()
          if (m_cluster[i]->get_not_completed() || get_more_cta_left() ) {
                m_cluster[i]->core_cycle();
                *active_sms+=m_cluster[i]->get_n_active_sms();
+         } else {
+            // if shader is empty then clear the migrating bit of L1 pending in
+            // the migrationQueue data structure
+             std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
+             for (; it != migrationQueue.end(); ++it) {
+                 if (it->second != 0 && it->second != (1<<43))
+                 {
+                         resetBit(it->second, i);
+                 }
+             }
          }
          // Update core icnt/cache stats for GPUWattch
          m_cluster[i]->get_icnt_stats(m_power_stats->pwr_mem_stat->n_simt_to_mem[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_mem_to_simt[CURRENT_STAT_IDX][i]);
@@ -1617,30 +1633,30 @@ unsigned gpgpu_sim::canMigrate(unsigned long long addr, unsigned migrationState)
     return state;
 }
 
-bool checkBit(unsigned int x, unsigned int pos) {
-    return x & (1U<<pos);
+bool checkBit(uint64_t x, uint64_t pos) {
+    return x & (1UL<<pos);
 }
 
-bool checkAllBitsBelow(unsigned int x, unsigned int pos) {
-    return ((x & ((1U << pos)-1)) == ((1U << pos)-1));
+bool checkAllBitsBelow(uint64_t x, uint64_t pos) {
+    return ((x & ((1UL << pos)-1)) == ((1UL << pos)-1));
 }
 
-bool checkAllBitsBelowReset(unsigned int x, unsigned int pos) {
-    return ((x | ~((1U << pos)-1)) == ~((1U << pos)-1));
+bool checkAllBitsBelowReset(uint64_t x, uint64_t pos) {
+    return ((x | ~((1UL << pos)-1)) == ~((1UL << pos)-1));
 }
 
-void setBit(unsigned int &x, unsigned int pos) {
-    x |= (1U << pos);
+void setBit(uint64_t &x, uint64_t pos) {
+    x |= (1UL << pos);
 }
 
-void resetBit(unsigned int &x, unsigned int pos) {
-    x &= ~(1U << pos);
+void resetBit(uint64_t &x, uint64_t pos) {
+    x &= ~(1UL << pos);
 }
 
 void printMigrationQueue() {
-    std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+    std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
     for (; it != migrationQueue.end(); ++it) {
-        printf("addr: %llu, state: 0x%x\n", it->first, it->second);
+        printf("addr: %llu, state: 0x%lx\n", it->first, it->second);
     }
     printf("Migration done for addresses: \n");
     std::map<unsigned long long, unsigned>::iterator it1 = migrationFinished.begin();
@@ -1661,5 +1677,26 @@ void printPartFromMap(unsigned long long addr) {
         printf("addr: %llu, part: %u\n", addr, m_map_online[addr]);
     } else {
         printf("addr not found\n");
+    }
+}
+
+void print_l1_wb() {
+    std::map<unsigned, new_addr_type>::iterator it = l1_wb_map.begin();
+    for (; it != l1_wb_map.end(); ++it) {
+        printf("uid: %u, addr: %llu\n", it->first, it->second);
+    }
+}
+
+void print_l2_wb() {
+    std::map<unsigned, new_addr_type>::iterator it = l2_wb_map.begin();
+    for (; it != l2_wb_map.end(); ++it) {
+        printf("uid: %u, addr: %llu\n", it->first, it->second);
+    }
+}
+
+void print_l1_wr_miss_no_wa() {
+    std::map<unsigned, std::pair<new_addr_type, unsigned> >::iterator it =  l1_wr_miss_no_wa_map.begin();
+    for (; it != l1_wr_miss_no_wa_map.end(); ++it) {
+        printf("uid: %u, addr: %llu, core_id: %d\n", it->first, it->second.first, it->second.second);
     }
 }

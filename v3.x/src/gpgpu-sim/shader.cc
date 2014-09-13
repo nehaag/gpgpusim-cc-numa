@@ -1476,13 +1476,11 @@ bool ldst_unit::texture_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail,
 
 void ldst_unit::flushOnMigration()
 {
-    std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+    std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
     for (; it != migrationQueue.end(); ++it) {
-        if (it->second != 0 && it->second != (1<<20))
-//            && 
- //               ((it->second | ~((1U << 16)-1)) != ~((1U << 16)-1))) {
+        if (it->second != 0 && it->second != (1<<43))
         {
-            if (flush_caches(m_L1D, it->first) == 3) {
+            if (flush_caches(m_L1D, it->first)) {
                 /* if L1 has flushed all the dirty lines and all the pending
                  * reads are done, then clear bit 0 of the second variable of map
                  */
@@ -1554,7 +1552,7 @@ bool ldst_unit::memory_cycle( warp_inst_t &inst, mem_stage_stall_type &stall_rea
    return inst.accessq_empty(); 
 }
 
-unsigned ldst_unit::flush_caches( cache_t *cache, unsigned long long addr)
+bool ldst_unit::flush_caches( cache_t *cache, unsigned long long addr)
 {
     unsigned long long page_addr = addr & ~(4095ULL);
     return m_L1D->flushOnMigrate(page_addr);

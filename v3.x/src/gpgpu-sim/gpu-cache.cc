@@ -733,12 +733,7 @@ void baseline_cache::fill(mem_fetch *mf, unsigned time){
     bool has_atomic = false;
     m_mshrs.mark_ready(e->second.m_block_addr, has_atomic);
 
-    //if (m_config.m_write_alloc_policy == WRITE_ALLOCATE) 
-    //if (!m_mshrs.isNoFillSet(e->second.m_block_addr)) {
-    
-    //else if (m_config.m_write_alloc_policy == WRITE_ALLOCATE_NO_INSERT) {
-    if ( m_mshrs.isFillSetForMF(e->second.m_block_addr, mf->get_request_uid())) {
-        // Do not insert this line in the cache
+    //if ( m_mshrs.isFillSetForMF(e->second.m_block_addr, mf->get_request_uid())) {
         if ( m_config.m_alloc_policy == ON_MISS )
             m_tag_array->fill(e->second.m_cache_index,time);
         else if ( m_config.m_alloc_policy == ON_FILL )
@@ -750,7 +745,6 @@ void baseline_cache::fill(mem_fetch *mf, unsigned time){
             block.m_status = MODIFIED; // mark line as dirty for atomic operation
         }
         m_bandwidth_management.use_fill_port(mf); 
-    }
     m_extra_mf_fields.erase(mf);
 }
 
@@ -826,12 +820,10 @@ void baseline_cache::send_read_request(new_addr_type addr, new_addr_type block_a
     bool mshr_hit = m_mshrs.probe(block_addr);
     bool mshr_avail = !m_mshrs.full(block_addr);
     if ( mshr_hit && mshr_avail ) {
-
         m_mshrs.add(block_addr,mf, false);
         //m_mshrs.setNoFill(block_addr);
         do_miss = true;
     } else if ( !mshr_hit && mshr_avail && (m_miss_queue.size() < m_config.m_miss_queue_size) ) {
-
         m_mshrs.add(block_addr,mf, false);
         //m_mshrs.setNoFill(block_addr);
         // cache-index in extra fields is fake
@@ -897,6 +889,14 @@ cache_request_status data_cache::wr_hit_wt(new_addr_type addr, unsigned cache_in
 	// generate a write-through
 	send_write_request(mf, WRITE_REQUEST_SENT, time, events);
 
+    // add this write request to the map 
+    if (m_wrbk_type == L1_WRBK_ACC) {
+//#ifdef DEBUG
+//        printf("Adding no wrte-allcoate L1_WRITE_REQUEST to the map to track\n");
+//#endif
+        l1_wr_miss_no_wa_map[mf->get_request_uid()] =  std::make_pair (mf->get_addr(), cache_core_id);
+    }
+
 	return HIT;
 }
 
@@ -908,6 +908,15 @@ cache_request_status data_cache::wr_hit_we(new_addr_type addr, unsigned cache_in
 	// generate a write-through/evict
 	cache_block_t &block = m_tag_array->get_block(cache_index);
 	send_write_request(mf, WRITE_REQUEST_SENT, time, events);
+
+    // add this write request to the map 
+    if (m_wrbk_type == L1_WRBK_ACC) {
+//#ifdef DEBUG
+//        printf("Adding no wrte-allcoate L1_WRITE_REQUEST to the map to track\n");
+//#endif
+        l1_wr_miss_no_wa_map[mf->get_request_uid()] =  std::make_pair (mf->get_addr(), cache_core_id);
+    }
+
 
 	// Invalidate block
 	block.m_status = INVALID;
@@ -992,13 +1001,24 @@ data_cache::wr_miss_wa( new_addr_type addr,
                 m_wrbk_type,m_config.get_line_sz(),true);
             m_miss_queue.push_back(wb);
 
-        //TODO: for debugging: delete this
-        unsigned global_spid = wb->get_sub_partition_id(); 
-        const class memory_config* config = wb->get_mem_config();
-        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
-            printf("global_spid: %d\n", global_spid);
-        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
-        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+            // add this write back request to the map 
+            if (m_wrbk_type == L1_WRBK_ACC) {
+                l1_wb_map[wb->get_request_uid()] =  wb->get_addr();
+            } else if (m_wrbk_type == L2_WRBK_ACC) {
+                l2_wb_map[wb->get_request_uid()] =  wb->get_addr();
+            } else {
+                printf("unknown writeback request generated\n");
+                exit(EXIT_FAILURE);
+            }
+
+
+            //TODO: for debugging: delete this
+            unsigned global_spid = wb->get_sub_partition_id(); 
+            const class memory_config* config = wb->get_mem_config();
+            if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+                printf("global_spid: %d\n", global_spid);
+            if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+            if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
 
             wb->set_status(m_miss_queue_status,time);
         }
@@ -1022,6 +1042,14 @@ data_cache::wr_miss_no_wa( new_addr_type addr,
 
     // on miss, generate write through (no write buffering -- too many threads for that)
     send_write_request(mf, WRITE_REQUEST_SENT, time, events);
+
+    // add this write request to the map 
+    if (m_wrbk_type == L1_WRBK_ACC) {
+//#ifdef DEBUG
+//        printf("Adding no wrte-allcoate L1_WRITE_REQUEST to the map to track\n");
+//#endif
+        l1_wr_miss_no_wa_map[mf->get_request_uid()] =  std::make_pair (mf->get_addr(), cache_core_id);
+    }
 
     return MISS;
 }
@@ -1160,17 +1188,27 @@ data_cache::rd_miss_base( new_addr_type addr,
         // (already modified lower level)
         if(wb && (m_config.m_write_policy != WRITE_THROUGH) ){ 
             mem_fetch *wb = m_memfetch_creator->alloc(evicted.m_block_addr,
-                m_wrbk_type,m_config.get_line_sz(),true);
+                    m_wrbk_type,m_config.get_line_sz(),true);
 
-        //TODO: for debugging: delete this
-        unsigned global_spid = wb->get_sub_partition_id(); 
-        const class memory_config* config = wb->get_mem_config();
-        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
-            printf("global_spid: %d\n", global_spid);
-        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
-        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+            // add this write back request to the map 
+            if (m_wrbk_type == L1_WRBK_ACC) {
+                l1_wb_map[wb->get_request_uid()] =  wb->get_addr();
+            } else if (m_wrbk_type == L2_WRBK_ACC) {
+                l2_wb_map[wb->get_request_uid()] =  wb->get_addr();
+            } else {
+                printf("unknown writeback request generated\n");
+                exit(EXIT_FAILURE);
+            }
 
-        send_write_request(wb, WRITE_BACK_REQUEST_SENT, time, events);
+            //TODO: for debugging: delete this
+            unsigned global_spid = wb->get_sub_partition_id(); 
+            const class memory_config* config = wb->get_mem_config();
+            if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+                printf("global_spid: %d\n", global_spid);
+            if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+            if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
+            send_write_request(wb, WRITE_BACK_REQUEST_SENT, time, events);
     }
         return MISS;
     }
@@ -1279,7 +1317,7 @@ data_cache::access( new_addr_type addr,
     return access_status;
 }
 
-unsigned
+bool
 data_cache::flushOnMigrate(new_addr_type page_addr)
 {
     /* Check if any request to this page are pending in the mshr's, WB requests
@@ -1291,12 +1329,31 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
      * Also, if any lines in the cache are in a valid state, INVALIDATE them
      */
 
-    /* Invalidate all lines which belong to the page to be migrated
-     * TODO: Dirty lines WB lines to be handeled separately
-     */
+    /* TODO: clean flag and return 3 things to 1 variable */
+
     new_addr_type block_addr;
-    unsigned num_line = m_config.get_num_lines();
     bool flag = true;
+
+    /* Step1:
+     * Check MSHR's requests, if there are any outstanding misses to the lower
+     * memory hierarchy, wait for it to clear.
+     */
+    for (unsigned i=0; i < 32; i++) {
+        block_addr = page_addr + 128ULL * i;
+        bool mshr_hit = m_mshrs.probe(block_addr);
+        if (mshr_hit) {
+            flag &= false;
+            return false;
+        }
+    }
+
+    /* Step 2: 
+     * All MSHR hits must be cleared to the page to be migrated. 
+     * 1. Invalidate all the valid lines in the cache to the page.
+     * 2. Evict dirty lines in the cache and send out writeback request to the
+     * lower level memory.
+     */
+    unsigned num_line = m_config.get_num_lines();
     for (unsigned i=0; i < num_line; i++) {
         block_addr = m_tag_array->get_block(i).m_block_addr;
         new_addr_type page_block_addr = block_addr & (~4095ULL);
@@ -1308,75 +1365,117 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
             if (!mshr_hit) {
                 if (status == MODIFIED) {   //it's a dirty line, evict it
                     //TODO: L2_WRBK_ACC, change it to L1_WRBK_ACC 
-//                    if (!miss_queue_full(1) && 
-//                            (m_miss_queue.size() < m_config.m_miss_queue_size)) {
-                        mem_fetch *wb = m_memfetch_creator->alloc(block_addr,
-                           L2_WRBK_ACC, m_config.get_line_sz(),true);
-                        m_miss_queue.push_back(wb);
-                        m_tag_array->get_block(i).m_status = INVALID; 
-//                    } else {
-//                        printf("Writeback stalled on miss queue\n");
-//                    }
-
+//                    assert(m_config.m_write_policy != WRITE_THROUGH)
+                    mem_fetch *wb = m_memfetch_creator->alloc(block_addr,
+                            m_wrbk_type, m_config.get_line_sz(),true);
+                    m_miss_queue.push_back(wb);
+                    // add this write back request to the map 
+                    if (m_wrbk_type == L1_WRBK_ACC) {
+                        l1_wb_map[wb->get_request_uid()] =  wb->get_addr();
+                    } else if (m_wrbk_type == L2_WRBK_ACC) {
+                        l2_wb_map[wb->get_request_uid()] =  wb->get_addr();
+                    } else {
+                        printf("unknown writeback request generated\n");
+                        exit(EXIT_FAILURE);
+                    }
+                    wb->set_status(m_miss_queue_status,gpu_sim_cycle+gpu_tot_sim_cycle);
+                    m_tag_array->get_block(i).m_status = INVALID; 
                     flag &= false;
                 }
                 else
                     m_tag_array->get_block(i).m_status = INVALID; 
             } else {
-                /* Mark mshr entry read request corresponding to write alloc to not fill when response comes
-                 * back
-                 */
-
-                //m_mshrs.setNoFill(block_addr);
-                //m_tag_array->get_block(i).m_status = INVALID;
-
-                extra_mf_fields_lookup::iterator it1 = m_extra_mf_fields.begin();
-                unsigned request_id;
-                unsigned count = 0;
-                for (; it1 != m_extra_mf_fields.end(); it1++) {
-                    if (it1->second.m_block_addr == block_addr && it1->second.m_cache_index == i) {
-                        request_id = it1->second.m_request_uid;
-                        count++;
-                    }
-                }
-                
-                if (count > 1) {
-                    printf("somehitng is wrong with uniqueness of cache index here for block_addr: %llu\n", block_addr);
-                    exit(EXIT_FAILURE);
-                }
-
-                m_mshrs.setNoFillForMF(block_addr, request_id);
-                m_tag_array->get_block(i).m_status = INVALID;
-                flag &= false;
+                printf("no new MSHR hits should be there for this page, as we have already cleared it\n");
+                exit(EXIT_FAILURE);
+//                /* Mark mshr entry read request corresponding to write alloc to
+//                 * not fill when response comes
+//                 * back
+//                 */
+//
+//                //m_mshrs.setNoFill(block_addr);
+//                //m_tag_array->get_block(i).m_status = INVALID;
+//
+////                extra_mf_fields_lookup::iterator it1 = m_extra_mf_fields.begin();
+////                unsigned request_id;
+////                unsigned count = 0;
+////                for (; it1 != m_extra_mf_fields.end(); it1++) {
+////                    if (it1->second.m_block_addr == block_addr && it1->second.m_cache_index == i) {
+////                        request_id = it1->second.m_request_uid;
+////                        count++;
+////                    }
+////                }
+////                
+////                if (count > 1) {
+////                    printf("somehitng is wrong with uniqueness of cache index here for block_addr: %llu\n", block_addr);
+////                    exit(EXIT_FAILURE);
+////                }
+////
+////                m_mshrs.setNoFillForMF(block_addr, request_id);
+////                m_tag_array->get_block(i).m_status = INVALID;
+//                flag &= false;
+//                return 3;
             }
         }
     }
+    if (!flag) {
+        return false;
+    }
 
-    /* Check MSHR's requests
+    /* Step 3
+     * 1. Wait for all the writes to reach the next lower level memory
+     * for those which are not inserted on miss in the cache (L1)
+     * for wr_miss_no_wa policy
      */
-    for (unsigned i=0; i < 32; i++) {
-        block_addr = page_addr + 128ULL * i;
-        //new_addr_type page_block_addr = block_addr & (~4095ULL);
-        //if (page_block_addr == page_addr) {
-            bool mshr_hit = m_mshrs.probe(block_addr);
-            if (mshr_hit)
-                flag &= false;
-        //}
+    std::map<unsigned, std::pair<new_addr_type, unsigned> >::iterator it1 =  l1_wr_miss_no_wa_map.begin();
+    if (m_wrbk_type == L1_WRBK_ACC) {
+        it1 = l1_wr_miss_no_wa_map.begin();
+        for (; it1 != l1_wr_miss_no_wa_map.end(); it1++) {
+            new_addr_type req_page_addr = (it1->second).first & ~(4095ULL);
+            if (req_page_addr == page_addr)
+                return false;
+        }
     }
 
-    std::list<mem_fetch*>::iterator it = m_miss_queue.begin();
-    for (; it != m_miss_queue.end(); ++it) {
-        new_addr_type block_page_addr = ((*it)->get_addr()) & (~4095ULL);
-        if (block_page_addr == page_addr)
+    /* Step 4
+     * 1. Wait for all the writebacks to reach the next lower level memory
+     */
+
+    std::map<unsigned, new_addr_type>::iterator it;
+    if (m_wrbk_type == L1_WRBK_ACC) {
+        it = l1_wb_map.begin();
+        for (; it != l1_wb_map.end(); it++) {
+            new_addr_type req_page_addr = it->second & ~(4095ULL);
+            if (req_page_addr == page_addr)
+                return false;
+        }
+    } else if (m_wrbk_type == L2_WRBK_ACC) {
+        it = l2_wb_map.begin();
+        for (; it != l2_wb_map.end(); it++) {
+            new_addr_type req_page_addr = it->second & ~(4095ULL);
+            if (req_page_addr == page_addr)
+                return false;
+        }
+    } else {
+        printf("unknown writeback request type\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Step 5
+     * wait for miss queue to drain
+     * TODO: maybe this should be checked before write back request checking
+     */
+    std::list<mem_fetch*>::iterator it_missq = m_miss_queue.begin();
+    for (; it_missq != m_miss_queue.end(); ++it_missq) {
+        new_addr_type block_page_addr = ((*it_missq)->get_addr()) & (~4095ULL);
+        if (block_page_addr == page_addr) {
             flag &= false;
+            return false;
+        }
     }
 
-
-//    unsigned state = m_mshrs.flush(block_addr);
-    if (flag) {
-        return 3;
-    }
-    else return 2;
+    if(!flag)
+        return false;
+    return true;
 }
 
 /// This is meant to model the first level data cache in Fermi.

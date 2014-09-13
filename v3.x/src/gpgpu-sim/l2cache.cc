@@ -326,10 +326,10 @@ void memory_partition_unit::dram_cycle()
                 unsigned threshold = 128;
                 new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
                 if (enableMigration && (migrationQueue.size() < 25) &&
-                        (num_access_per_cacheline[cacheline][3] >= threshold) && (mf->get_sub_partition_id() < 8) ) {
+                        (num_access_per_cacheline[cacheline][3] >= threshold) && (mf->get_sub_partition_id() < 8) && !migrationQueue.count(page_addr) ) {
                     // Put the request in migrationQueue, in the state
                     // evicting(1)
-                    migrationQueue[page_addr] = ((1 << 19) - 1);
+                    migrationQueue[page_addr] = ((1ULL << 42) - 1ULL);
                     reCheckForMigration[page_addr] = false;
                     migrationWaitCycle[page_addr] = 0;
                     sendForMigration.push_back(page_addr);
@@ -359,9 +359,9 @@ void memory_partition_unit::dram_cycle()
     }
 
     if (enableMigration && !migrationQueue.empty()) {
-        std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
         for (; it != migrationQueue.end(); ++it) {
-            if (it->second != 0 && it->second != (1<<20)) {
+            if (it->second != 0 && it->second != (1<<43)) {
                 new_addr_type page_addr = it->first & ~(4095ULL);
 
                 bool flag = true;
@@ -376,8 +376,8 @@ void memory_partition_unit::dram_cycle()
                     if (req_page_addr == page_addr)
                         flag = false;
                 }
-                if (flag && checkAllBitsBelowReset(it->second,17)){
-                    resetBit(it->second, 17);
+                if (flag && checkAllBitsBelowReset(it->second,40)){
+                    resetBit(it->second, 40);
                 }
             }
         }
@@ -517,7 +517,7 @@ memory_sub_partition::memory_sub_partition( unsigned sub_partition_id,
     m_mf_allocator = new partition_mf_allocator(config);
 
     if(!m_config->m_L2_config.disabled())
-       m_L2cache = new l2_cache(L2c_name,m_config->m_L2_config,-1,-1,m_L2interface,m_mf_allocator,IN_PARTITION_L2_MISS_QUEUE);
+       m_L2cache = new l2_cache(L2c_name,m_config->m_L2_config,m_id,-1,m_L2interface,m_mf_allocator,IN_PARTITION_L2_MISS_QUEUE);
 
     unsigned int icnt_L2;
     unsigned int L2_dram;
@@ -656,6 +656,8 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
     if( !m_rop.empty() && (cycle >= m_rop.front().ready_cycle) && !m_icnt_L2_queue->full() ) {
         mem_fetch* mf = m_rop.front().req;
         m_rop.pop();
+        l1_wb_map.erase(mf->get_request_uid());
+        l1_wr_miss_no_wa_map.erase(mf->get_request_uid());
         m_icnt_L2_queue->push(mf);
         mf->set_status(IN_PARTITION_ICNT_TO_L2_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
 
@@ -666,9 +668,9 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
     }
 
     if (enableMigration && !migrationQueue.empty()) {
-        std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
         for (; it != migrationQueue.end(); ++it) {
-            if (it->second != 0 && it->second != (1<<20)) {
+            if (it->second != 0 && it->second != (1<<43)) {
                 new_addr_type page_addr = it->first & ~(4095ULL);
                 /* check icnt to l2 queue
                  */
@@ -687,12 +689,13 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
 
                 /* check mshrs of L2 caches
                  */
-                if (m_L2cache->flushOnMigrate(it->first) == 3) {
+                if (m_L2cache->flushOnMigrate(it->first)) {
                     /* if L2 has flushed all the dirty lines and all the pending
                      * reads are done, then clear bit 1 of the second variable of map
                      */
+                    unsigned cache_this_id = m_L2cache->cache_id;
                     if (flag && checkAllBitsBelowReset(it->second,16)){
-                        resetBit(it->second, 16);
+                        resetBit(it->second, 16 + cache_this_id);
                     }
                 }
             }
@@ -817,6 +820,15 @@ void memory_sub_partition::push( mem_fetch* req, unsigned long long cycle )
 {
     if (req) {
         m_request_tracker.insert(req);
+
+        // if a writeback request from l1 has reached l2 then remove it from the
+        // l1 writeback map
+//#ifdef DEBUG
+//        printf("Erasing l1 writeback request as it has reached l2, addr: %llu, uid: %u\n", req->get_addr(), req->get_request_uid());
+//#endif
+//        l1_wb_map.erase(req->get_request_uid());
+//        l1_wr_miss_no_wa_map.erase(req->get_request_uid());
+        
         m_stats->memlatstat_icnt2mem_pop(req);
         if( req->istexture() ) {
             m_icnt_L2_queue->push(req);

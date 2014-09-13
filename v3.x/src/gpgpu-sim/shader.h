@@ -1121,7 +1121,7 @@ public:
     std::map <unsigned long long int, std::vector<unsigned long int> > num_access_per_address;
 
     // For migration
-    unsigned flush_caches(cache_t *cache, unsigned long long addr);
+    bool flush_caches(cache_t *cache, unsigned long long addr);
     unsigned get_sid(){return m_sid;}
     void flushOnMigration();
 protected:

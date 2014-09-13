@@ -336,6 +336,7 @@ struct memory_config_types {
 
 
 // global counters and flags (please try not to add to this list!!!)
+typedef unsigned long long new_addr_type;
 extern unsigned long long  gpu_sim_cycle;
 extern unsigned long long  gpu_tot_sim_cycle;
 extern bool g_interactive_debugger_enabled;
@@ -345,18 +346,22 @@ extern unsigned long long int num_lines_hbm;
 extern unsigned int bw_equal;
 
 extern std::list<unsigned long long> sendForMigration;
-extern std::map<unsigned long long, unsigned> migrationQueue;
+extern std::map<unsigned long long, uint64_t> migrationQueue;
 extern bool enableMigration;
 extern bool readyForNextMigration;
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
 extern std::map<unsigned long long, unsigned> migrationFinished;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;
 
-extern bool checkBit(unsigned int x, unsigned int pos);
-extern bool checkAllBitsBelow(unsigned int x, unsigned int pos);
-extern bool checkAllBitsBelowReset(unsigned int x, unsigned int pos);
-extern void setBit(unsigned int &x, unsigned int pos);
-extern void resetBit(unsigned int &x, unsigned int pos);
+extern std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
+extern std::map<unsigned, new_addr_type>  l1_wb_map;
+extern std::map<unsigned, new_addr_type>  l2_wb_map;
+
+extern bool checkBit(uint64_t x, uint64_t pos);
+extern bool checkAllBitsBelow(uint64_t x, uint64_t pos);
+extern bool checkAllBitsBelowReset(uint64_t x, uint64_t pos);
+extern void setBit(uint64_t &x, uint64_t pos);
+extern void resetBit(uint64_t &x, uint64_t pos);
 void printMigrationQueue();
 
 class gpgpu_sim_config : public power_config, public gpgpu_functional_sim_config {

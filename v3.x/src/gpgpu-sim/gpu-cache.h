@@ -749,6 +749,7 @@ public:
         init( mfcreator );
         m_wr_alloc_type = wr_alloc_type;
         m_wrbk_type = wrbk_type;
+        cache_core_id = core_id;
     }
 
     virtual ~data_cache() {}
@@ -796,7 +797,9 @@ public:
                                               unsigned time,
                                               std::list<cache_event> &events );
 
-    unsigned flushOnMigrate(new_addr_type page_addr);
+    bool flushOnMigrate(new_addr_type page_addr);
+
+    int cache_core_id;
 
 protected:
     data_cache( const char *name,
@@ -814,6 +817,7 @@ protected:
         init( mfcreator );
         m_wr_alloc_type = wr_alloc_type;
         m_wrbk_type = wrbk_type;
+        cache_core_id = core_id;
     }
 
     mem_access_type m_wr_alloc_type; // Specifies type of write allocate request (e.g., L1 or L2)
@@ -994,7 +998,10 @@ public:
     l2_cache(const char *name,  cache_config &config,
             int core_id, int type_id, mem_fetch_interface *memport,
             mem_fetch_allocator *mfcreator, enum mem_fetch_status status )
-            : data_cache(name,config,core_id,type_id,memport,mfcreator,status, L2_WR_ALLOC_R, L2_WRBK_ACC){}
+            : data_cache(name,config,core_id,type_id,memport,mfcreator,status, L2_WR_ALLOC_R, L2_WRBK_ACC)
+    {
+        cache_id = core_id;
+    }
 
     virtual ~l2_cache() {}
 
@@ -1003,6 +1010,7 @@ public:
                 mem_fetch *mf,
                 unsigned time,
                 std::list<cache_event> &events );
+    int cache_id;
 };
 
 /*****************************************************************************/

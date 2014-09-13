@@ -184,13 +184,20 @@ void dram_t::push( class mem_fetch *data )
         if (data->get_addr() == 2152209376)
             printf("break here \n");
         if (id != data->get_tlx_addr().chip)
-            printf("addr: %lld, id = %d, chip = %d, access_type: %d \n", data->get_addr(), id, data->get_tlx_addr().chip, data->get_access_type());
+            printf("addr: %lld, id = %d, chip = %d, access_type: %d, uid = %u, timestamp= %u\n", data->get_addr(), id, data->get_tlx_addr().chip, data->get_access_type(), data->get_request_uid(), data->get_timestamp());
         assert(id == data->get_tlx_addr().chip); // Ensure request is in correct memory partition
 //    }
 
    dram_req_t *mrq = new dram_req_t(data);
    data->set_status(IN_PARTITION_MC_INTERFACE_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
    mrqq->push(mrq);
+
+   // if a writeback datauest from l2 has reached memory controller then remove it from the
+   // l2 writeback map
+//#ifdef DEBUG
+//   printf("Erasing l2 writeback datauest as it has reached memory controller, addr: %llu, uid: %u\n", data->get_addr(), data->get_request_uid());
+//#endif
+   l2_wb_map.erase(data->get_request_uid());
 
    // stats...
    n_req += 1;
@@ -283,8 +290,11 @@ void dram_t::cycle()
                       migrateReqCountW = 0;
                       unsigned long long page_addr = data->get_addr() & ~(4095ULL);
                       migrationQueue.erase(page_addr);
+                      reCheckForMigration.erase(page_addr);
                       migrationWaitCycle.erase(page_addr);
+#ifdef DEBUG
                       migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
+#endif
                       sendForMigration.remove(page_addr);
                       readyForNextMigration = true;
                   }
@@ -501,16 +511,16 @@ void dram_t::cycle()
     * controller and then only flag for migration
     */
     if (enableMigration && !migrationQueue.empty()) {
-        std::map<unsigned long long, unsigned>::iterator it = migrationQueue.begin();
+        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
         for (; it != migrationQueue.end(); ++it) {
-            if (it->second != 0 && it->second != (1<<20)) {
+            if (it->second != 0 && it->second != (1<<43)) {
                 new_addr_type page_addr = it->first & ~(4095ULL);
                 if (outstandingRequest(it->first) == 3) {
                     /* if L2 has flushed all the dirty lines and all the pending
                      * reads are done, then clear bit 1 of the second variable of map
                      */
-                    if (checkAllBitsBelowReset(it->second,18))
-                        resetBit(it->second, 18);
+                    if (checkAllBitsBelowReset(it->second,41))
+                        resetBit(it->second, 41);
                 }
             }
         }
