@@ -32,13 +32,18 @@
 #include "gpu-sim.h"
 #include "addrdec.h"
 
-unsigned mem_fetch::sm_next_mf_request_uid=1;
+uint64_t mem_fetch::sm_next_mf_request_uid=1;
+uint64_t mem_fetch::deallocated_tot=0;
+uint64_t mem_fetch::deallocated[NUM_MEM_ACCESS_TYPE] = {0,0,0,0,0,0,0,0,0,0,0,0,0};
+uint64_t mem_fetch::allocated[NUM_MEM_ACCESS_TYPE] = {0,0,0,0,0,0,0,0,0,0,0,0,0};
 
 mem_fetch::mem_fetch( mem_fetch *mf,
                       const mem_access_t &access)
 {
    m_request_uid = sm_next_mf_request_uid++;
    m_access = access;
+    if (m_access.get_type() < NUM_MEM_ACCESS_TYPE)
+        allocated[access.get_type()]++;
 //   m_inst = NULL;
    m_data_size = access.get_size();
    m_ctrl_size = mf->get_ctrl_size();
@@ -69,6 +74,8 @@ mem_fetch::mem_fetch( const mem_access_t &access, unsigned ctrl_size, const clas
     }
    m_request_uid = sm_next_mf_request_uid++;
    m_access = access;
+    if (m_access.get_type() < NUM_MEM_ACCESS_TYPE)
+        allocated[access.get_type()]++;
    m_data_size = access.get_size();
    m_ctrl_size = get_ctrl_size();
    m_sid = 0; // TODO: fake id
@@ -99,6 +106,8 @@ mem_fetch::mem_fetch( const mem_access_t &access,
 {
    m_request_uid = sm_next_mf_request_uid++;
    m_access = access;
+    if (m_access.get_type() < NUM_MEM_ACCESS_TYPE)
+        allocated[access.get_type()]++;
    if( inst ) { 
        m_inst = *inst;
        assert( wid == m_inst.warp_id() );
@@ -289,6 +298,9 @@ mem_fetch::mem_fetch( const mem_access_t &access,
 
 mem_fetch::~mem_fetch()
 {
+    if (m_access.get_type() < NUM_MEM_ACCESS_TYPE)
+        deallocated[m_access.get_type()]++;
+    deallocated_tot++;
     m_status = MEM_FETCH_DELETED;
 }
 
@@ -359,5 +371,8 @@ unsigned mem_fetch::get_num_flits(bool simt_to_mem){
 	return (sz/icnt_flit_size) + ( (sz % icnt_flit_size)? 1:0);
 }
 
+void mem_fetch::printAllocated() {
+    printf("allocated : %llu, deallocated: %llu\n", sm_next_mf_request_uid, deallocated);
+}
 
 

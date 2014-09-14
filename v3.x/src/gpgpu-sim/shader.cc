@@ -1399,6 +1399,7 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
      */
     new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
     if (migrationQueue.count(page_addr)) {
+        delete mf;
         return COAL_STALL;
     }
         ; // then stall the request

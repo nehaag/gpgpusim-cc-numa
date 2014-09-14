@@ -125,6 +125,8 @@ public:
    void set_wa(bool value) {wa = value;}
    bool get_wa() {return wa;}
 
+   static void printAllocated();
+
 private:
    // request source information
    unsigned m_request_uid;
@@ -152,7 +154,10 @@ private:
    // requesting instruction (put last so mem_fetch prints nicer in gdb)
    warp_inst_t m_inst;
 
-   static unsigned sm_next_mf_request_uid;
+   static uint64_t sm_next_mf_request_uid;
+   static uint64_t deallocated_tot;
+   static uint64_t allocated[NUM_MEM_ACCESS_TYPE];
+   static uint64_t deallocated[NUM_MEM_ACCESS_TYPE];
 
    const class memory_config *m_mem_config;
    unsigned icnt_flit_size;

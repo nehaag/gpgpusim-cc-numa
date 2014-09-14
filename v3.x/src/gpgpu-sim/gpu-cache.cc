@@ -691,8 +691,6 @@ void baseline_cache::cycle(bool level2){
     if ( !m_miss_queue.empty() ) {
         mem_fetch *mf = m_miss_queue.front();
 
-        new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
-
         //TODO: for debugging: delete this
         unsigned global_spid = mf->get_sub_partition_id(); 
         const class memory_config* config = mf->get_mem_config();
@@ -701,18 +699,6 @@ void baseline_cache::cycle(bool level2){
         if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
         if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
     
-        bool allow_access = true;
-        /* if it is a level-1 cache then don't send the request if page is
-         * migrating
-         */
-        if (!level2 && migrationQueue.count(page_addr))
-//            && 
-//                checkAllBitsBelowReset(migrationQueue[page_addr], 15)) {
-        {
-            allow_access = false;
-        }
-
-//        if ( !m_memport->full(mf->size(),mf->get_is_write()) && allow_access) {
         if ( !m_memport->full(mf->size(),mf->get_is_write()) ) {
             m_miss_queue.pop_front();
             m_memport->push(mf);
@@ -1078,59 +1064,59 @@ data_cache::wr_miss_wa_no_insert( new_addr_type addr,
     //if(!send_write_allocate(mf, addr, block_addr, cache_index, time, events))
     //    return RESERVATION_FAIL;
 
-    const mem_access_t *ma = new  mem_access_t( m_wr_alloc_type,
-                        mf->get_addr(),
-                        mf->get_data_size(),
-                        false, // Now performing a read
-                        mf->get_access_warp_mask(),
-                        mf->get_access_byte_mask() );
-
-    mem_fetch *n_mf = new mem_fetch( *ma,
-                    NULL,
-                    mf->get_ctrl_size(),
-                    mf->get_wid(),
-                    mf->get_sid(),
-                    mf->get_tpc(),
-                    mf->get_mem_config());
-//    mem_fetch *n_mf = new mem_fetch( mf, *ma);
-
-        //TODO: for debugging: delete this
-        unsigned global_spid = n_mf->get_sub_partition_id(); 
-        const class memory_config* config = n_mf->get_mem_config();
-        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
-            printf("global_spid: %d\n", global_spid);
-        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
-        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
-
-
-    bool do_miss = false;
-//    bool wb = false;
-//    cache_block_t evicted;
-
-    // Send read request resulting from write miss
-    send_read_request(addr, block_addr, n_mf, time, do_miss,
-        events, true);
-
-    if( do_miss ){
-        // If evicted block is modified and not a write-through
-        // (already modified lower level)
-//        if( wb && (m_config.m_write_policy != WRITE_THROUGH) ) { 
-//            mem_fetch *wb = m_memfetch_creator->alloc(evicted.m_block_addr,
-//                m_wrbk_type,m_config.get_line_sz(),true);
-//            m_miss_queue.push_back(wb);
+//    const mem_access_t *ma = new  mem_access_t( m_wr_alloc_type,
+//                        mf->get_addr(),
+//                        mf->get_data_size(),
+//                        false, // Now performing a read
+//                        mf->get_access_warp_mask(),
+//                        mf->get_access_byte_mask() );
+//
+//    mem_fetch *n_mf = new mem_fetch( *ma,
+//                    NULL,
+//                    mf->get_ctrl_size(),
+//                    mf->get_wid(),
+//                    mf->get_sid(),
+//                    mf->get_tpc(),
+//                    mf->get_mem_config());
+////    mem_fetch *n_mf = new mem_fetch( mf, *ma);
 //
 //        //TODO: for debugging: delete this
-//        unsigned global_spid = wb->get_sub_partition_id(); 
-//        const class memory_config* config = wb->get_mem_config();
+//        unsigned global_spid = n_mf->get_sub_partition_id(); 
+//        const class memory_config* config = n_mf->get_mem_config();
 //        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
 //            printf("global_spid: %d\n", global_spid);
 //        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
 //        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
 //
-//            wb->set_status(m_miss_queue_status,time);
-//        }
-        return MISS;
-    }
+//
+//    bool do_miss = false;
+////    bool wb = false;
+////    cache_block_t evicted;
+//
+//    // Send read request resulting from write miss
+//    send_read_request(addr, block_addr, n_mf, time, do_miss,
+//        events, true);
+//
+//    if( do_miss ){
+//        // If evicted block is modified and not a write-through
+//        // (already modified lower level)
+////        if( wb && (m_config.m_write_policy != WRITE_THROUGH) ) { 
+////            mem_fetch *wb = m_memfetch_creator->alloc(evicted.m_block_addr,
+////                m_wrbk_type,m_config.get_line_sz(),true);
+////            m_miss_queue.push_back(wb);
+////
+////        //TODO: for debugging: delete this
+////        unsigned global_spid = wb->get_sub_partition_id(); 
+////        const class memory_config* config = wb->get_mem_config();
+////        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+////            printf("global_spid: %d\n", global_spid);
+////        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+////        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+////
+////            wb->set_status(m_miss_queue_status,time);
+////        }
+//        return MISS;
+//    }
 
     return RESERVATION_FAIL;
 }

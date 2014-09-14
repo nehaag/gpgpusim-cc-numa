@@ -282,6 +282,8 @@ void dram_t::cycle()
                       this->migratePage(destAddr, 0, destDramCtlr, 1, memConfigRemote, NULL, destMemType);
                       migrateReqCountR = 0;
                   }
+                 m_memory_partition_unit->set_done(data);
+                 delete data;
               } else if (data->get_access_type() == MEM_MIGRATE_W) {
                   migrateReqCountW++;
                   if (migrateReqCountW == 32) {
@@ -298,6 +300,8 @@ void dram_t::cycle()
                       sendForMigration.remove(page_addr);
                       readyForNextMigration = true;
                   }
+                 m_memory_partition_unit->set_done(data);
+                 delete data;
               } else {
                  m_memory_partition_unit->set_done(data);
                  delete data;
