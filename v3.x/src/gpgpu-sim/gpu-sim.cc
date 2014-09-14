@@ -1414,6 +1414,22 @@ void gpgpu_sim::cycle()
 
    if (clock_mask & CORE) {
       // L1 cache + shader core pipeline stages
+      
+      /* For migration purpose only
+       * Assume there can be only 15 simt_clusters, but if there are less than
+       * that then we need to reset bit of extra L1 caches of extra sim_clusters 
+       */
+      if (enableMigration) {
+          std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
+          for (; it != migrationQueue.end(); ++it) {
+              for (unsigned i=m_shader_config->n_simt_clusters; i<15 ;i++) {
+                  if (it->second != 0 && it->second != (1<<43))
+                  {
+                      resetBit(it->second, i);
+                  }
+              }
+          }
+      }
       m_power_stats->pwr_mem_stat->core_cache_stats[CURRENT_STAT_IDX].clear();
       for (unsigned i=0;i<m_shader_config->n_simt_clusters;i++) {
          if (m_cluster[i]->get_not_completed() || get_more_cta_left() ) {
