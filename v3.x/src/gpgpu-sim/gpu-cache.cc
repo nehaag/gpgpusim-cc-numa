@@ -1040,6 +1040,9 @@ data_cache::wr_miss_no_wa( new_addr_type addr,
     return MISS;
 }
 
+// this policy doesn't work currently, intention was to use it for request which are
+// outstanding when a page is to be migrated. But, not using it anymore. So, don
+// not use it for any purpose
 enum cache_request_status
 data_cache::wr_miss_wa_no_insert( new_addr_type addr,
                         unsigned cache_index,
@@ -1064,59 +1067,39 @@ data_cache::wr_miss_wa_no_insert( new_addr_type addr,
     //if(!send_write_allocate(mf, addr, block_addr, cache_index, time, events))
     //    return RESERVATION_FAIL;
 
-//    const mem_access_t *ma = new  mem_access_t( m_wr_alloc_type,
-//                        mf->get_addr(),
-//                        mf->get_data_size(),
-//                        false, // Now performing a read
-//                        mf->get_access_warp_mask(),
-//                        mf->get_access_byte_mask() );
-//
-//    mem_fetch *n_mf = new mem_fetch( *ma,
-//                    NULL,
-//                    mf->get_ctrl_size(),
-//                    mf->get_wid(),
-//                    mf->get_sid(),
-//                    mf->get_tpc(),
-//                    mf->get_mem_config());
-////    mem_fetch *n_mf = new mem_fetch( mf, *ma);
-//
-//        //TODO: for debugging: delete this
-//        unsigned global_spid = n_mf->get_sub_partition_id(); 
-//        const class memory_config* config = n_mf->get_mem_config();
-//        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
-//            printf("global_spid: %d\n", global_spid);
-//        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
-//        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
-//
-//
-//    bool do_miss = false;
-////    bool wb = false;
-////    cache_block_t evicted;
-//
-//    // Send read request resulting from write miss
-//    send_read_request(addr, block_addr, n_mf, time, do_miss,
-//        events, true);
-//
-//    if( do_miss ){
-//        // If evicted block is modified and not a write-through
-//        // (already modified lower level)
-////        if( wb && (m_config.m_write_policy != WRITE_THROUGH) ) { 
-////            mem_fetch *wb = m_memfetch_creator->alloc(evicted.m_block_addr,
-////                m_wrbk_type,m_config.get_line_sz(),true);
-////            m_miss_queue.push_back(wb);
-////
-////        //TODO: for debugging: delete this
-////        unsigned global_spid = wb->get_sub_partition_id(); 
-////        const class memory_config* config = wb->get_mem_config();
-////        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
-////            printf("global_spid: %d\n", global_spid);
-////        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
-////        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
-////
-////            wb->set_status(m_miss_queue_status,time);
-////        }
-//        return MISS;
-//    }
+    const mem_access_t *ma = new  mem_access_t( m_wr_alloc_type,
+                        mf->get_addr(),
+                        mf->get_data_size(),
+                        false, // Now performing a read
+                        mf->get_access_warp_mask(),
+                        mf->get_access_byte_mask() );
+
+    mem_fetch *n_mf = new mem_fetch( *ma,
+                    NULL,
+                    mf->get_ctrl_size(),
+                    mf->get_wid(),
+                    mf->get_sid(),
+                    mf->get_tpc(),
+                    mf->get_mem_config());
+
+        //TODO: for debugging: delete this
+        unsigned global_spid = n_mf->get_sub_partition_id(); 
+        const class memory_config* config = n_mf->get_mem_config();
+        if (config->type == 2 && (global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition))
+            printf("global_spid: %d\n", global_spid);
+        if (config->type == 2) assert(global_spid >= config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+        if (config->type == 1) assert(global_spid < config->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
+
+
+    bool do_miss = false;
+
+    // Send read request resulting from write miss
+    send_read_request(addr, block_addr, n_mf, time, do_miss,
+        events, true);
+
+    if( do_miss ){
+        return MISS;
+    }
 
     return RESERVATION_FAIL;
 }
@@ -1303,19 +1286,18 @@ data_cache::access( new_addr_type addr,
     return access_status;
 }
 
+/* Returns true if this data cache is flushed and corresponding page address is
+ * ready to migrate
+ */
 bool
 data_cache::flushOnMigrate(new_addr_type page_addr)
 {
     /* Check if any request to this page are pending in the mshr's, WB requests
-     * and read requests. If WB are outstanding, then cancel the corresponding
-     * read request and send the write back to the memory controller. If
+     * and read requests. If
      * read-only requests is pending then wait for it to come back from lower
      * level of the memory
-     *
      * Also, if any lines in the cache are in a valid state, INVALIDATE them
      */
-
-    /* TODO: clean flag and return 3 things to 1 variable */
 
     new_addr_type block_addr;
     bool flag = true;
@@ -1328,7 +1310,6 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
         block_addr = page_addr + 128ULL * i;
         bool mshr_hit = m_mshrs.probe(block_addr);
         if (mshr_hit) {
-            flag &= false;
             return false;
         }
     }
@@ -1373,33 +1354,6 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
             } else {
                 printf("no new MSHR hits should be there for this page, as we have already cleared it\n");
                 exit(EXIT_FAILURE);
-//                /* Mark mshr entry read request corresponding to write alloc to
-//                 * not fill when response comes
-//                 * back
-//                 */
-//
-//                //m_mshrs.setNoFill(block_addr);
-//                //m_tag_array->get_block(i).m_status = INVALID;
-//
-////                extra_mf_fields_lookup::iterator it1 = m_extra_mf_fields.begin();
-////                unsigned request_id;
-////                unsigned count = 0;
-////                for (; it1 != m_extra_mf_fields.end(); it1++) {
-////                    if (it1->second.m_block_addr == block_addr && it1->second.m_cache_index == i) {
-////                        request_id = it1->second.m_request_uid;
-////                        count++;
-////                    }
-////                }
-////                
-////                if (count > 1) {
-////                    printf("somehitng is wrong with uniqueness of cache index here for block_addr: %llu\n", block_addr);
-////                    exit(EXIT_FAILURE);
-////                }
-////
-////                m_mshrs.setNoFillForMF(block_addr, request_id);
-////                m_tag_array->get_block(i).m_status = INVALID;
-//                flag &= false;
-//                return 3;
             }
         }
     }
@@ -1454,7 +1408,6 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
     for (; it_missq != m_miss_queue.end(); ++it_missq) {
         new_addr_type block_page_addr = ((*it_missq)->get_addr()) & (~4095ULL);
         if (block_page_addr == page_addr) {
-            flag &= false;
             return false;
         }
     }

@@ -86,8 +86,10 @@ bool g_interactive_debugger_enabled=false;
 
 unsigned long long  gpu_sim_cycle = 0;
 unsigned long long  gpu_tot_sim_cycle = 0;
+unsigned long long last_updated_at = 0;
 unsigned int bw_equal = 0;
-bool enableMigration = true;
+//bool enableMigration = true;
+bool enableMigration;
 /* Implementing a state machine for migration
  * 3 state FSM: evicting -> probing mshr -> migrating
  * 1. evicting: evict all dirty lines by trying to find mshrs
@@ -109,6 +111,8 @@ bool readyForNextMigration = true;
 std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
 std::map<unsigned, new_addr_type>  l1_wb_map;
 std::map<unsigned, new_addr_type>  l2_wb_map;
+unsigned int migration_threshold;
+unsigned int max_migrations;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -129,6 +133,22 @@ unsigned int gpu_stall_icnt2sh = 0;
 
 
 #include "mem_latency_stat.h"
+
+void migration_reg_options(class OptionParser * opp) {
+
+    option_parser_register(opp, "-migration_threshold", OPT_INT32,
+            &migration_threshold, "minimum number of touches to a 4kB dram page",
+            "128");
+
+    option_parser_register(opp, "-max_migrations", OPT_INT32,
+            &max_migrations, "maximum number of migrations",
+            "25");
+
+    option_parser_register(opp, "-enable_migration", OPT_BOOL,
+            &enableMigration, "whether to enable migration or not",
+            "false");
+}
+
 
 void power_config::reg_options(class OptionParser * opp)
 {
@@ -170,6 +190,7 @@ void memory_config::reg_options(class OptionParser * opp, unsigned num)
     char num_str[10];
     sprintf(num_str, "%d", num);
     type = num;
+
     option_parser_register_mem(opp, "-gpgpu_dram_scheduler", OPT_INT32, &scheduler_type, 
                                 "0 = fifo, 1 = FR-FCFS (defaul)", "1", num_str);
     option_parser_register_mem(opp, "-gpgpu_dram_partition_queues", OPT_CSTR, &gpgpu_L2_queue_config, 
@@ -405,6 +426,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp)
     m_shader_config.reg_options(opp);
     m_memory_config.reg_options(opp);
     power_config::reg_options(opp);
+
+    migration_reg_options(opp);
+
    option_parser_register(opp, "-gpgpu_max_cycle", OPT_INT32, &gpu_max_cycle_opt, 
                "terminates gpu simulation early (0 = no limit)",
                "0");
@@ -1047,6 +1071,17 @@ void gpgpu_sim::gpu_print_stat()
         }
     }
 
+    // Migration stats
+    std::map<unsigned long long, unsigned>::iterator it_migration = migrationFinished.begin();
+    printf("Migration stats start\n");
+    printf("Addr->time\n");
+    for (; it_migration != migrationFinished.end(); ++it_migration) {
+        printf("%llu %u\n", it_migration->first, it_migration->second);
+    }
+    printf("Migration stats end");
+
+
+
    if (m_config.gpgpu_cflog_interval != 0) {
       spill_log_to_file (stdout, 1, gpu_sim_cycle);
       insn_warp_occ_print(stdout);
@@ -1244,6 +1279,15 @@ unsigned long long g_single_step=0; // set this in gdb to single step the pipeli
 
 void gpgpu_sim::cycle()
 {
+
+    if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 10000ULL > last_updated_at) {
+        last_updated_at++;
+    
+        for (unsigned i=0;i<m_memory_config->m_n_mem;i++){
+            m_memory_partition_unit[i]->get_dram()->incrementVectors(); 
+        }
+    }
+
    int clock_mask = next_clock_domain();
 
    if (clock_mask & CORE ) {
@@ -1279,82 +1323,76 @@ void gpgpu_sim::cycle()
     /*
      * Page monitoring unit
      */
-    if (enableMigration) {
-        if (clock_mask & L2) {
-            bool checkMigration = false;
-            if (checkMigration) {
-                //Migrate page once to check if the migration mechanism is working
-                //Use a mapping table and determine a page in each memory and migrate it
-                std::map<unsigned long long, unsigned>::iterator it = m_map_online.begin();
-                unsigned found_pages_to_migrate = 0;
-                bool found_page_HBM = false;
-                bool found_page_SDDR = false;
-                unsigned long long int addrHBM;
-                unsigned long long int addrSDDR;
+    if (enableMigration && (clock_mask & L2)) {
+        bool checkMigration = false;
+        if (checkMigration) {
+            //Migrate page once to check if the migration mechanism is working
+            //Use a mapping table and determine a page in each memory and migrate it
+            std::map<unsigned long long, unsigned>::iterator it = m_map_online.begin();
+            unsigned found_pages_to_migrate = 0;
+            bool found_page_HBM = false;
+            bool found_page_SDDR = false;
+            unsigned long long int addrHBM;
+            unsigned long long int addrSDDR;
 
-                for (; it != m_map_online.end() && (found_pages_to_migrate < 2); it++) {
-                    if (it->second == 1 && !found_page_HBM) {    //page in HBM
-                        addrHBM = it->first;
-                        found_pages_to_migrate++;
-                        found_page_HBM = true;
-                    } else if (it->second == 0 && !found_page_SDDR) {
-                        addrSDDR = it->first;
-                        found_pages_to_migrate++;
-                        found_page_SDDR = true;
-                    }
+            for (; it != m_map_online.end() && (found_pages_to_migrate < 2); it++) {
+                if (it->second == 1 && !found_page_HBM) {    //page in HBM
+                    addrHBM = it->first;
+                    found_pages_to_migrate++;
+                    found_page_HBM = true;
+                } else if (it->second == 0 && !found_page_SDDR) {
+                    addrSDDR = it->first;
+                    found_pages_to_migrate++;
+                    found_page_SDDR = true;
                 }
-                if (found_pages_to_migrate == 2) {
-                    migration_unit->migratePage(addrSDDR, addrHBM);
-                    checkMigration = false;
-                }
-            } else {
-                // TODO: For now write the code here, later on call it as a
-                // fuction: triggerMigrate()
-                
-                /* Policy1: Migrate after a threshold is met
-                 * Assume everything is located in DDR/CO memory. Migrate a page
-                 * from CO to BO memory when a page(4kB) is touched 128 in the
-                 * runtime. Assume for now a perfect table which can track the counter for
-                 * all the pages in the application. In this policy we are only
-                 * migrating pages from CO -> BO memory, not swapping.
-                 */
-                /* Currently the table of counters is maintained in l2cache.cc,
-                 * it should be able to send a message to this piece of code to
-                 * perform migration. The key is to get access to pointer of
-                 * migration_unit. TODO: get the pointer reference in l2 class
-                 */
-                /* addrHBM = NULL, since it is unidirectional migration
-                 * addrSDDR will be sent by the l2cache.cc unit
-                 * or maybe we can put it in a queue of things to migrate and
-                 * then migrate from here
-                 */
-                /* Migration queue: migrationQueue is structure which will contain addresses to
-                 * migrate from CO memory to BO memory
-                 */
-                std::list<unsigned long long>::iterator it = sendForMigration.begin();
-                for (; it != sendForMigration.end(); it++) {
-                    // TODO: some asserts checking page actually resides in CO
-                    // memory will be good
-                    //unsigned state = canMigrate(it->first, it->second);
-                    if (migrationQueue[(*it)] == 0  && reCheckForMigration[(*it)] == false) {
-                        migrationQueue[(*it)] = ((1ULL << 42) - 1);
-                        reCheckForMigration[(*it)] = true;
-                    } else if (migrationQueue[(*it)] == 0 && reCheckForMigration[(*it)] == true) {
-                        if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
-                            // clear migration wait cycle
-                            migrationWaitCycle[(*it)] = 0;
-                            // If the page reaches "migrating" state then migrate it
-                            migration_unit->migratePage((*it));
-                            readyForNextMigration = false;
-                            migrationQueue[(*it)] = (1<<43);
-                            // Remove the address from the map
-//                            migrationQueue.erase(it);
-                            // Migrate one page in a cycle and try for others in the
-                            // next cycle
-                            break;
-                        }
-                        else migrationWaitCycle[(*it)]++;
+            }
+            if (found_pages_to_migrate == 2) {
+                migration_unit->migratePage(addrSDDR, addrHBM);
+                checkMigration = false;
+            }
+        } else {
+            // TODO: For now write the code here, later on call it as a
+            // fuction: triggerMigrate()
+
+            /* Policy1: Migrate after a threshold is met
+             * Assume everything is located in DDR/CO memory. Migrate a page
+             * from CO to BO memory when a page(4kB) is touched 128 in the
+             * runtime. Assume for now a perfect table which can track the counter for
+             * all the pages in the application. In this policy we are only
+             * migrating pages from CO -> BO memory, not swapping.
+             */
+            /* Currently the table of counters is maintained in l2cache.cc,
+             * it should be able to send a message to this piece of code to
+             * perform migration. The key is to get access to pointer of
+             * migration_unit. TODO: get the pointer reference in l2 class
+             */
+            /* addrHBM = NULL, since it is unidirectional migration
+             * addrSDDR will be sent by the l2cache.cc unit
+             * or maybe we can put it in a queue of things to migrate and
+             * then migrate from here
+             */
+            /* Migration queue: migrationQueue is structure which will contain addresses to
+             * migrate from CO memory to BO memory
+             */
+            std::list<unsigned long long>::iterator it = sendForMigration.begin();
+            for (; it != sendForMigration.end(); it++) {
+                if (migrationQueue[(*it)] == 0) {
+                    // If the page reaches "migrating" state then migrate it
+//                    if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
+                    if (readyForNextMigration) {
+                        // clear migration wait cycle
+                        migrationWaitCycle[(*it)] = 0;
+                        // migrate the page, send requests to DRAMs
+                        migration_unit->migratePage((*it));
+                        // Migrate one page in a cycle and try for others in the
+                        // next cycle
+                        readyForNextMigration = false;
+                        // set the migrationQueue state such that it cannot
+                        // re-enter to be re-migrated
+                        migrationQueue[(*it)] = (1<<43);
+                        break;
                     }
+                    else migrationWaitCycle[(*it)]++;
                 }
             }
         }

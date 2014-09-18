@@ -31,6 +31,7 @@
 
 #include "delayqueue.h"
 #include <set>
+#include <vector>
 #include <zlib.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -105,6 +106,7 @@ public:
    bool returnq_full() const;
    unsigned int queue_limit() const;
    void visualizer_print( gzFile visualizer_file );
+   void printMigrationStats( FILE* simFile ) const;
 
    class mem_fetch* return_queue_pop();
    class mem_fetch* return_queue_top();
@@ -158,6 +160,7 @@ public:
 
     unsigned outstandingRequest(new_addr_type page_addr);
 
+    void incrementVectors();
 
 private:
     void print_req_dist_stats();
@@ -199,6 +202,16 @@ private:
    unsigned int n_wr;
    unsigned int n_req;
    unsigned int max_mrqs_temp;
+
+   // counters for migration
+   unsigned int n_req_migration_read;
+   unsigned int n_req_migration_write;
+   unsigned int n_req_actual;
+
+   // collect number of read requests every 100,000 gpu cycles
+   std::vector<unsigned int> num_migration_read;
+   std::vector<unsigned int> num_migration_write;
+   std::vector<unsigned int> num_actual;
 
    unsigned int bwutil;
    unsigned int max_mrqs;

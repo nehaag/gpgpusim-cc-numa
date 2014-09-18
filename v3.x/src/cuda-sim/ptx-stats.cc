@@ -102,18 +102,20 @@ public:
     unsigned long long warp_divergence; // number of warp divergence occured at this instruction
 };
 
-#if (tr1_hash_map_ismap == 1)
-typedef tr1_hash_map<ptx_file_line, ptx_file_line_stats> ptx_file_line_stats_map_t;
-#else
-struct hash_ptx_file_line
-{
-    std::size_t operator()(const ptx_file_line & pfline) const {
-        std::hash<unsigned> hash_line;
-        return hash_line(pfline.line);
-    }
-};
-typedef tr1_hash_map<ptx_file_line, ptx_file_line_stats, hash_ptx_file_line> ptx_file_line_stats_map_t;
-#endif
+//#if (tr1_hash_map_ismap == 1)
+//typedef tr1_hash_map<ptx_file_line, ptx_file_line_stats> ptx_file_line_stats_map_t;
+//#else
+//struct hash_ptx_file_line
+//{
+//    std::size_t operator()(const ptx_file_line & pfline) const {
+//        std::hash<unsigned> hash_line;
+//        return hash_line(pfline.line);
+//    }
+//};
+//typedef tr1_hash_map<ptx_file_line, ptx_file_line_stats, hash_ptx_file_line> ptx_file_line_stats_map_t;
+//#endif
+
+typedef std::map<ptx_file_line, ptx_file_line_stats> ptx_file_line_stats_map_t;
 
 static ptx_file_line_stats_map_t ptx_file_line_stats_tracker;
 

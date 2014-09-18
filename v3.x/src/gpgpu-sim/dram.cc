@@ -100,6 +100,16 @@ dram_t::dram_t( unsigned int partition_id, const struct memory_config *config, m
    max_mrqs = 0;
    ave_mrqs = 0;
 
+   // migration counters
+   n_req_migration_read = 0;
+   n_req_migration_write = 0;
+   n_req_actual = 0;
+
+   // migration count vectors
+   num_migration_read.push_back(0);
+   num_migration_write.push_back(0);
+   num_actual.push_back(0);
+
    for (unsigned i=0;i<10;i++) {
       dram_util_bins[i]=0;
       dram_eff_bins[i]=0;
@@ -178,15 +188,19 @@ dram_req_t::dram_req_t( class mem_fetch *mf )
    rw = data->get_is_write()?WRITE:READ;
 }
 
+void dram_t::incrementVectors() {
+    num_migration_read.push_back(0);
+    num_migration_write.push_back(0);
+    num_actual.push_back(0);
+}
+
 void dram_t::push( class mem_fetch *data ) 
 {
-//    if (data->get_access_type() != MEM_MIGRATE_W && data->get_access_type() != MEM_MIGRATE_R) {
-        if (data->get_addr() == 2152209376)
-            printf("break here \n");
-        if (id != data->get_tlx_addr().chip)
-            printf("addr: %lld, id = %d, chip = %d, access_type: %d, uid = %u, timestamp= %u\n", data->get_addr(), id, data->get_tlx_addr().chip, data->get_access_type(), data->get_request_uid(), data->get_timestamp());
-        assert(id == data->get_tlx_addr().chip); // Ensure request is in correct memory partition
-//    }
+    if (data->get_addr() == 2152209376)
+        printf("break here \n");
+    if (id != data->get_tlx_addr().chip)
+        printf("addr: %lld, id = %d, chip = %d, access_type: %d, uid = %u, timestamp= %u\n", data->get_addr(), id, data->get_tlx_addr().chip, data->get_access_type(), data->get_request_uid(), data->get_timestamp());
+    assert(id == data->get_tlx_addr().chip); // Ensure request is in correct memory partition
 
    dram_req_t *mrq = new dram_req_t(data);
    data->set_status(IN_PARTITION_MC_INTERFACE_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
@@ -210,6 +224,17 @@ void dram_t::push( class mem_fetch *data )
       max_mrqs_temp = (max_mrqs_temp > mrqq->get_length())? max_mrqs_temp : mrqq->get_length();
    }
    m_stats->memlatstat_dram_access(data);
+
+   if (data->get_access_type() == MEM_MIGRATE_R) {
+       n_req_migration_read += 1;
+       num_migration_read.back()++;
+   } else if (data->get_access_type() == MEM_MIGRATE_W) {
+       n_req_migration_write += 1;
+       num_migration_write.back()++;
+   } else {
+       n_req_actual += 1;
+       num_actual.back()++;
+   }
 
    // for every request in MC queue, do
    unsigned row = data->get_tlx_addr().row;
@@ -292,11 +317,8 @@ void dram_t::cycle()
                       migrateReqCountW = 0;
                       unsigned long long page_addr = data->get_addr() & ~(4095ULL);
                       migrationQueue.erase(page_addr);
-                      reCheckForMigration.erase(page_addr);
                       migrationWaitCycle.erase(page_addr);
-#ifdef DEBUG
                       migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
-#endif
                       sendForMigration.remove(page_addr);
                       readyForNextMigration = true;
                   }
@@ -565,6 +587,16 @@ void dram_t::print( FILE* simFile) const
    fprintf(simFile,"n_cmd=%d n_nop=%d n_act=%d n_pre=%d n_req=%d n_rd=%d n_write=%d bw_util=%.4g\n",
            n_cmd, n_nop, n_act, n_pre, n_req, n_rd, n_wr,
            (float)bwutil/n_cmd);
+   
+   // Migration stats
+   fprintf(simFile, "n_migration_read = %u, n_migration_write = %u\n", n_req_migration_read, n_req_migration_write);
+   fprintf(simFile, "n_migration = %u, n_actual = %u\n", n_req_migration_read + n_req_migration_write, n_req_actual);
+   unsigned int tot = n_req_migration_read + n_req_migration_write + n_req_actual;
+   if (tot != n_req)
+       fprintf(simFile, "ERROR!!!!, check stats not equal\n");
+   printMigrationStats(simFile);
+
+
    fprintf(simFile,"n_activity=%d dram_eff=%.4g\n",
            n_activity, (float)bwutil/n_activity);
    for (i=0;i<m_config->nbk;i++) {
@@ -603,6 +635,14 @@ void dram_t::print_stat( FILE* simFile )
    fprintf(simFile,"DRAM (%d): n_cmd=%d n_nop=%d n_act=%d n_pre=%d n_req=%d n_rd=%d n_write=%d bw_util=%.4g ",
            id, n_cmd, n_nop, n_act, n_pre, n_req, n_rd, n_wr,
            (float)bwutil/n_cmd);
+
+   fprintf(simFile, "n_migration_read = %u, n_migration_write = %u\n", n_req_migration_read, n_req_migration_write);
+   fprintf(simFile, "n_migration = %u, n_actual = %u\n", n_req_migration_read + n_req_migration_write, n_req_actual);
+   unsigned int tot = n_req_migration_read + n_req_migration_write + n_req_actual;
+   if (tot != n_req)
+       fprintf(simFile, "ERROR!!!!, check stats not equal\n");
+   printMigrationStats(simFile);
+   
    fprintf(simFile, "mrqq: %d %.4g mrqsmax=%d ", max_mrqs, (float)ave_mrqs/n_cmd, max_mrqs_temp);
    fprintf(simFile, "\n");
    fprintf(simFile, "dram_util_bins:");
@@ -700,7 +740,6 @@ unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned lo
     dram_ctrl->mem_type = mem_type_func;
     dram_ctrl->reqType = req_type;
 
-
     //Push 32 read request to the channel to a given source address
     int i;
     for (i=0; i<32; i++) {
@@ -712,34 +751,6 @@ unsigned int dram_t::migratePage(unsigned long long int source_addr, unsigned lo
             dram_ctrl->isWritePending = reqType;
             break;
         }
-//        if (!dram_ctrl->full()) {
-//            mem_fetch *mf;
-//            //create a new mf for the next packet
-//            if (reqType == 0) {
-//               mem_access_t access(MEM_MIGRATE_R, source_addr + (i) * 128ULL, 128U, 0);
-//                mf = new mem_fetch( access, 
-//                                    READ_PACKET_SIZE,
-//                                    memConfigLocal, mem_type);
-//// TODO: chnage the memconfig here as we will be putting the packet to remote
-//// memory now.. so it should have correct chip number. mistake!!!
-//            } else {
-//              mem_access_t access(MEM_MIGRATE_W, source_addr + (i) * 128ULL, 128U, 0);
-//              mf = new mem_fetch( access, 
-//                                  WRITE_PACKET_SIZE,
-//                                  memConfigLocal, mem_type);
-//            }
-//
-//            //push the request in the memory controller
-//            dram_ctrl->push(mf);
-//        } else {
-//            //TODO:Try in the next cycle, call back to the migration unit, for
-//            //now assume it doesnt happen,
-//            printf("ERROR: dram queue full, migration not completed, req sent till now: %d\n", i-1);
-//            pendingMigration = true;
-//            numRequestPending = 32 - i;
-//            isWritePending = reqType;
-////            exit(EXIT_FAILURE);
-//        }
     }
     return i;
 }
@@ -780,4 +791,26 @@ bool dram_t::sendMigrationRequest(unsigned long long addr) {
    } else {
        return false; 
    }
+}
+
+void dram_t::printMigrationStats( FILE* simFile) const
+{
+    unsigned int i;
+    assert (num_migration_read.size() == num_migration_write.size());
+    assert (num_migration_read.size() == num_actual.size());
+
+    fprintf(simFile, "Migration reads distribution with time \n");
+    for (i=0; i<num_migration_read.size(); i++) {
+        fprintf(simFile, "%u %u %u %u\n", i, num_migration_read[i], num_migration_write[i], num_actual[i]);
+    }
+
+//    fprintf(simFile, "Migration writes distribution with time \n");
+//    for (i=0; i<num_migration_write.size(); i++) {
+//        fprintf(simFile, "%u %u\n", i, num_migration_write[i]);
+//    }
+//
+//    fprintf(simFile, "Actual reqs distribution with time \n");
+//    for (i=0; i<num_actual.size(); i++) {
+//        fprintf(simFile, "%u %u\n", i, num_actual[i]);
+//    }
 }

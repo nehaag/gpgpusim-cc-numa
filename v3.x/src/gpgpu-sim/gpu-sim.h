@@ -319,6 +319,12 @@ struct memory_config_types {
         option_parser_register(opp, "-cachelines", OPT_UINT32, &cachelines, 
                  "total number of cachelines accessed by a workload",
                  "0");
+        option_parser_register(opp, "-page_ratio", OPT_UINT32, &page_ratio, 
+                 "limit the capacity of HBM",
+                 "0");
+        option_parser_register(opp, "-pages", OPT_UINT32, &pages, 
+                 "total number of pages accessed by a workload",
+                 "0");
         for (unsigned int i=0; i<2; i++) {
             memory_config_array[i].reg_options(opp, i+1);
         }
@@ -332,6 +338,8 @@ struct memory_config_types {
    unsigned line_ratio;
    unsigned data_ratio;
    unsigned long long cachelines;
+   unsigned page_ratio;
+   unsigned long long pages;
 };
 
 
@@ -339,6 +347,7 @@ struct memory_config_types {
 typedef unsigned long long new_addr_type;
 extern unsigned long long  gpu_sim_cycle;
 extern unsigned long long  gpu_tot_sim_cycle;
+extern unsigned long long  last_updated_at;
 extern bool g_interactive_debugger_enabled;
 extern std::map<unsigned long long, unsigned> m_map;
 extern std::map<unsigned long long, unsigned> m_map_online;
@@ -356,6 +365,8 @@ extern std::map<unsigned long long, unsigned> reCheckForMigration;
 extern std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
 extern std::map<unsigned, new_addr_type>  l1_wb_map;
 extern std::map<unsigned, new_addr_type>  l2_wb_map;
+extern unsigned int migration_threshold;
+extern unsigned int max_migrations;
 
 extern bool checkBit(uint64_t x, uint64_t pos);
 extern bool checkAllBitsBelow(uint64_t x, uint64_t pos);

@@ -275,7 +275,7 @@ void memory_partition_unit::dram_cycle()
                 // Add uniques addresses to the cacheline tracking data structure
                 // If address is not present then add 0 accesses for all
                 // previous epochs and also current
-                unsigned long long int cacheline = mf->get_addr() / 4096;
+                unsigned long long int cacheline = (mf->get_addr()) & ~(4095ULL);
 
                 // number of epochs this address was not accessed
                 int diff = 0;
@@ -320,17 +320,21 @@ void memory_partition_unit::dram_cycle()
                 }
 
                 /* Trigger migration
-                 * TODO: do not migrate if request is already in the correct
+                 * do not migrate if request is already in the correct
                  * portion, currently hardcoded to 2 subpartitions
                  */
-                unsigned threshold = 128;
+                unsigned page_ratio = m_config->m_memory_config_types->page_ratio;
+                unsigned long long pages = m_config->m_memory_config_types->pages;
                 new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
-                if (enableMigration && (migrationQueue.size() < 25) &&
-                        (num_access_per_cacheline[cacheline][3] >= threshold) && (mf->get_sub_partition_id() < 8) && !migrationQueue.count(page_addr) ) {
+                if (enableMigration && (migrationQueue.size() < max_migrations) &&
+                        (num_access_per_cacheline[cacheline][3] >= migration_threshold) &&
+                         (mf->get_sub_partition_id() < 8) && 
+                         !migrationQueue.count(page_addr) &&
+                         (migrationFinished.size() < page_ratio/100.0*pages)
+                         ) {
                     // Put the request in migrationQueue, in the state
                     // evicting(1)
                     migrationQueue[page_addr] = ((1ULL << 42) - 1ULL);
-                    reCheckForMigration[page_addr] = false;
                     migrationWaitCycle[page_addr] = 0;
                     sendForMigration.push_back(page_addr);
                 }
