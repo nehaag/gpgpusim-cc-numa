@@ -355,9 +355,11 @@ extern unsigned long long int num_lines_hbm;
 extern unsigned int bw_equal;
 
 extern std::list<unsigned long long> sendForMigration;
+extern std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 extern std::map<unsigned long long, uint64_t> migrationQueue;
 extern bool enableMigration;
-extern bool readyForNextMigration;
+//extern bool readyForNextMigration;
+extern bool readyForNextMigration[4];
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
 extern std::map<unsigned long long, unsigned> migrationFinished;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;

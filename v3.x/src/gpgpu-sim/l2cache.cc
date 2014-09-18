@@ -328,7 +328,7 @@ void memory_partition_unit::dram_cycle()
                 new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
                 if (enableMigration && (migrationQueue.size() < max_migrations) &&
                         (num_access_per_cacheline[cacheline][3] >= migration_threshold) &&
-                         (mf->get_sub_partition_id() < 8) && 
+                         (mf->get_sub_partition_id() < 8) &&
                          !migrationQueue.count(page_addr) &&
                          (migrationFinished.size() < page_ratio/100.0*pages)
                          ) {
@@ -336,7 +336,11 @@ void memory_partition_unit::dram_cycle()
                     // evicting(1)
                     migrationQueue[page_addr] = ((1ULL << 42) - 1ULL);
                     migrationWaitCycle[page_addr] = 0;
-                    sendForMigration.push_back(page_addr);
+//                    sendForMigration.push_back(page_addr);
+                    // Determine which partition this request belongs to and
+                    // accordingly push in the respective queue.
+                    unsigned partition = mf->get_tlx_addr().chip;
+                    sendForMigrationPid[partition].push_back(page_addr);
                 }
 
                 // update last access re-use distance stats

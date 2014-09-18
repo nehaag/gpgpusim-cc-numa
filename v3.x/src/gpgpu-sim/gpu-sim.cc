@@ -101,11 +101,13 @@ bool enableMigration;
  */
 typedef unsigned long long new_addr_type;
 std::list<unsigned long long> sendForMigration;
+std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
 std::map<unsigned long long, unsigned> migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
-bool readyForNextMigration = true;
+//bool readyForNextMigration = true;
+bool readyForNextMigration[4] = {true, true, true, true};
 
 /* request_uid->address map*/
 std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
@@ -1374,25 +1376,32 @@ void gpgpu_sim::cycle()
             /* Migration queue: migrationQueue is structure which will contain addresses to
              * migrate from CO memory to BO memory
              */
-            std::list<unsigned long long>::iterator it = sendForMigration.begin();
-            for (; it != sendForMigration.end(); it++) {
-                if (migrationQueue[(*it)] == 0) {
-                    // If the page reaches "migrating" state then migrate it
-//                    if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
-                    if (readyForNextMigration) {
-                        // clear migration wait cycle
-                        migrationWaitCycle[(*it)] = 0;
-                        // migrate the page, send requests to DRAMs
-                        migration_unit->migratePage((*it));
-                        // Migrate one page in a cycle and try for others in the
-                        // next cycle
-                        readyForNextMigration = false;
-                        // set the migrationQueue state such that it cannot
-                        // re-enter to be re-migrated
-                        migrationQueue[(*it)] = (1<<43);
-                        break;
+            std::map<unsigned, std::list<unsigned long long> >::iterator it_mig = sendForMigrationPid.begin();
+            for (; it_mig != sendForMigrationPid.end(); it_mig++) {
+                std::list<unsigned long long>::iterator it = (it_mig->second).begin();
+                for (; it != (it_mig->second).end(); it++) {
+//                std::list<unsigned long long>::iterator it = sendForMigration.begin();
+//                for (; it != sendForMigration.end(); it++) {
+                    if (migrationQueue[(*it)] == 0) {
+                        // If the page reaches "migrating" state then migrate it
+                        //if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
+//                        if (readyForNextMigration) {
+                        if (readyForNextMigration[it_mig->first]) {
+                            // clear migration wait cycle
+                            migrationWaitCycle[(*it)] = 0;
+                            // migrate the page, send requests to DRAMs
+                            migration_unit->migratePage((*it));
+                            // Migrate one page in a cycle and try for others in the
+                            // next cycle
+//                            readyForNextMigration = false;
+                            readyForNextMigration[it_mig->first] = false;
+                            // set the migrationQueue state such that it cannot
+                            // re-enter to be re-migrated
+                            migrationQueue[(*it)] = (1<<43);
+                            break;
+                        }
+                        else migrationWaitCycle[(*it)]++;
                     }
-                    else migrationWaitCycle[(*it)]++;
                 }
             }
         }
