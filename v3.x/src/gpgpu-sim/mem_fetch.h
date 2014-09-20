@@ -31,7 +31,6 @@
 #include "addrdec.h"
 #include "../abstract_hardware_model.h"
 #include <bitset>
-#include <inttypes.h>
 
 enum mf_type {
    READ_REQUEST = 0,

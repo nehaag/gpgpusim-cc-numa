@@ -43,8 +43,6 @@ int PRINT_CYCLE = 0;
 template class fifo_pipeline<mem_fetch>;
 template class fifo_pipeline<dram_req_t>;
 
-
-
 dram_t::dram_t( unsigned int partition_id, const struct memory_config *config, memory_stats_t *stats,
                 memory_partition_unit *mp )
 {
@@ -322,11 +320,6 @@ void dram_t::cycle()
                       migrationWaitCycle.erase(page_addr);
                       migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
                       sendForMigration.remove(page_addr);
-                      // Determine the source partition of the request and hence
-                      // remove the request from the respective queues
-                      unsigned partition = whichDDRPartition(page_addr);
-//                      readyForNextMigration[partition] = true;
-//                      sendForMigrationPid[partition].remove(page_addr);
                       readyForNextMigration = true;
                   }
                  m_memory_partition_unit->set_done(data);
@@ -544,11 +537,8 @@ void dram_t::cycle()
     * controller and then only flag for migration
     */
     if (enableMigration && !migrationQueue.empty()) {
-//        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-//        for (; it != migrationQueue.end(); ++it) {
-        unsigned long long page_addr_to_migrate = sendForMigration.front();
-        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
-        if (it != migrationQueue.end()) {
+        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
+        for (; it != migrationQueue.end(); ++it) {
             if (it->second != 0 && it->second != (1<<43)) {
                 new_addr_type page_addr = it->first & ~(4095ULL);
                 if (outstandingRequest(it->first) == 3) {
@@ -813,20 +803,14 @@ void dram_t::printMigrationStats( FILE* simFile) const
     for (i=0; i<num_migration_read.size(); i++) {
         fprintf(simFile, "%u %u %u %u\n", i, num_migration_read[i], num_migration_write[i], num_actual[i]);
     }
-}
 
-unsigned dram_t::whichDDRPartition(unsigned long long page_addr) {
-    mem_access_t accessSDDR(MEM_MIGRATE_R, page_addr, 128U, 0);
-    const class memory_config* memConfigSDDR = &(memConfigLocal->m_memory_config_types->memory_config_array[0]);
-    mem_fetch *mfSDDR = new mem_fetch( accessSDDR, 
-            READ_PACKET_SIZE, 
-            memConfigSDDR, 0);
-    //    unsigned global_spidSDDR = mfSDDR->get_sub_partition_id(); 
-    unsigned global_spidSDDR = mfSDDR->get_tlx_addr().chip; 
-    delete mfSDDR;
-    return global_spidSDDR;
-}
-
-unsigned dram_t::getTotReq() {
-    return n_req;
+//    fprintf(simFile, "Migration writes distribution with time \n");
+//    for (i=0; i<num_migration_write.size(); i++) {
+//        fprintf(simFile, "%u %u\n", i, num_migration_write[i]);
+//    }
+//
+//    fprintf(simFile, "Actual reqs distribution with time \n");
+//    for (i=0; i<num_actual.size(); i++) {
+//        fprintf(simFile, "%u %u\n", i, num_actual[i]);
+//    }
 }

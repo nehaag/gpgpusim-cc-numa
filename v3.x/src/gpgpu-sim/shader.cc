@@ -1398,8 +1398,7 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
     /* If a request comes to a page in migration, then stall the request
      */
     new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
-//    if (migrationQueue.count(page_addr)) {
-    if (page_addr == sendForMigration.front()) {
+    if (migrationQueue.count(page_addr)) {
         delete mf;
         return COAL_STALL;
     }
@@ -1478,11 +1477,8 @@ bool ldst_unit::texture_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail,
 
 void ldst_unit::flushOnMigration()
 {
-//    std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-//    for (; it != migrationQueue.end(); ++it) {
-    unsigned long long page_addr_to_migrate = sendForMigration.front();
-    std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
-    if (it != migrationQueue.end()) {
+    std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
+    for (; it != migrationQueue.end(); ++it) {
         if (it->second != 0 && it->second != (1<<43))
         {
             if (flush_caches(m_L1D, it->first)) {

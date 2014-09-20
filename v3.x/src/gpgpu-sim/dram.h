@@ -161,9 +161,6 @@ public:
     unsigned outstandingRequest(new_addr_type page_addr);
 
     void incrementVectors();
-    unsigned whichDDRPartition(unsigned long long page_addr);
-
-    unsigned getTotReq();
 
 private:
     void print_req_dist_stats();
