@@ -90,6 +90,7 @@ unsigned long long last_updated_at = 0;
 unsigned int bw_equal = 0;
 //bool enableMigration = true;
 bool enableMigration;
+bool pauseMigration = false;
 /* Implementing a state machine for migration
  * 3 state FSM: evicting -> probing mshr -> migrating
  * 1. evicting: evict all dirty lines by trying to find mshrs
@@ -106,8 +107,8 @@ std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
 std::map<unsigned long long, unsigned> migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
-//bool readyForNextMigration = true;
-bool readyForNextMigration[4] = {true, true, true, true};
+bool readyForNextMigration = true;
+//bool readyForNextMigration[4] = {true, true, true, true};
 
 /* request_uid->address map*/
 std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
@@ -115,6 +116,7 @@ std::map<unsigned, new_addr_type>  l1_wb_map;
 std::map<unsigned, new_addr_type>  l2_wb_map;
 unsigned int migration_threshold;
 unsigned int max_migrations;
+unsigned int range_expansion;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -138,17 +140,18 @@ unsigned int gpu_stall_icnt2sh = 0;
 
 void migration_reg_options(class OptionParser * opp) {
 
-    option_parser_register(opp, "-migration_threshold", OPT_INT32,
-            &migration_threshold, "minimum number of touches to a 4kB dram page",
-            "128");
-
-    option_parser_register(opp, "-max_migrations", OPT_INT32,
-            &max_migrations, "maximum number of migrations",
-            "25");
-
     option_parser_register(opp, "-enable_migration", OPT_BOOL,
             &enableMigration, "whether to enable migration or not",
             "false");
+    option_parser_register(opp, "-migration_threshold", OPT_UINT32,
+            &migration_threshold, "minimum number of touches to a 4kB dram page",
+            "128");
+    option_parser_register(opp, "-max_migrations", OPT_UINT32,
+            &max_migrations, "maximum number of migrations",
+            "25");
+    option_parser_register(opp, "-range_expansion", OPT_UINT32,
+            &range_expansion, "number of neighbouring pages to be migrated",
+            "4");
 }
 
 
@@ -1288,6 +1291,9 @@ void gpgpu_sim::cycle()
         for (unsigned i=0;i<m_memory_config->m_n_mem;i++){
             m_memory_partition_unit[i]->get_dram()->incrementVectors(); 
         }
+
+//        if ((calculateBWRatio() > 65) && (calculateBWRatio() < 75))
+//            pauseMigration = true;
     }
 
    int clock_mask = next_clock_domain();
@@ -1376,25 +1382,25 @@ void gpgpu_sim::cycle()
             /* Migration queue: migrationQueue is structure which will contain addresses to
              * migrate from CO memory to BO memory
              */
-            std::map<unsigned, std::list<unsigned long long> >::iterator it_mig = sendForMigrationPid.begin();
-            for (; it_mig != sendForMigrationPid.end(); it_mig++) {
-                std::list<unsigned long long>::iterator it = (it_mig->second).begin();
-                for (; it != (it_mig->second).end(); it++) {
-//                std::list<unsigned long long>::iterator it = sendForMigration.begin();
-//                for (; it != sendForMigration.end(); it++) {
+//            std::map<unsigned, std::list<unsigned long long> >::iterator it_mig = sendForMigrationPid.begin();
+//            for (; it_mig != sendForMigrationPid.end(); it_mig++) {
+//                std::list<unsigned long long>::iterator it = (it_mig->second).begin();
+//                for (; it != (it_mig->second).end(); it++) {
+                std::list<unsigned long long>::iterator it = sendForMigration.begin();
+                for (; it != sendForMigration.end(); it++) {
                     if (migrationQueue[(*it)] == 0) {
                         // If the page reaches "migrating" state then migrate it
                         //if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
-//                        if (readyForNextMigration) {
-                        if (readyForNextMigration[it_mig->first]) {
+                        if (readyForNextMigration) {
+//                        if (readyForNextMigration[it_mig->first]) {
                             // clear migration wait cycle
                             migrationWaitCycle[(*it)] = 0;
                             // migrate the page, send requests to DRAMs
                             migration_unit->migratePage((*it));
                             // Migrate one page in a cycle and try for others in the
                             // next cycle
-//                            readyForNextMigration = false;
-                            readyForNextMigration[it_mig->first] = false;
+                            readyForNextMigration = false;
+//                            readyForNextMigration[it_mig->first] = false;
                             // set the migrationQueue state such that it cannot
                             // re-enter to be re-migrated
                             migrationQueue[(*it)] = (1<<43);
@@ -1403,7 +1409,7 @@ void gpgpu_sim::cycle()
                         else migrationWaitCycle[(*it)]++;
                     }
                 }
-            }
+//            }
         }
     }
 
@@ -1762,4 +1768,19 @@ void print_l1_wr_miss_no_wa() {
     for (; it != l1_wr_miss_no_wa_map.end(); ++it) {
         printf("uid: %u, addr: %llu, core_id: %d\n", it->first, it->second.first, it->second.second);
     }
+}
+
+unsigned gpgpu_sim::calculateBWRatio() {
+    unsigned ddr = 0;
+    unsigned gddr = 0;
+    for (unsigned i=0;i<m_memory_config->m_n_mem;i++) {
+        if (i<4)
+            ddr += m_memory_partition_unit[i]->getTotDramReq();
+        else
+            gddr += m_memory_partition_unit[i]->getTotDramReq();
+    }
+
+    if (ddr != 0)
+        return gddr/(ddr+gddr)*100;
+    else return 100;
 }

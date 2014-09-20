@@ -326,7 +326,9 @@ void memory_partition_unit::dram_cycle()
                 unsigned page_ratio = m_config->m_memory_config_types->page_ratio;
                 unsigned long long pages = m_config->m_memory_config_types->pages;
                 new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
-                if (enableMigration && (migrationQueue.size() < max_migrations) &&
+//                if (enableMigration && 
+                if (enableMigration && !pauseMigration &&
+                        (migrationQueue.size() < max_migrations) &&
                         (num_access_per_cacheline[cacheline][3] >= migration_threshold) &&
                          (mf->get_sub_partition_id() < 8) &&
                          !migrationQueue.count(page_addr) &&
@@ -334,13 +336,27 @@ void memory_partition_unit::dram_cycle()
                          ) {
                     // Put the request in migrationQueue, in the state
                     // evicting(1)
-                    migrationQueue[page_addr] = ((1ULL << 42) - 1ULL);
-                    migrationWaitCycle[page_addr] = 0;
+
+//                    migrationQueue[page_addr] = ((1ULL << 42) - 1ULL);
+//                    migrationWaitCycle[page_addr] = 0;
 //                    sendForMigration.push_back(page_addr);
-                    // Determine which partition this request belongs to and
-                    // accordingly push in the respective queue.
-                    unsigned partition = mf->get_tlx_addr().chip;
-                    sendForMigrationPid[partition].push_back(page_addr);
+
+                    /* Range expansion
+                     */
+                    for (unsigned long long i=0; i<range_expansion; i++) {
+                        unsigned long long page_addr_in_range = page_addr + i*4096;
+                        migrationQueue[page_addr_in_range] = ((1ULL << 42) - 1ULL);
+                        migrationWaitCycle[page_addr_in_range] = 0;
+                        sendForMigration.push_back(page_addr_in_range);
+                    }
+
+                    /* Determine which partition this request belongs to and
+                     * accordingly push in the respective queue. This part is to
+                     * be used when we want to enable parallel migrations of the
+                     * memory controllers
+                     */
+//                    unsigned partition = mf->get_tlx_addr().chip;
+//                    sendForMigrationPid[partition].push_back(page_addr);
                 }
 
                 // update last access re-use distance stats
@@ -367,8 +383,11 @@ void memory_partition_unit::dram_cycle()
     }
 
     if (enableMigration && !migrationQueue.empty()) {
-        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-        for (; it != migrationQueue.end(); ++it) {
+//        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
+//        for (; it != migrationQueue.end(); ++it) {
+        unsigned long long page_addr_to_migrate = sendForMigration.front();
+        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
+        if (it != migrationQueue.end()) {
             if (it->second != 0 && it->second != (1<<43)) {
                 new_addr_type page_addr = it->first & ~(4095ULL);
 
@@ -676,8 +695,11 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
     }
 
     if (enableMigration && !migrationQueue.empty()) {
-        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-        for (; it != migrationQueue.end(); ++it) {
+//        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
+//        for (; it != migrationQueue.end(); ++it) {
+        unsigned long long page_addr_to_migrate = sendForMigration.front();
+        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
+        if (it != migrationQueue.end()) {
             if (it->second != 0 && it->second != (1<<43)) {
                 new_addr_type page_addr = it->first & ~(4095ULL);
                 /* check icnt to l2 queue
@@ -931,4 +953,8 @@ void memory_partition_unit::printNumAccessToPage() {
     for (; it != num_access_per_cacheline.end(); ++it) {
         printf("addr: %llu, accesses: %u\n", it->first, (it->second)[3]);
     }
+}
+
+unsigned memory_partition_unit::getTotDramReq() {
+    return m_dram->getTotReq();
 }

@@ -358,8 +358,9 @@ extern std::list<unsigned long long> sendForMigration;
 extern std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 extern std::map<unsigned long long, uint64_t> migrationQueue;
 extern bool enableMigration;
-//extern bool readyForNextMigration;
-extern bool readyForNextMigration[4];
+extern bool pauseMigration;
+extern bool readyForNextMigration;
+//extern bool readyForNextMigration[4];
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
 extern std::map<unsigned long long, unsigned> migrationFinished;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;
@@ -369,6 +370,7 @@ extern std::map<unsigned, new_addr_type>  l1_wb_map;
 extern std::map<unsigned, new_addr_type>  l2_wb_map;
 extern unsigned int migration_threshold;
 extern unsigned int max_migrations;
+extern unsigned int range_expansion;
 
 extern bool checkBit(uint64_t x, uint64_t pos);
 extern bool checkAllBitsBelow(uint64_t x, uint64_t pos);
@@ -524,6 +526,8 @@ public:
 
     unsigned canMigrate(unsigned long long addr, unsigned migrationState);
 
+    // For feedback control directed mechanism
+    unsigned calculateBWRatio();
 
 private:
    // clocks

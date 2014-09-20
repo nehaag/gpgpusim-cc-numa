@@ -325,9 +325,9 @@ void dram_t::cycle()
                       // Determine the source partition of the request and hence
                       // remove the request from the respective queues
                       unsigned partition = whichDDRPartition(page_addr);
-                      readyForNextMigration[partition] = true;
-                      sendForMigrationPid[partition].remove(page_addr);
-//                      readyForNextMigration = true;
+//                      readyForNextMigration[partition] = true;
+//                      sendForMigrationPid[partition].remove(page_addr);
+                      readyForNextMigration = true;
                   }
                  m_memory_partition_unit->set_done(data);
                  delete data;
@@ -544,8 +544,11 @@ void dram_t::cycle()
     * controller and then only flag for migration
     */
     if (enableMigration && !migrationQueue.empty()) {
-        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-        for (; it != migrationQueue.end(); ++it) {
+//        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
+//        for (; it != migrationQueue.end(); ++it) {
+        unsigned long long page_addr_to_migrate = sendForMigration.front();
+        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
+        if (it != migrationQueue.end()) {
             if (it->second != 0 && it->second != (1<<43)) {
                 new_addr_type page_addr = it->first & ~(4095ULL);
                 if (outstandingRequest(it->first) == 3) {
@@ -822,4 +825,8 @@ unsigned dram_t::whichDDRPartition(unsigned long long page_addr) {
     unsigned global_spidSDDR = mfSDDR->get_tlx_addr().chip; 
     delete mfSDDR;
     return global_spidSDDR;
+}
+
+unsigned dram_t::getTotReq() {
+    return n_req;
 }
