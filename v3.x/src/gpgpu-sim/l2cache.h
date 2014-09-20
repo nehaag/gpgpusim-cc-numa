@@ -105,6 +105,8 @@ public:
 
     void printNumAccess(unsigned long long);
     void printNumAccessToPage();
+
+    unsigned getTotDramReq();
    
 private: 
 
