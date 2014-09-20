@@ -1401,6 +1401,7 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
 //    if (enableMigration && migrationQueue.count(page_addr)) {
     if (enableMigration && !sendForMigration.empty() && (page_addr == sendForMigration.front())) {
         delete mf;
+        pageBlockingStall++;
         return COAL_STALL;
     }
         ; // then stall the request
@@ -1480,6 +1481,8 @@ void ldst_unit::flushOnMigration()
 {
 //    std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
 //    for (; it != migrationQueue.end(); ++it) {
+    if (!enableMigration || sendForMigration.empty())
+        return;
     unsigned long long page_addr_to_migrate = sendForMigration.front();
     std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
     if (it != migrationQueue.end()) {
@@ -2630,6 +2633,11 @@ void shader_core_ctx::cache_flush()
    m_ldst_unit->flush();
 }
 
+void shader_core_ctx::flushOnMigration()
+{
+   m_ldst_unit->flushOnMigration();
+}
+
 // modifiers
 std::list<opndcoll_rfu_t::op_t> opndcoll_rfu_t::arbiter_t::allocate_reads() 
 {
@@ -3379,6 +3387,13 @@ void simt_core_cluster::cache_flush()
     for( unsigned i=0; i < m_config->n_simt_cores_per_cluster; i++ ) 
         m_core[i]->cache_flush();
 }
+
+void simt_core_cluster::flushOnMigration()
+{
+    for( unsigned i=0; i < m_config->n_simt_cores_per_cluster; i++ ) 
+        m_core[i]->flushOnMigration();
+}
+
 
 bool simt_core_cluster::icnt_injection_buffer_full(unsigned size, bool write)
 {

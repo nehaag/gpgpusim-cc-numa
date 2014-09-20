@@ -1598,6 +1598,7 @@ public:
     void reinit(unsigned start_thread, unsigned end_thread, bool reset_not_completed );
     void issue_block2core( class kernel_info_t &kernel );
     void cache_flush();
+    void flushOnMigration();
     void accept_fetch_response( mem_fetch *mf );
     void accept_ldst_unit_response( class mem_fetch * mf );
     void set_kernel( kernel_info_t *k ) 
@@ -1882,6 +1883,7 @@ public:
     void reinit();
     unsigned issue_block2core();
     void cache_flush();
+    void flushOnMigration();
     bool icnt_injection_buffer_full(unsigned size, bool write);
     void icnt_inject_request_packet(class mem_fetch *mf);
 

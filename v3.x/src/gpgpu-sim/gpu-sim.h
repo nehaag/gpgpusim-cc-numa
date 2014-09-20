@@ -348,6 +348,7 @@ typedef unsigned long long new_addr_type;
 extern unsigned long long  gpu_sim_cycle;
 extern unsigned long long  gpu_tot_sim_cycle;
 extern unsigned long long  last_updated_at;
+extern unsigned long long  pageBlockingStall;
 extern bool g_interactive_debugger_enabled;
 extern std::map<unsigned long long, unsigned> m_map;
 extern std::map<unsigned long long, unsigned> m_map_online;

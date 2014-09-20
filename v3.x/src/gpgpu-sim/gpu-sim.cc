@@ -87,6 +87,7 @@ bool g_interactive_debugger_enabled=false;
 unsigned long long  gpu_sim_cycle = 0;
 unsigned long long  gpu_tot_sim_cycle = 0;
 unsigned long long last_updated_at = 0;
+unsigned long long pageBlockingStall = 0;
 unsigned int bw_equal = 0;
 //bool enableMigration = true;
 bool enableMigration;
@@ -1083,7 +1084,9 @@ void gpgpu_sim::gpu_print_stat()
     for (; it_migration != migrationFinished.end(); ++it_migration) {
         printf("%llu %u\n", it_migration->first, it_migration->second);
     }
-    printf("Migration stats end");
+    printf("Migration stats end\n");
+
+    printf("Number of stalls because of page locking: %llu\n", pageBlockingStall);
 
 
 
@@ -1498,13 +1501,14 @@ void gpgpu_sim::cycle()
          } else {
             // if shader is empty then clear the migrating bit of L1 pending in
             // the migrationQueue data structure
-             std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-             for (; it != migrationQueue.end(); ++it) {
-                 if (it->second != 0 && it->second != (1<<43))
-                 {
-                         resetBit(it->second, i);
-                 }
-             }
+             m_cluster[i]->flushOnMigration();
+//             std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
+//             for (; it != migrationQueue.end(); ++it) {
+//                 if (it->second != 0 && it->second != (1<<43))
+//                 {
+//                         resetBit(it->second, i);
+//                 }
+//             }
          }
          // Update core icnt/cache stats for GPUWattch
          m_cluster[i]->get_icnt_stats(m_power_stats->pwr_mem_stat->n_simt_to_mem[CURRENT_STAT_IDX][i], m_power_stats->pwr_mem_stat->n_mem_to_simt[CURRENT_STAT_IDX][i]);
