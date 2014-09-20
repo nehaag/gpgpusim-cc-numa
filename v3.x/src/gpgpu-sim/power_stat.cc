@@ -61,14 +61,23 @@ void power_mem_stat_t::init(){
         core_cache_stats[i].clear();
         l2_cache_stats[i].clear();
 
-        n_cmd[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
-        n_activity[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
-        n_nop[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
-        n_act[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
-        n_pre[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
-        n_rd[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
-        n_wr[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
-        n_req[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+//        n_cmd[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+//        n_activity[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+//        n_nop[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+//        n_act[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+//        n_pre[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+//        n_rd[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+//        n_wr[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+//        n_req[i] = (unsigned *)calloc(m_config->m_n_mem,sizeof(unsigned));
+
+        n_cmd[i] = (unsigned *)calloc(100,sizeof(unsigned));
+        n_activity[i] = (unsigned *)calloc(100,sizeof(unsigned));
+        n_nop[i] = (unsigned *)calloc(100,sizeof(unsigned));
+        n_act[i] = (unsigned *)calloc(100,sizeof(unsigned));
+        n_pre[i] = (unsigned *)calloc(100,sizeof(unsigned));
+        n_rd[i] = (unsigned *)calloc(100,sizeof(unsigned));
+        n_wr[i] = (unsigned *)calloc(100,sizeof(unsigned));
+        n_req[i] = (unsigned *)calloc(100,sizeof(unsigned));
 
         // Interconnect stats
         n_mem_to_simt[i] = (long *)calloc(m_core_config->n_simt_clusters,sizeof(long)); // Counted at SM

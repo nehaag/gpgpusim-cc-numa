@@ -555,7 +555,7 @@ void print_latency_breakdown_stat(mem_fetch* mf) {
 //        printf("latency breakdown: %llu: ch:%d bk:%d row:%d ", mf->get_addr(), mf->get_tlx_addr().chip, mf->get_tlx_addr().bk, mf->get_tlx_addr().row);
         for (unsigned i = 10; i < 19; i++) {
 //            printf("%llu ", mf->request_status_vector[i]);
-            latency_breakdown_all_req[i] += mf->request_status_vector[i];
+            latency_breakdown_all_req[i-10] += mf->request_status_vector[i];
         }
 //        printf("\n");
     }
@@ -570,7 +570,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
            if(mf->get_access_type() != L2_WR_ALLOC_R){ // Don't pass write allocate read request back to upper level cache
 				mf->set_reply();
 				mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
-                print_latency_breakdown_stat(mf);
+//                print_latency_breakdown_stat(mf);
 				m_L2_icnt_queue->push(mf);
            }else{
 				m_request_tracker.erase(mf);
@@ -590,7 +590,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
             }
         } else if ( !m_L2_icnt_queue->full() ) {
             mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
-            print_latency_breakdown_stat(mf);
+//            print_latency_breakdown_stat(mf);
             m_L2_icnt_queue->push(mf);
             m_dram_L2_queue->pop();
         }
@@ -626,7 +626,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
                         } else {
                             mf->set_reply();
                             mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
-                            print_latency_breakdown_stat(mf);
+//                            print_latency_breakdown_stat(mf);
                             m_L2_icnt_queue->push(mf);
                         }
                         m_icnt_L2_queue->pop();
