@@ -106,7 +106,7 @@ std::list<unsigned long long> sendForMigration;
 std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
-std::map<unsigned long long, unsigned> migrationFinished;
+std::map<unsigned long long, std::pair<unsigned long long, unsigned long long> > migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
 std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 bool readyForNextMigration = true;
@@ -1097,11 +1097,11 @@ void gpgpu_sim::gpu_print_stat()
     }
 
     // Migration stats
-    std::map<unsigned long long, unsigned>::iterator it_migration = migrationFinished.begin();
+    std::map<unsigned long long, std::pair<unsigned long long, unsigned long long> >::iterator it_migration = migrationFinished.begin();
     printf("Migration stats start\n");
     printf("Addr->time\n");
     for (; it_migration != migrationFinished.end(); ++it_migration) {
-        printf("%llu %u\n", it_migration->first, it_migration->second);
+        printf("%llu %llu %lluu\n", it_migration->first, it_migration->second.first, it_migration->second.second);
     }
     printf("Migration stats end\n");
 
@@ -1476,7 +1476,7 @@ void gpgpu_sim::cycle()
                                 unsigned long long page_addr = (*it);
                                 migrationQueue.erase(page_addr);
                                 migrationWaitCycle.erase(page_addr);
-                                migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
+                                migrationFinished[page_addr].second = gpu_sim_cycle + gpu_tot_sim_cycle;
                                 sendForMigration.remove(page_addr);
                                 readyForNextMigration = true;
                             }
@@ -1811,9 +1811,9 @@ void printMigrationQueue() {
         printf("addr: %llu, state: 0x%lx\n", it->first, it->second);
     }
     printf("Migration done for addresses: \n");
-    std::map<unsigned long long, unsigned>::iterator it1 = migrationFinished.begin();
-    for (; it1 != migrationFinished.end(); ++it1) {
-        printf("addr: %llu, state: %u\n", it1->first, it1->second);
+    std::map<unsigned long long, std::pair<unsigned long long, unsigned long long> >::iterator it_migration =  migrationFinished.begin();
+    for (; it_migration != migrationFinished.end(); ++it_migration) {
+        printf("%llu %llu %llu\n", it_migration->first, it_migration->second.first, it_migration->second.second);
     }
 }
 

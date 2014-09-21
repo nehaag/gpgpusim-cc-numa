@@ -363,7 +363,7 @@ extern bool pauseMigration;
 extern bool readyForNextMigration;
 //extern bool readyForNextMigration[4];
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
-extern std::map<unsigned long long, unsigned> migrationFinished;
+extern std::map<unsigned long long, std::pair<unsigned long long, unsigned long long> > migrationFinished;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;
 extern std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 

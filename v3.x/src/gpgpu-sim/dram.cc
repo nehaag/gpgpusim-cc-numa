@@ -319,7 +319,7 @@ void dram_t::fakeMigration(class mem_fetch *data) {
             unsigned long long page_addr = data->get_addr() & ~(4095ULL);
             migrationQueue.erase(page_addr);
             migrationWaitCycle.erase(page_addr);
-            migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
+            migrationFinished[page_addr].second = gpu_sim_cycle + gpu_tot_sim_cycle;
             sendForMigration.remove(page_addr);
             // Determine the source partition of the request and hence
             // remove the request from the respective queues
@@ -375,7 +375,7 @@ void dram_t::cycle()
                       unsigned long long page_addr = data->get_addr() & ~(4095ULL);
                       migrationQueue.erase(page_addr);
                       migrationWaitCycle.erase(page_addr);
-                      migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
+                      migrationFinished[page_addr].second = gpu_sim_cycle + gpu_tot_sim_cycle;
                       sendForMigration.remove(page_addr);
                       // Determine the source partition of the request and hence
                       // remove the request from the respective queues
