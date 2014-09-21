@@ -224,7 +224,8 @@ void memory_partition_unit::dram_cycle()
             printf("WARNING: there might be an error here, as memory packet is not in the correct memory subpartition");
 //            dest_spid = dest_global_spid - m_id_local * m_config->m_n_sub_partition_per_memory_channel;
         }
-        assert(m_sub_partition[dest_spid]->get_id() == dest_global_spid); 
+        // TODO: un-comment after testing for blocking
+//        assert(m_sub_partition[dest_spid]->get_id() == dest_global_spid); 
         if (!m_sub_partition[dest_spid]->dram_L2_queue_full()) {
             if( mf_return->get_access_type() == L1_WRBK_ACC ) {
                 m_sub_partition[dest_spid]->set_done(mf_return); 
@@ -328,11 +329,13 @@ void memory_partition_unit::dram_cycle()
                 new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
 //                if (enableMigration && !pauseMigration &&
 //                        (migrationQueue.size() < max_migrations) &&
+//                if (enableMigration && 
                 if (enableMigration && !pauseMigration &&
-                        (num_access_per_cacheline[cacheline][3] >= migration_threshold) &&
+                        (num_access_per_cacheline[page_addr][3] >= migrationThreshold) &&
                          (mf->get_sub_partition_id() < 8) &&
                          !migrationQueue.count(page_addr) &&
-                         (migrationFinished.size() < page_ratio/100.0*pages)
+                         (mf->get_access_type() != INST_ACC_R)
+//                         (migrationFinished.size() < page_ratio/100.0*pages)
                          ) {
                     // Put the request in migrationQueue, in the state
                     // evicting(1)
@@ -346,7 +349,10 @@ void memory_partition_unit::dram_cycle()
                     for (long long i=(-range_expansion); i<=range_expansion; i++) {
                         unsigned long long page_addr_in_range = page_addr + i*4096;
                         if (!migrationQueue.count(page_addr_in_range) && !migrationFinished.count(page_addr_in_range)) {
-                            migrationQueue[page_addr_in_range] = ((1ULL << 42) - 1ULL);
+                            if (!flush_on_migration_enable)
+                                migrationQueue[page_addr_in_range] = 0;
+                            else
+                                migrationQueue[page_addr_in_range] = ((1ULL << 42) - 1ULL);
                             migrationWaitCycle[page_addr_in_range] = 0;
                             sendForMigration.push_back(page_addr_in_range);
                         }
@@ -384,7 +390,7 @@ void memory_partition_unit::dram_cycle()
         if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
     }
 
-    if (enableMigration && !migrationQueue.empty()) {
+    if (enableMigration && !migrationQueue.empty() && flush_on_migration_enable) {
 //        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
 //        for (; it != migrationQueue.end(); ++it) {
         unsigned long long page_addr_to_migrate = sendForMigration.front();
@@ -696,7 +702,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
         if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
     }
 
-    if (enableMigration && !migrationQueue.empty()) {
+    if (enableMigration && !migrationQueue.empty() && flush_on_migration_enable) {
 //        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
 //        for (; it != migrationQueue.end(); ++it) {
         unsigned long long page_addr_to_migrate = sendForMigration.front();

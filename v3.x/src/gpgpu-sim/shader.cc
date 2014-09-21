@@ -1400,9 +1400,11 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
     new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
 //    if (enableMigration && migrationQueue.count(page_addr)) {
     if (enableMigration && !sendForMigration.empty() && (page_addr == sendForMigration.front())) {
-        delete mf;
         pageBlockingStall++;
-        return COAL_STALL;
+        if (block_on_migration) {
+            delete mf;
+            return COAL_STALL;
+        }
     }
         ; // then stall the request
     std::list<cache_event> events;

@@ -165,6 +165,8 @@ public:
 
     unsigned getTotReq();
 
+    void fakeMigration(class mem_fetch *data);
+
 private:
     void print_req_dist_stats();
    void scheduler_fifo();

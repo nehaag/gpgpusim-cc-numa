@@ -365,13 +365,19 @@ extern bool readyForNextMigration;
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
 extern std::map<unsigned long long, unsigned> migrationFinished;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;
+extern std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 
 extern std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
 extern std::map<unsigned, new_addr_type>  l1_wb_map;
 extern std::map<unsigned, new_addr_type>  l2_wb_map;
 extern unsigned int migration_threshold;
+extern unsigned int migrationThreshold;
 extern unsigned int max_migrations;
 extern int range_expansion;
+extern unsigned int migration_cost;
+extern bool magical_migration;
+extern bool flush_on_migration_enable;
+extern bool block_on_migration;
 
 extern bool checkBit(uint64_t x, uint64_t pos);
 extern bool checkAllBitsBelow(uint64_t x, uint64_t pos);
@@ -529,6 +535,7 @@ public:
 
     // For feedback control directed mechanism
     unsigned calculateBWRatio();
+    void calculateMigrationThreshold();
 
 private:
    // clocks

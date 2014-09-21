@@ -111,15 +111,12 @@ void migrate::migratePage(mem_addr addrToHBM) {
     delete mfHBM;
     
     /*Send the page migration request to respective DRAM controllers */
-    unsigned int numReqSDDR = m_dramSDDR->migratePage(pageAddrToHBM,
-            pageAddrToHBM, m_dramHBM, 0, memConfigSDDR, memConfigHBM, 0);
-
-    //TODO:if numReqHBM and numReqSDDR != 32, then need to call migrate page
-    //again
+    if (!magical_migration) {
+        unsigned int numReqSDDR = m_dramSDDR->migratePage(pageAddrToHBM,
+                pageAddrToHBM, m_dramHBM, 0, memConfigSDDR, memConfigHBM, 0);
+    }
 
     /*Update the global structure for page mapping */
-//    m_map_online[addrToHBM]  = 1;
-//    m_map[addrToHBM]  = 1;
     m_map_online[pageAddrToHBM]  = 1;
     m_map[pageAddrToHBM]  = 1;
 }

@@ -198,10 +198,22 @@ void dram_t::incrementVectors() {
 
 void dram_t::push( class mem_fetch *data ) 
 {
+    unsigned long long page_addr = data->get_addr() & ~(4095ULL);
+    globalPageCount[page_addr][last_updated_at]++;
+
     if (data->get_addr() == 2152209376)
         printf("break here \n");
-    if (id != data->get_tlx_addr().chip)
-        printf("addr: %lld, id = %d, chip = %d, access_type: %d, uid = %u, timestamp= %u\n", data->get_addr(), id, data->get_tlx_addr().chip, data->get_access_type(), data->get_request_uid(), data->get_timestamp());
+    if (id != data->get_tlx_addr().chip) {
+        printf("WARNING: addr: %lld, id = %d, chip = %d, access_type: %d, uid = %u, timestamp= %u\n", data->get_addr(), id, data->get_tlx_addr().chip, data->get_access_type(), data->get_request_uid(), data->get_timestamp());
+       /* Magically complete the request
+        * TODO: COMMENT this part, after testing the overhead of migration
+        */
+        if (enableMigration && !flush_on_migration_enable) {
+            fakeMigration(data);
+            return;
+        }
+    }
+    // TODO: enable the assert when done with the overhead testing
     assert(id == data->get_tlx_addr().chip); // Ensure request is in correct memory partition
 
    dram_req_t *mrq = new dram_req_t(data);
@@ -280,6 +292,49 @@ void dram_t::scheduler_fifo()
 
 #define DEC2ZERO(x) x = (x)? (x-1) : 0;
 #define SWAP(a,b) a ^= b; b ^= a; a ^= b;
+
+void dram_t::fakeMigration(class mem_fetch *data) {
+    data->set_status(IN_PARTITION_MC_RETURNQ,gpu_sim_cycle+gpu_tot_sim_cycle);
+    if( data->get_access_type() != L1_WRBK_ACC && data->get_access_type() != L2_WRBK_ACC && data->get_access_type() != MEM_MIGRATE_R && data->get_access_type() != MEM_MIGRATE_W) {
+        data->set_reply();
+        returnq->push(data);
+    } else if (data->get_access_type() == MEM_MIGRATE_R) {
+        migrateReqCountR++;
+        //TODO:after 32 read reqs are done => data is in mem controller now
+        //and we need to write this page to the destination memory
+        //controller
+        if (migrateReqCountR == 32) {
+            //TODO: pass last parameter mem_type correctly here
+            this->migratePage(destAddr, 0, destDramCtlr, 1, memConfigRemote, NULL, destMemType);
+            migrateReqCountR = 0;
+        }
+        m_memory_partition_unit->set_done(data);
+        delete data;
+    } else if (data->get_access_type() == MEM_MIGRATE_W) {
+        migrateReqCountW++;
+        if (migrateReqCountW == 32) {
+            //TODO:Send migration unit the call back that migration is done
+            //for this memroy controller unit, Write Part!
+            migrateReqCountW = 0;
+            unsigned long long page_addr = data->get_addr() & ~(4095ULL);
+            migrationQueue.erase(page_addr);
+            migrationWaitCycle.erase(page_addr);
+            migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
+            sendForMigration.remove(page_addr);
+            // Determine the source partition of the request and hence
+            // remove the request from the respective queues
+            //                      unsigned partition = whichDDRPartition(page_addr);
+            //                      readyForNextMigration[partition] = true;
+            //                      sendForMigrationPid[partition].remove(page_addr);
+            readyForNextMigration = true;
+        }
+        m_memory_partition_unit->set_done(data);
+        delete data;
+    } else {
+        m_memory_partition_unit->set_done(data);
+        delete data;
+    }
+}
 
 void dram_t::cycle()
 {
@@ -543,7 +598,7 @@ void dram_t::cycle()
    /* Wait for in-flight outstanding requests to clear up from the memory
     * controller and then only flag for migration
     */
-    if (enableMigration && !migrationQueue.empty()) {
+    if (enableMigration && !migrationQueue.empty() && flush_on_migration_enable) {
 //        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
 //        for (; it != migrationQueue.end(); ++it) {
         unsigned long long page_addr_to_migrate = sendForMigration.front();

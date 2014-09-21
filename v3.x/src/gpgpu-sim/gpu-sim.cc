@@ -108,6 +108,7 @@ std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
 std::map<unsigned long long, unsigned> migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
+std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 bool readyForNextMigration = true;
 //bool readyForNextMigration[4] = {true, true, true, true};
 
@@ -116,8 +117,14 @@ std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
 std::map<unsigned, new_addr_type>  l1_wb_map;
 std::map<unsigned, new_addr_type>  l2_wb_map;
 unsigned int migration_threshold;
+// TODO: merge it with the one in the config file
+unsigned int migrationThreshold = 1;
 unsigned int max_migrations;
 int range_expansion;
+unsigned int migration_cost;
+bool magical_migration;
+bool flush_on_migration_enable;
+bool block_on_migration;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -153,6 +160,18 @@ void migration_reg_options(class OptionParser * opp) {
     option_parser_register(opp, "-range_expansion", OPT_INT32,
             &range_expansion, "number of neighbouring pages to be migrated",
             "4");
+    option_parser_register(opp, "-migration_cost", OPT_UINT32,
+            &migration_cost, "cost of migration to include TLB flushing etc",
+            "1000");
+    option_parser_register(opp, "-magical_migration", OPT_BOOL,
+            &magical_migration, "no overhead of putting migration requests into memory controllers, jsut change the mapping and migrate instantaneously",
+            "false");
+    option_parser_register(opp, "-flush_on_migration_enable", OPT_BOOL,
+            &flush_on_migration_enable, "flush the caches on migration, and fake the migration by changing mem_fetch mapping whenever possible",
+            "true");
+    option_parser_register(opp, "-block_on_migration", OPT_BOOL,
+            &block_on_migration, "block any request to the migrating page",
+            "true");
 }
 
 
@@ -1087,6 +1106,20 @@ void gpgpu_sim::gpu_print_stat()
     printf("Migration stats end\n");
 
     printf("Number of stalls because of page locking: %llu\n", pageBlockingStall);
+    printf("Total page count: %llu\n", globalPageCount.size());
+
+    printMigrationQueue();
+
+    printf("\nNumber of touches per epoch\n");
+
+    std::map<unsigned long long, std::map<unsigned, unsigned> >::iterator it_pageCount = globalPageCount.begin();
+    for (; it_pageCount != globalPageCount.end(); it_pageCount++) {
+        printf("%llu ", it_pageCount->first);
+        std::map<unsigned, unsigned>::iterator it_second = it_pageCount->second.begin();
+        for (; it_second != it_pageCount->second.end(); it_second++)
+            printf("%u:%u ", it_second->first, it_second->second);
+        printf("\n");
+    }
 
 
 
@@ -1285,6 +1318,28 @@ void gpgpu_sim::issue_block2core()
 
 unsigned long long g_single_step=0; // set this in gdb to single step the pipeline
 
+void increaseMigrationThreshold() {
+    migrationThreshold += 16;
+}
+
+void decreaseMigrationThreshold() {
+    if (migrationThreshold >= 16)
+        migrationThreshold -= 16;
+}
+
+/* FDO for adjusting migration
+ */
+void gpgpu_sim::calculateMigrationThreshold() {
+    if ((calculateBWRatio() > 65) && (calculateBWRatio() < 75)) {
+        pauseMigration = true;
+    } else if (calculateBWRatio() >= 75) {
+        increaseMigrationThreshold();
+    } else {
+        decreaseMigrationThreshold();
+        pauseMigration = false;
+    }
+}
+
 void gpgpu_sim::cycle()
 {
 
@@ -1294,9 +1349,13 @@ void gpgpu_sim::cycle()
         for (unsigned i=0;i<m_memory_config->m_n_mem;i++){
             m_memory_partition_unit[i]->get_dram()->incrementVectors(); 
         }
+        
+//        std::map<unsigned long long, std::vector<unsigned> >::iterator it_pageCount = globalPageCount.begin();
+//        for (; it_pageCount != globalPageCount.end(); it_pageCount++) {
+//            it_pageCount->second.push_back(0);
+//        }
 
-        if ((calculateBWRatio() > 65) && (calculateBWRatio() < 75))
-            pauseMigration = true;
+        calculateMigrationThreshold();
     }
 
    int clock_mask = next_clock_domain();
@@ -1394,8 +1453,8 @@ void gpgpu_sim::cycle()
                 for (; it != sendForMigration.end(); it++) {
                     if (migrationQueue[(*it)] == 0) {
                         // If the page reaches "migrating" state then migrate it
-                        //if (migrationWaitCycle[(*it)] >= 1000 && readyForNextMigration) {
-                        if (readyForNextMigration) {
+                        if (migrationWaitCycle[(*it)] >= migration_cost && readyForNextMigration) {
+//                        if (readyForNextMigration) {
 //                        if (readyForNextMigration[it_mig->first]) {
                             // clear migration wait cycle
                             migrationWaitCycle[(*it)] = 0;
@@ -1408,6 +1467,17 @@ void gpgpu_sim::cycle()
                             // set the migrationQueue state such that it cannot
                             // re-enter to be re-migrated
                             migrationQueue[(*it)] = (1<<43);
+
+                            /* For magical migration
+                             */
+                            if (magical_migration) {
+                                unsigned long long page_addr = (*it);
+                                migrationQueue.erase(page_addr);
+                                migrationWaitCycle.erase(page_addr);
+                                migrationFinished[page_addr] = gpu_sim_cycle + gpu_tot_sim_cycle;
+                                sendForMigration.remove(page_addr);
+                                readyForNextMigration = true;
+                            }
                             break;
                         }
                         else migrationWaitCycle[(*it)]++;
