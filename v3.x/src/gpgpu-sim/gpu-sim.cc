@@ -1355,7 +1355,9 @@ void gpgpu_sim::cycle()
 //            it_pageCount->second.push_back(0);
 //        }
 
-        calculateMigrationThreshold();
+        // TODO: currently calculateMigrationThreshold is commented out
+        // since it has not been completely implemented
+//        calculateMigrationThreshold();
     }
 
    int clock_mask = next_clock_domain();

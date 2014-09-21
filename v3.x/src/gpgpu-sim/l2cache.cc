@@ -330,13 +330,13 @@ void memory_partition_unit::dram_cycle()
 //                if (enableMigration && !pauseMigration &&
 //                        (migrationQueue.size() < max_migrations) &&
 //                if (enableMigration && 
-                if (enableMigration && !pauseMigration &&
-                        (num_access_per_cacheline[page_addr][3] >= migrationThreshold) &&
-                         (mf->get_sub_partition_id() < 8) &&
-                         !migrationQueue.count(page_addr) &&
-                         (mf->get_access_type() != INST_ACC_R)
+//                if (enableMigration && !pauseMigration &&
+//                        (num_access_per_cacheline[page_addr][3] >= migrationThreshold) &&
+//                         (mf->get_sub_partition_id() < 8) &&
+//                         !migrationQueue.count(page_addr) &&
+//                         (mf->get_access_type() != INST_ACC_R)
 //                         (migrationFinished.size() < page_ratio/100.0*pages)
-                         ) {
+//                         ) {
                     // Put the request in migrationQueue, in the state
                     // evicting(1)
 
@@ -344,11 +344,17 @@ void memory_partition_unit::dram_cycle()
 //                    migrationWaitCycle[page_addr] = 0;
 //                    sendForMigration.push_back(page_addr);
 
+                if(enableMigration
+                        && (mf->get_sub_partition_id() < 8)
+                        && (mf->get_access_type() != INST_ACC_R)
+                        && (rand() % 100 < page_ratio))
+                {
                     /* Range expansion
                      */
                     for (long long i=(-range_expansion); i<=range_expansion; i++) {
                         unsigned long long page_addr_in_range = page_addr + i*4096;
-                        if (!migrationQueue.count(page_addr_in_range) && !migrationFinished.count(page_addr_in_range)) {
+                        if (!migrationQueue.count(page_addr_in_range)
+                                && !migrationFinished.count(page_addr_in_range)) {
                             if (!flush_on_migration_enable)
                                 migrationQueue[page_addr_in_range] = 0;
                             else
