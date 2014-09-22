@@ -328,23 +328,7 @@ void memory_partition_unit::dram_cycle()
                 unsigned long long pages = m_config->m_memory_config_types->pages;
                 new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
 //                if (enableMigration && !pauseMigration &&
-//                        (migrationQueue.size() < max_migrations) &&
-//                if (enableMigration && 
-//                if (enableMigration && !pauseMigration &&
-//                        (num_access_per_cacheline[page_addr][3] >= migrationThreshold) &&
-//                         (mf->get_sub_partition_id() < 8) &&
-//                         !migrationQueue.count(page_addr) &&
-//                         (mf->get_access_type() != INST_ACC_R)
 //                         (migrationFinished.size() < page_ratio/100.0*pages)
-//                         ) {
-                    // Put the request in migrationQueue, in the state
-                    // evicting(1)
-
-//                    migrationQueue[page_addr] = ((1ULL << 42) - 1ULL);
-//                    migrationFinished[page_addr_in_range][0] = gpu_sim_cycle + gpu_tot_sim_cycle;
-//                    migrationWaitCycle[page_addr] = 0;
-//                    sendForMigration.push_back(page_addr);
-
                 if(enableMigration
                         && (mf->get_sub_partition_id() < 8)
                         && (mf->get_access_type() != INST_ACC_R)
@@ -366,17 +350,19 @@ void memory_partition_unit::dram_cycle()
                             // Timestamp at which a page is marked for migration
                             migrationFinished[page_addr_in_range][0] = gpu_sim_cycle + gpu_tot_sim_cycle;
                             migrationWaitCycle[page_addr_in_range] = 0;
-                            sendForMigration.push_back(page_addr_in_range);
+                            /* Determine which partition this request belongs to and
+                             * accordingly push in the respective queue. This part is to
+                             * be used when we want to enable parallel migrations of the
+                             * memory controllers
+                             */
+                            unsigned partition = whichDDRPartition(page_addr_in_range, mf->get_mem_config());
+                            // TODO: generalize 4 to number of DDR memory
+                            // controllers
+                            assert(partition < 4);
+                            
+                            sendForMigrationPid[partition].push_back(page_addr_in_range);
                         }
                     }
-
-                    /* Determine which partition this request belongs to and
-                     * accordingly push in the respective queue. This part is to
-                     * be used when we want to enable parallel migrations of the
-                     * memory controllers
-                     */
-//                    unsigned partition = mf->get_tlx_addr().chip;
-//                    sendForMigrationPid[partition].push_back(page_addr);
                 }
 
                 // update last access re-use distance stats
@@ -403,28 +389,27 @@ void memory_partition_unit::dram_cycle()
     }
 
     if (enableMigration && !migrationQueue.empty() && flush_on_migration_enable) {
-//        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-//        for (; it != migrationQueue.end(); ++it) {
-        unsigned long long page_addr_to_migrate = sendForMigration.front();
-        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
-        if (it != migrationQueue.end()) {
-            if (it->second != 0 && it->second != (1<<43)) {
-                new_addr_type page_addr = it->first & ~(4095ULL);
-
-                bool flag = true;
-
-                for (unsigned p = 0; p < m_config->m_n_sub_partition_per_memory_channel; p++) {
-                    flag = m_sub_partition[p]->snoop_L2_dram_queue(page_addr);
-                }
-                // Check if any requests are there in DRAM latency queue
-                std::list<dram_delay_t>::iterator it1 = m_dram_latency_queue.begin();
-                for (; it1 != m_dram_latency_queue.end(); ++it1) {
-                    new_addr_type req_page_addr = it1->req->get_addr() & ~(4095ULL);
-                    if (req_page_addr == page_addr)
-                        flag = false;
-                }
-                if (flag && checkAllBitsBelowReset(it->second,40)){
-                    resetBit(it->second, 40);
+        for (auto &it_pid : sendForMigrationPid) {
+            if (it_pid.second.empty())
+                continue;
+            unsigned long long page_addr_to_migrate = it_pid.second.front();
+            auto it = migrationQueue.find(page_addr_to_migrate);
+            if (it != migrationQueue.end()) {
+                if (it->second != 0 && it->second != (1<<43)) {
+                    new_addr_type page_addr = it->first & ~(4095ULL);
+                    bool flag = true;
+                    for (unsigned p = 0; p < m_config->m_n_sub_partition_per_memory_channel; p++) {
+                        flag = m_sub_partition[p]->snoop_L2_dram_queue(page_addr);
+                    }
+                    // Check if any requests are there in DRAM latency queue
+                    for (auto &it1 : m_dram_latency_queue) {
+                        new_addr_type req_page_addr = it1.req->get_addr() & ~(4095ULL);
+                        if (req_page_addr == page_addr)
+                            flag = false;
+                    }
+                    if (flag && checkAllBitsBelowReset(it->second,40)){
+                        resetBit(it->second, 40);
+                    }
                 }
             }
         }
@@ -715,37 +700,39 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
     }
 
     if (enableMigration && !migrationQueue.empty() && flush_on_migration_enable) {
-//        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-//        for (; it != migrationQueue.end(); ++it) {
-        unsigned long long page_addr_to_migrate = sendForMigration.front();
-        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
-        if (it != migrationQueue.end()) {
-            if (it->second != 0 && it->second != (1<<43)) {
-                new_addr_type page_addr = it->first & ~(4095ULL);
-                /* check icnt to l2 queue
-                 */
-                // Scan through mrqq list and check if there are any request to this page
-                fifo_data<mem_fetch> *head_icnt_L2_queue = m_icnt_L2_queue->fifo_data_top();
-                bool flag = true;
-                while (head_icnt_L2_queue != NULL) {
-                    unsigned long long req_page_addr = head_icnt_L2_queue->m_data->get_addr() & ~(4095ULL);
-                    if (req_page_addr == page_addr)
-                        flag = false;
-                    head_icnt_L2_queue = head_icnt_L2_queue->m_next;
-                }
-                if (flag && checkAllBitsBelowReset(it->second,15)){
-                    resetBit(it->second, 15);
-                }
+        for (auto &it_pid : sendForMigrationPid) {
+            if (it_pid.second.empty())
+                continue;
+            unsigned long long page_addr_to_migrate = it_pid.second.front();
+            auto it = migrationQueue.find(page_addr_to_migrate);
+            if (it != migrationQueue.end()) {
+                if (it->second != 0 && it->second != (1<<43)) {
+                    new_addr_type page_addr = it->first & ~(4095ULL);
+                    /* check icnt to l2 queue
+                    */
+                    // Scan through mrqq list and check if there are any request to this page
+                    fifo_data<mem_fetch> *head_icnt_L2_queue = m_icnt_L2_queue->fifo_data_top();
+                    bool flag = true;
+                    while (head_icnt_L2_queue != NULL) {
+                        unsigned long long req_page_addr = head_icnt_L2_queue->m_data->get_addr() & ~(4095ULL);
+                        if (req_page_addr == page_addr)
+                            flag = false;
+                        head_icnt_L2_queue = head_icnt_L2_queue->m_next;
+                    }
+                    if (flag && checkAllBitsBelowReset(it->second,15)){
+                        resetBit(it->second, 15);
+                    }
 
-                /* check mshrs of L2 caches
-                 */
-                if (m_L2cache->flushOnMigrate(it->first)) {
-                    /* if L2 has flushed all the dirty lines and all the pending
-                     * reads are done, then clear bit 1 of the second variable of map
-                     */
-                    unsigned cache_this_id = m_L2cache->cache_id;
-                    if (flag && checkAllBitsBelowReset(it->second,16)){
-                        resetBit(it->second, 16 + cache_this_id);
+                    /* check mshrs of L2 caches
+                    */
+                    if (m_L2cache->flushOnMigrate(it->first)) {
+                        /* if L2 has flushed all the dirty lines and all the pending
+                         * reads are done, then clear bit 1 of the second variable of map
+                         */
+                        unsigned cache_this_id = m_L2cache->cache_id;
+                        if (flag && checkAllBitsBelowReset(it->second,16)){
+                            resetBit(it->second, 16 + cache_this_id);
+                        }
                     }
                 }
             }

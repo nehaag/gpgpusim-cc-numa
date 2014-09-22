@@ -356,13 +356,11 @@ extern std::map<unsigned long long, unsigned> m_map_online;
 extern unsigned long long int num_lines_hbm;
 extern unsigned int bw_equal;
 
-extern std::list<unsigned long long> sendForMigration;
 extern std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 extern std::map<unsigned long long, uint64_t> migrationQueue;
 extern bool enableMigration;
 extern bool pauseMigration;
-extern bool readyForNextMigration;
-//extern bool readyForNextMigration[4];
+extern bool readyForNextMigration[4];
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
 extern std::map<unsigned long long, std::array<unsigned long long, 4> > migrationFinished;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;
@@ -373,7 +371,6 @@ extern std::map<unsigned, new_addr_type>  l1_wb_map;
 extern std::map<unsigned, new_addr_type>  l2_wb_map;
 extern unsigned int migration_threshold;
 extern unsigned int migrationThreshold;
-extern unsigned int max_migrations;
 extern int range_expansion;
 extern unsigned int migration_cost;
 extern bool magical_migration;
@@ -387,6 +384,7 @@ extern void setBit(uint64_t &x, uint64_t pos);
 extern void resetBit(uint64_t &x, uint64_t pos);
 void printMigrationQueue();
 void printMigrationFinishedQueue();
+unsigned whichDDRPartition(unsigned long long page_addr, const class memory_config *memConfig);
 
 class gpgpu_sim_config : public power_config, public gpgpu_functional_sim_config {
 public:

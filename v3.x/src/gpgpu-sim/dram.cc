@@ -321,13 +321,12 @@ void dram_t::fakeMigration(class mem_fetch *data) {
             migrationWaitCycle.erase(page_addr);
             // Timestamp at which front page's migration is complete
             migrationFinished[page_addr][3] = gpu_sim_cycle + gpu_tot_sim_cycle;
-            sendForMigration.remove(page_addr);
             // Determine the source partition of the request and hence
             // remove the request from the respective queues
-            //                      unsigned partition = whichDDRPartition(page_addr);
-            //                      readyForNextMigration[partition] = true;
-            //                      sendForMigrationPid[partition].remove(page_addr);
-            readyForNextMigration = true;
+            unsigned partition = whichDDRPartition(page_addr, data->get_mem_config());
+            assert(partition < 4);
+            readyForNextMigration[partition] = true;
+            sendForMigrationPid[partition].remove(page_addr);
         }
         m_memory_partition_unit->set_done(data);
         delete data;
@@ -378,13 +377,12 @@ void dram_t::cycle()
                       migrationWaitCycle.erase(page_addr);
                       // Timestamp at which front page's migration is complete
                       migrationFinished[page_addr][3] = gpu_sim_cycle + gpu_tot_sim_cycle;
-                      sendForMigration.remove(page_addr);
                       // Determine the source partition of the request and hence
                       // remove the request from the respective queues
-//                      unsigned partition = whichDDRPartition(page_addr);
-//                      readyForNextMigration[partition] = true;
-//                      sendForMigrationPid[partition].remove(page_addr);
-                      readyForNextMigration = true;
+                      unsigned partition = whichDDRPartition(page_addr, data->get_mem_config());
+                      assert(partition < 4);
+                      readyForNextMigration[partition] = true;
+                      sendForMigrationPid[partition].remove(page_addr);
                   }
                  m_memory_partition_unit->set_done(data);
                  delete data;
@@ -601,19 +599,21 @@ void dram_t::cycle()
     * controller and then only flag for migration
     */
     if (enableMigration && !migrationQueue.empty() && flush_on_migration_enable) {
-//        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-//        for (; it != migrationQueue.end(); ++it) {
-        unsigned long long page_addr_to_migrate = sendForMigration.front();
-        std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
-        if (it != migrationQueue.end()) {
-            if (it->second != 0 && it->second != (1<<43)) {
-                new_addr_type page_addr = it->first & ~(4095ULL);
-                if (outstandingRequest(it->first) == 3) {
-                    /* if L2 has flushed all the dirty lines and all the pending
-                     * reads are done, then clear bit 1 of the second variable of map
-                     */
-                    if (checkAllBitsBelowReset(it->second,41))
-                        resetBit(it->second, 41);
+        for (auto &it_pid : sendForMigrationPid) {
+            if (it_pid.second.empty())
+                continue;
+            unsigned long long page_addr_to_migrate = (it_pid.second).front();
+            auto it = migrationQueue.find(page_addr_to_migrate);
+            if (it != migrationQueue.end()) {
+                if (it->second != 0 && it->second != (1<<43)) {
+                    new_addr_type page_addr = it->first & ~(4095ULL);
+                    if (outstandingRequest(it->first) == 3) {
+                        /* if L2 has flushed all the dirty lines and all the pending
+                         * reads are done, then clear bit 1 of the second variable of map
+                         */
+                        if (checkAllBitsBelowReset(it->second,41))
+                            resetBit(it->second, 41);
+                    }
                 }
             }
         }
@@ -870,18 +870,6 @@ void dram_t::printMigrationStats( FILE* simFile) const
     for (i=0; i<num_migration_read.size(); i++) {
         fprintf(simFile, "%u %u %u %u\n", i, num_migration_read[i], num_migration_write[i], num_actual[i]);
     }
-}
-
-unsigned dram_t::whichDDRPartition(unsigned long long page_addr) {
-    mem_access_t accessSDDR(MEM_MIGRATE_R, page_addr, 128U, 0);
-    const class memory_config* memConfigSDDR = &(memConfigLocal->m_memory_config_types->memory_config_array[0]);
-    mem_fetch *mfSDDR = new mem_fetch( accessSDDR, 
-            READ_PACKET_SIZE, 
-            memConfigSDDR, 0);
-    //    unsigned global_spidSDDR = mfSDDR->get_sub_partition_id(); 
-    unsigned global_spidSDDR = mfSDDR->get_tlx_addr().chip; 
-    delete mfSDDR;
-    return global_spidSDDR;
 }
 
 unsigned dram_t::getTotReq() {

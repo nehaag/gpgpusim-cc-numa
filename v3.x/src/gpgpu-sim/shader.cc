@@ -1398,15 +1398,16 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
     /* If a request comes to a page in migration, then stall the request
      */
     new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
-//    if (enableMigration && migrationQueue.count(page_addr)) {
-    if (enableMigration && !sendForMigration.empty() && (page_addr == sendForMigration.front())) {
-        pageBlockingStall++;
-        if (block_on_migration) {
-            delete mf;
-            return COAL_STALL;
+    for (auto &it_pid : sendForMigrationPid) {
+        if (enableMigration && !(it_pid.second).empty() && (page_addr == (it_pid.second).front())) {
+            pageBlockingStall++;
+            if (block_on_migration) {
+                delete mf;
+                return COAL_STALL;
+            }
         }
     }
-        ; // then stall the request
+
     std::list<cache_event> events;
     enum cache_request_status status = cache->access(mf->get_addr(),mf,gpu_sim_cycle+gpu_tot_sim_cycle,events);
 //    enum cache_request_status status = HIT;
@@ -1481,21 +1482,23 @@ bool ldst_unit::texture_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail,
 
 void ldst_unit::flushOnMigration()
 {
-//    std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
-//    for (; it != migrationQueue.end(); ++it) {
-    if (!enableMigration || sendForMigration.empty())
+    if (!enableMigration)
         return;
-    unsigned long long page_addr_to_migrate = sendForMigration.front();
-    std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.find(page_addr_to_migrate);
-    if (it != migrationQueue.end()) {
-        if (it->second != 0 && it->second != (1<<43))
-        {
-            if (flush_caches(m_L1D, it->first)) {
-                /* if L1 has flushed all the dirty lines and all the pending
-                 * reads are done, then clear bit 0 of the second variable of map
-                 */
-                unsigned sid = get_sid();
-                resetBit(it->second, sid);
+    for (auto &it_pid : sendForMigrationPid) {
+        if (it_pid.second.empty())
+            continue;
+        unsigned long long page_addr_to_migrate = (it_pid.second).front();
+        auto it = migrationQueue.find(page_addr_to_migrate);
+        if (it != migrationQueue.end()) {
+            if (it->second != 0 && it->second != (1<<43))
+            {
+                if (flush_caches(m_L1D, it->first)) {
+                    /* if L1 has flushed all the dirty lines and all the pending
+                     * reads are done, then clear bit 0 of the second variable of map
+                     */
+                    unsigned sid = get_sid();
+                    resetBit(it->second, sid);
+                }
             }
         }
     }

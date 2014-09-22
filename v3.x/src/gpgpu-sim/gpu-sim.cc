@@ -102,15 +102,13 @@ bool pauseMigration = false;
  * state as the value
  */
 typedef unsigned long long new_addr_type;
-std::list<unsigned long long> sendForMigration;
 std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
 std::map<unsigned long long, std::array<unsigned long long, 4> > migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
 std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
-bool readyForNextMigration = true;
-//bool readyForNextMigration[4] = {true, true, true, true};
+bool readyForNextMigration[4] = {true, true, true, true};
 
 /* request_uid->address map*/
 std::map<unsigned, std::pair<new_addr_type, unsigned> >  l1_wr_miss_no_wa_map;
@@ -119,7 +117,6 @@ std::map<unsigned, new_addr_type>  l2_wb_map;
 unsigned int migration_threshold;
 // TODO: merge it with the one in the config file
 unsigned int migrationThreshold = 1;
-unsigned int max_migrations;
 int range_expansion;
 unsigned int migration_cost;
 bool magical_migration;
@@ -154,9 +151,6 @@ void migration_reg_options(class OptionParser * opp) {
     option_parser_register(opp, "-migration_threshold", OPT_UINT32,
             &migration_threshold, "minimum number of touches to a 4kB dram page",
             "128");
-    option_parser_register(opp, "-max_migrations", OPT_UINT32,
-            &max_migrations, "maximum number of migrations",
-            "25");
     option_parser_register(opp, "-range_expansion", OPT_INT32,
             &range_expansion, "number of neighbouring pages to be migrated",
             "4");
@@ -1339,13 +1333,18 @@ void gpgpu_sim::calculateMigrationThreshold() {
 
 void gpgpu_sim::cycle()
 {
-    if (enableMigration 
-            && !sendForMigration.empty()
-            && (migrationFinished[sendForMigration.front()][1] == 0)) 
-    {
-        // Timestamp at which front page is blocked until
-        // migration is completed
-        migrationFinished[sendForMigration.front()][1] = gpu_sim_cycle + gpu_tot_sim_cycle;
+    if (enableMigration && !sendForMigrationPid.empty()) {
+        for (auto &it_pid : sendForMigrationPid) {
+            if (it_pid.second.empty()) 
+                continue;
+            unsigned long long page_addr_to_migrate = it_pid.second.front();
+            if (migrationFinished[page_addr_to_migrate][1] == 0) 
+            {
+                // Timestamp at which front page is blocked until
+                // migration is completed
+                migrationFinished[page_addr_to_migrate][1] = gpu_sim_cycle + gpu_tot_sim_cycle;
+            }
+        }
     }
 
     if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 10000ULL > last_updated_at) {
@@ -1451,49 +1450,53 @@ void gpgpu_sim::cycle()
             /* Migration queue: migrationQueue is structure which will contain addresses to
              * migrate from CO memory to BO memory
              */
-//            std::map<unsigned, std::list<unsigned long long> >::iterator it_mig = sendForMigrationPid.begin();
-//            for (; it_mig != sendForMigrationPid.end(); it_mig++) {
-//                std::list<unsigned long long>::iterator it = (it_mig->second).begin();
-//                for (; it != (it_mig->second).end(); it++) {
 
-                std::list<unsigned long long>::iterator it = sendForMigration.begin();
-                for (; it != sendForMigration.end(); it++) {
-                    unsigned long long page_addr = (*it);
-                    if (migrationQueue[(*it)] == 0) {
-                        // If the page reaches "migrating" state then migrate it
-                        if (migrationWaitCycle[(*it)] >= migration_cost && readyForNextMigration) {
-//                        if (readyForNextMigration) {
-//                        if (readyForNextMigration[it_mig->first]) {
+            for (auto &it_mig : sendForMigrationPid) {
+                if (it_mig.second.empty())
+                    continue;
+                unsigned long long page_addr = it_mig.second.front();
+
+                if (migrationQueue[page_addr] == 0) {
+                    // If the page reaches "migrating" state then migrate it
+                    if (readyForNextMigration[it_mig.first]) {
+                        if (migrationWaitCycle[page_addr] >= migration_cost) {
+
                             // clear migration wait cycle
-                            migrationWaitCycle[(*it)] = 0;
+                            migrationWaitCycle[page_addr] = 0;
+                            
                             // migrate the page, send requests to DRAMs
-                            migration_unit->migratePage((*it));
+                            migration_unit->migratePage(page_addr);
+                            
                             // Migrate one page in a cycle and try for others in the
                             // next cycle
-                            readyForNextMigration = false;
-//                            readyForNextMigration[it_mig->first] = false;
+                            readyForNextMigration[it_mig.first] = false;
+                            
                             // set the migrationQueue state such that it cannot
                             // re-enter to be re-migrated
-                            migrationQueue[(*it)] = (1<<43);
-                            // Timestamp at which front page's is ready to be migrated and read and write requests are now sent to the respective memory controllers
-                            migrationFinished[page_addr][2] = gpu_sim_cycle + gpu_tot_sim_cycle;
+                            migrationQueue[page_addr] = (1<<43);
+                            
+                            // Timestamp at which front page's is ready to be
+                            // migrated and read and write requests are now sent
+                            // to the respective memory controllers
+                            migrationFinished[page_addr][2] = gpu_sim_cycle +
+                                gpu_tot_sim_cycle;
 
                             /* For magical migration
-                             */
+                            */
                             if (magical_migration) {
                                 migrationQueue.erase(page_addr);
                                 migrationWaitCycle.erase(page_addr);
+                            
                                 // Timestamp at which front page's migration is complete
-                                migrationFinished[page_addr][3] = gpu_sim_cycle + gpu_tot_sim_cycle;
-                                sendForMigration.remove(page_addr);
-                                readyForNextMigration = true;
+                                migrationFinished[page_addr][3] = gpu_sim_cycle
+                                    + gpu_tot_sim_cycle;
+                                sendForMigrationPid[it_mig.first].remove(page_addr);
+                                readyForNextMigration[it_mig.first] = false;
                             }
-                            break;
-                        }
-                        else migrationWaitCycle[(*it)]++;
+                        } else migrationWaitCycle[page_addr]++;
                     }
                 }
-//            }
+            }
         }
     }
 
@@ -1878,4 +1881,16 @@ unsigned gpgpu_sim::calculateBWRatio() {
     if (ddr != 0)
         return ((float) gddr)/((float)(ddr+gddr))*100.0;
     else return 100;
+}
+
+unsigned whichDDRPartition(unsigned long long page_addr, const class memory_config *memConfig)
+{
+    mem_access_t accessSDDR(MEM_MIGRATE_R, page_addr, 128U, 0);
+    const class memory_config* memConfigSDDR = &(memConfig->m_memory_config_types->memory_config_array[0]);
+    mem_fetch *mfSDDR = new mem_fetch( accessSDDR, 
+            READ_PACKET_SIZE, 
+            memConfigSDDR, 0);
+    unsigned global_spidSDDR = mfSDDR->get_tlx_addr().chip; 
+    delete mfSDDR;
+    return global_spidSDDR;
 }

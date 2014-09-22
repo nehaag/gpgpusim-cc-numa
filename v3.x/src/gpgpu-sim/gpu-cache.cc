@@ -1274,11 +1274,12 @@ data_cache::access( new_addr_type addr,
                     std::list<cache_event> &events )
 {
     new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
-    if (enableMigration && !sendForMigration.empty() && 
-            (page_addr == sendForMigration.front()) &&
-            !block_on_migration
-            ) {
-        return HIT;
+    for (auto &it_pid : sendForMigrationPid) {
+        if (enableMigration && !(it_pid.second).empty() 
+                && (page_addr == it_pid.second.front())
+                && !block_on_migration) {
+            return HIT;
+        }
     }
     assert( mf->get_data_size() <= m_config.get_line_sz());
     bool wr = mf->get_is_write();
