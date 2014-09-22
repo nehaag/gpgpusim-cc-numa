@@ -322,9 +322,6 @@ void dram_t::fakeMigration(class mem_fetch *data) {
             // Timestamp at which front page's migration is complete
             migrationFinished[page_addr][3] = gpu_sim_cycle + gpu_tot_sim_cycle;
             sendForMigration.remove(page_addr);
-            // Timestamp at which front page is blocked until
-            // migration is completed
-            migrationFinished[sendForMigration.front()][1] = gpu_sim_cycle + gpu_tot_sim_cycle;
             // Determine the source partition of the request and hence
             // remove the request from the respective queues
             //                      unsigned partition = whichDDRPartition(page_addr);
