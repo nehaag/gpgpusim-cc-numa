@@ -39,6 +39,7 @@
 #include <stdio.h>
 #include <deque>
 #include <bitset>
+#include <array>
 
 #include "migrate.h"
 
@@ -363,7 +364,7 @@ extern bool pauseMigration;
 extern bool readyForNextMigration;
 //extern bool readyForNextMigration[4];
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
-extern std::map<unsigned long long, std::pair<unsigned long long, unsigned long long> > migrationFinished;
+extern std::map<unsigned long long, std::array<unsigned long long, 4> > migrationFinished;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;
 extern std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 
@@ -385,6 +386,7 @@ extern bool checkAllBitsBelowReset(uint64_t x, uint64_t pos);
 extern void setBit(uint64_t &x, uint64_t pos);
 extern void resetBit(uint64_t &x, uint64_t pos);
 void printMigrationQueue();
+void printMigrationFinishedQueue();
 
 class gpgpu_sim_config : public power_config, public gpgpu_functional_sim_config {
 public:

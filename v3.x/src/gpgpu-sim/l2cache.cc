@@ -341,7 +341,7 @@ void memory_partition_unit::dram_cycle()
                     // evicting(1)
 
 //                    migrationQueue[page_addr] = ((1ULL << 42) - 1ULL);
-//                    migrationFinished[page_addr_in_range] = std::make_pair(gpu_sim_cycle + gpu_tot_sim_cycle, 0);
+//                    migrationFinished[page_addr_in_range][0] = gpu_sim_cycle + gpu_tot_sim_cycle;
 //                    migrationWaitCycle[page_addr] = 0;
 //                    sendForMigration.push_back(page_addr);
 
@@ -349,20 +349,22 @@ void memory_partition_unit::dram_cycle()
                         && (mf->get_sub_partition_id() < 8)
                         && (mf->get_access_type() != INST_ACC_R)
                         && (rand() % 100 < page_ratio)
-                        && (num_access_per_cacheline[page_addr][3] >= migration_threshold)
-                        && (mf->get_addr() < 2415919104))
+                        && (num_access_per_cacheline[page_addr][3] >= migration_threshold))
                 {
                     /* Range expansion
                      */
                     for (long long i=(-range_expansion); i<=range_expansion; i++) {
                         unsigned long long page_addr_in_range = page_addr + i*4096;
                         if (!migrationQueue.count(page_addr_in_range)
-                                && !migrationFinished.count(page_addr_in_range)) {
+                                && !migrationFinished.count(page_addr_in_range)
+                                && page_addr_in_range >= GLOBAL_HEAP_START
+                                && page_addr_in_range < 274877906944) {
                             if (!flush_on_migration_enable)
                                 migrationQueue[page_addr_in_range] = 0;
                             else
                                 migrationQueue[page_addr_in_range] = ((1ULL << 42) - 1ULL);
-                            migrationFinished[page_addr_in_range] = std::make_pair(gpu_sim_cycle + gpu_tot_sim_cycle, 0);
+                            // Timestamp at which a page is marked for migration
+                            migrationFinished[page_addr_in_range][0] = gpu_sim_cycle + gpu_tot_sim_cycle;
                             migrationWaitCycle[page_addr_in_range] = 0;
                             sendForMigration.push_back(page_addr_in_range);
                         }

@@ -106,7 +106,7 @@ std::list<unsigned long long> sendForMigration;
 std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
-std::map<unsigned long long, std::pair<unsigned long long, unsigned long long> > migrationFinished;
+std::map<unsigned long long, std::array<unsigned long long, 4> > migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
 std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 bool readyForNextMigration = true;
@@ -1097,12 +1097,9 @@ void gpgpu_sim::gpu_print_stat()
     }
 
     // Migration stats
-    std::map<unsigned long long, std::pair<unsigned long long, unsigned long long> >::iterator it_migration = migrationFinished.begin();
     printf("Migration stats start\n");
     printf("Addr->time\n");
-    for (; it_migration != migrationFinished.end(); ++it_migration) {
-        printf("%llu %llu %lluu\n", it_migration->first, it_migration->second.first, it_migration->second.second);
-    }
+    printMigrationFinishedQueue();
     printf("Migration stats end\n");
 
     printf("Number of stalls because of page locking: %llu\n", pageBlockingStall);
@@ -1342,6 +1339,14 @@ void gpgpu_sim::calculateMigrationThreshold() {
 
 void gpgpu_sim::cycle()
 {
+    if (enableMigration 
+            && !sendForMigration.empty()
+            && (migrationFinished[sendForMigration.front()][1] == 0)) 
+    {
+        // Timestamp at which front page is blocked until
+        // migration is completed
+        migrationFinished[sendForMigration.front()][1] = gpu_sim_cycle + gpu_tot_sim_cycle;
+    }
 
     if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 10000ULL > last_updated_at) {
         last_updated_at++;
@@ -1453,6 +1458,7 @@ void gpgpu_sim::cycle()
 
                 std::list<unsigned long long>::iterator it = sendForMigration.begin();
                 for (; it != sendForMigration.end(); it++) {
+                    unsigned long long page_addr = (*it);
                     if (migrationQueue[(*it)] == 0) {
                         // If the page reaches "migrating" state then migrate it
                         if (migrationWaitCycle[(*it)] >= migration_cost && readyForNextMigration) {
@@ -1469,14 +1475,16 @@ void gpgpu_sim::cycle()
                             // set the migrationQueue state such that it cannot
                             // re-enter to be re-migrated
                             migrationQueue[(*it)] = (1<<43);
+                            // Timestamp at which front page's is ready to be migrated and read and write requests are now sent to the respective memory controllers
+                            migrationFinished[page_addr][2] = gpu_sim_cycle + gpu_tot_sim_cycle;
 
                             /* For magical migration
                              */
                             if (magical_migration) {
-                                unsigned long long page_addr = (*it);
                                 migrationQueue.erase(page_addr);
                                 migrationWaitCycle.erase(page_addr);
-                                migrationFinished[page_addr].second = gpu_sim_cycle + gpu_tot_sim_cycle;
+                                // Timestamp at which front page's migration is complete
+                                migrationFinished[page_addr][3] = gpu_sim_cycle + gpu_tot_sim_cycle;
                                 sendForMigration.remove(page_addr);
                                 readyForNextMigration = true;
                             }
@@ -1805,16 +1813,20 @@ void resetBit(uint64_t &x, uint64_t pos) {
     x &= ~(1UL << pos);
 }
 
+void printMigrationFinishedQueue() {
+    std::map<unsigned long long, std::array<unsigned long long, 4> >::iterator it_migration =  migrationFinished.begin();
+    for (; it_migration != migrationFinished.end(); ++it_migration) {
+        printf("%llu %llu %llu %llu %llu\n", it_migration->first, it_migration->second[0], it_migration->second[1], it_migration->second[2], it_migration->second[3]);
+    }
+}
+
 void printMigrationQueue() {
     std::map<unsigned long long, uint64_t>::iterator it = migrationQueue.begin();
     for (; it != migrationQueue.end(); ++it) {
         printf("addr: %llu, state: 0x%lx\n", it->first, it->second);
     }
     printf("Migration done for addresses: \n");
-    std::map<unsigned long long, std::pair<unsigned long long, unsigned long long> >::iterator it_migration =  migrationFinished.begin();
-    for (; it_migration != migrationFinished.end(); ++it_migration) {
-        printf("%llu %llu %llu\n", it_migration->first, it_migration->second.first, it_migration->second.second);
-    }
+    printMigrationFinishedQueue();
 }
 
 void printMap() {
