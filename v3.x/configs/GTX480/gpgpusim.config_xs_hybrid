@@ -15,11 +15,11 @@
 -gpgpu_n_mem_types 2
 -enable_addr_limit 2
 -line_ratio 10
--data_ratio 100
+-data_ratio 30
 -cachelines 70556
 
 # page_ratio = ratio of pages that are sent to GDDR
--page_ratio 70
+-page_ratio 20
 -pages 100000000
 -gpgpu_n_mem_t1 4
 -gpgpu_n_mem_t2 8
@@ -27,11 +27,11 @@
 -gpgpu_n_sub_partition_per_mchannel_t2 2
 
 # migration configs
--enable_migration 1
+-enable_migration 0
 -block_on_migration 1
 -flush_on_migration_enable 1
 -migration_threshold 1
--range_expansion 64
+-range_expansion 0
 -magical_migration 0
 -migration_cost 0
 

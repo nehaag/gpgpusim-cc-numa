@@ -105,7 +105,7 @@ typedef unsigned long long new_addr_type;
 std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
-std::map<unsigned long long, std::array<unsigned long long, 4> > migrationFinished;
+std::map<unsigned long long, std::array<unsigned long long, 5> > migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
 std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 bool readyForNextMigration[4] = {true, true, true, true};
@@ -1324,9 +1324,10 @@ void gpgpu_sim::calculateMigrationThreshold() {
     if ((calculateBWRatio() > 65) && (calculateBWRatio() < 75)) {
         pauseMigration = true;
     } else if (calculateBWRatio() >= 75) {
-        increaseMigrationThreshold();
+        pauseMigration = false;
+//        increaseMigrationThreshold();
     } else {
-        decreaseMigrationThreshold();
+//        decreaseMigrationThreshold();
         pauseMigration = false;
     }
 }
@@ -1817,9 +1818,9 @@ void resetBit(uint64_t &x, uint64_t pos) {
 }
 
 void printMigrationFinishedQueue() {
-    std::map<unsigned long long, std::array<unsigned long long, 4> >::iterator it_migration =  migrationFinished.begin();
+    std::map<unsigned long long, std::array<unsigned long long, 5> >::iterator it_migration =  migrationFinished.begin();
     for (; it_migration != migrationFinished.end(); ++it_migration) {
-        printf("%llu %llu %llu %llu %llu\n", it_migration->first, it_migration->second[0], it_migration->second[1], it_migration->second[2], it_migration->second[3]);
+        printf("%llu %llu %llu %llu %llu %llu\n", it_migration->first, it_migration->second[0], it_migration->second[1], it_migration->second[2], it_migration->second[3], it_migration->second[4]);
     }
 }
 
@@ -1830,6 +1831,16 @@ void printMigrationQueue() {
     }
     printf("Migration done for addresses: \n");
     printMigrationFinishedQueue();
+}
+
+void printSendForMigration() {
+    for (auto &it_pid : sendForMigrationPid) {
+        if (it_pid.second.empty()) 
+            continue;
+        for (auto &it : it_pid.second) {
+            printf("%u %llu 0x%lx\n", it_pid.first, it, migrationQueue[it]);
+        }
+    }
 }
 
 void printMap() {
