@@ -308,8 +308,12 @@ void memory_partition_unit::dram_cycle()
                 
                 // Total number of accesses, summing all the epochs
                 num_access_per_cacheline[cacheline][3] += 1;
-                if (num_access_per_cacheline[cacheline][3] == 1)
-                    migrationFinished[cacheline][4] = gpu_sim_cycle + gpu_tot_sim_cycle;
+                if (num_access_per_cacheline[cacheline][3] == 1) {
+                    if (mf->get_sub_partition_id() < 8)
+                        migrationFinished[cacheline][4] = gpu_sim_cycle + gpu_tot_sim_cycle;
+                    else
+                        migrationFinished[cacheline][5] = gpu_sim_cycle + gpu_tot_sim_cycle;
+                }
 
                 // Track cycle/timestamp when number of accesses to a page becomes 1, 32,
                 // 64, 96, 128, 160 and 192
@@ -340,8 +344,9 @@ void memory_partition_unit::dram_cycle()
                 {
                     /* Range expansion
                      */
-//                    for (long long i=(-range_expansion); i<=range_expansion; i++) {
-                    for (long long i=(2*range_expansion); i>=0; i--) {
+                    unsigned count = 0;
+                    for (long long i=(-range_expansion); i<=range_expansion && (count <= max_migrations); i++) {
+//                    for (long long i=(2*range_expansion); i>=0; i--) {
                         unsigned long long page_addr_in_range = page_addr + i*4096;
                         if (!migrationQueue.count(page_addr_in_range)
                                 && !migrationFinished.count(page_addr_in_range)
@@ -365,6 +370,7 @@ void memory_partition_unit::dram_cycle()
                             assert(partition < 4);
                             
                             sendForMigrationPid[partition].push_back(page_addr_in_range);
+                            count++;
                         }
                     }
                 }

@@ -362,7 +362,7 @@ extern bool enableMigration;
 extern bool pauseMigration;
 extern bool readyForNextMigration[4];
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
-extern std::map<unsigned long long, std::array<unsigned long long, 5> > migrationFinished;
+extern std::map<unsigned long long, std::array<unsigned long long, 6> > migrationFinished;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;
 extern std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 
@@ -372,6 +372,7 @@ extern std::map<unsigned, new_addr_type>  l2_wb_map;
 extern unsigned int migration_threshold;
 extern unsigned int migrationThreshold;
 extern int range_expansion;
+extern unsigned int max_migrations; 
 extern unsigned int migration_cost;
 extern bool magical_migration;
 extern bool flush_on_migration_enable;

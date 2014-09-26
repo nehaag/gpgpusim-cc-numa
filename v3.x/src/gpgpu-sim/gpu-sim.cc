@@ -105,7 +105,7 @@ typedef unsigned long long new_addr_type;
 std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
-std::map<unsigned long long, std::array<unsigned long long, 5> > migrationFinished;
+std::map<unsigned long long, std::array<unsigned long long, 6> > migrationFinished;
 std::map<unsigned long long, unsigned> reCheckForMigration;
 std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 bool readyForNextMigration[4] = {true, true, true, true};
@@ -118,6 +118,7 @@ unsigned int migration_threshold;
 // TODO: merge it with the one in the config file
 unsigned int migrationThreshold = 1;
 int range_expansion;
+unsigned int max_migrations;
 unsigned int migration_cost;
 bool magical_migration;
 bool flush_on_migration_enable;
@@ -154,6 +155,9 @@ void migration_reg_options(class OptionParser * opp) {
     option_parser_register(opp, "-range_expansion", OPT_INT32,
             &range_expansion, "number of neighbouring pages to be migrated",
             "4");
+    option_parser_register(opp, "-max_migrations", OPT_INT32,
+            &max_migrations, "maximum number of pages to be migrated with the specified range",
+            "0");
     option_parser_register(opp, "-migration_cost", OPT_UINT32,
             &migration_cost, "cost of migration to include TLB flushing etc",
             "1000");
@@ -1820,9 +1824,9 @@ void resetBit(uint64_t &x, uint64_t pos) {
 }
 
 void printMigrationFinishedQueue() {
-    std::map<unsigned long long, std::array<unsigned long long, 5> >::iterator it_migration =  migrationFinished.begin();
+    std::map<unsigned long long, std::array<unsigned long long, 6> >::iterator it_migration =  migrationFinished.begin();
     for (; it_migration != migrationFinished.end(); ++it_migration) {
-        printf("%llu %llu %llu %llu %llu %llu\n", it_migration->first, it_migration->second[0], it_migration->second[1], it_migration->second[2], it_migration->second[3], it_migration->second[4]);
+        printf("%llu %llu %llu %llu %llu %llu %llu\n", it_migration->first, it_migration->second[0], it_migration->second[1], it_migration->second[2], it_migration->second[3], it_migration->second[4], it_migration->second[5]);
     }
 }
 
