@@ -1275,7 +1275,9 @@ data_cache::access( new_addr_type addr,
 {
     new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
     for (auto &it_pid : sendForMigrationPid) {
-        if (enableMigration && !(it_pid.second).empty() 
+        if (enableMigration 
+                && !pauseMigration
+                && !(it_pid.second).empty() 
                 && (page_addr == it_pid.second.front())
                 && !block_on_migration) {
             return HIT;

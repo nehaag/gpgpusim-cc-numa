@@ -332,6 +332,7 @@ void memory_partition_unit::dram_cycle()
 //                if (enableMigration && !pauseMigration &&
 //                         (migrationFinished.size() < page_ratio/100.0*pages)
                 if(enableMigration
+                        && !pauseMigration
                         && (mf->get_sub_partition_id() < 8)
                         && (mf->get_access_type() != INST_ACC_R)
                         && (rand() % 100 < page_ratio)
@@ -391,7 +392,9 @@ void memory_partition_unit::dram_cycle()
         if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
     }
 
-    if (enableMigration && !migrationQueue.empty() && flush_on_migration_enable) {
+    if (enableMigration 
+            && !pauseMigration
+            && !migrationQueue.empty() && flush_on_migration_enable) {
         for (auto &it_pid : sendForMigrationPid) {
             if (it_pid.second.empty())
                 continue;
@@ -702,7 +705,9 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
         if (mf->get_mem_config()->type == 1) assert(global_spid < mf->get_mem_config()->m_memory_config_types->memory_config_array[0].m_n_mem_sub_partition);
     }
 
-    if (enableMigration && !migrationQueue.empty() && flush_on_migration_enable) {
+    if (enableMigration 
+            && !pauseMigration
+            && !migrationQueue.empty() && flush_on_migration_enable) {
         for (auto &it_pid : sendForMigrationPid) {
             if (it_pid.second.empty())
                 continue;

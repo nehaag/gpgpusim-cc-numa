@@ -1334,7 +1334,9 @@ void gpgpu_sim::calculateMigrationThreshold() {
 
 void gpgpu_sim::cycle()
 {
-    if (enableMigration && !sendForMigrationPid.empty()) {
+    if (enableMigration 
+            && !pauseMigration
+            && !sendForMigrationPid.empty()) {
         for (auto &it_pid : sendForMigrationPid) {
             if (it_pid.second.empty()) 
                 continue;
@@ -1348,7 +1350,7 @@ void gpgpu_sim::cycle()
         }
     }
 
-    if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 10000ULL > last_updated_at) {
+    if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 1000ULL > last_updated_at) {
         last_updated_at++;
     
         for (unsigned i=0;i<m_memory_config->m_n_mem;i++){
@@ -1362,7 +1364,7 @@ void gpgpu_sim::cycle()
 
         // TODO: currently calculateMigrationThreshold is commented out
         // since it has not been completely implemented
-//        calculateMigrationThreshold();
+        calculateMigrationThreshold();
     }
 
    int clock_mask = next_clock_domain();

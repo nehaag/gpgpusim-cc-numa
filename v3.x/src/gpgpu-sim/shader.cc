@@ -1399,7 +1399,10 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
      */
     new_addr_type page_addr = mf->get_addr() & ~(4095ULL);
     for (auto &it_pid : sendForMigrationPid) {
-        if (enableMigration && !(it_pid.second).empty() && (page_addr == (it_pid.second).front())) {
+        if (enableMigration 
+                && !pauseMigration
+                && !(it_pid.second).empty() 
+                && (page_addr == (it_pid.second).front())) {
             pageBlockingStall++;
             if (block_on_migration) {
                 delete mf;
@@ -1482,7 +1485,7 @@ bool ldst_unit::texture_cycle( warp_inst_t &inst, mem_stage_stall_type &rc_fail,
 
 void ldst_unit::flushOnMigration()
 {
-    if (!enableMigration)
+    if (!enableMigration || pauseMigration)
         return;
     for (auto &it_pid : sendForMigrationPid) {
         if (it_pid.second.empty())
@@ -1919,7 +1922,9 @@ void ldst_unit::issue( register_set &reg_set )
 */
 void ldst_unit::cycle()
 {
-    if (enableMigration && !migrationQueue.empty()) {
+    if (enableMigration 
+            && !pauseMigration
+            && !migrationQueue.empty()) {
         flushOnMigration();
     }
    writeback();
