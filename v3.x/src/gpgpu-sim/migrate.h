@@ -41,6 +41,7 @@ class migrate{
          * overloaded function
          */
         void migratePage(mem_addr addrToHBM);
+        void migratePageToDDR(mem_addr addrToHBM);
 
         /*Select a victim page in HBM to be migrated to SDDR */
         mem_addr selectHBMVictim();

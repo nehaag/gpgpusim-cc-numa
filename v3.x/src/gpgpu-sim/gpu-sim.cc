@@ -1356,6 +1356,9 @@ void gpgpu_sim::cycle()
 
     if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 10000ULL > last_updated_at) {
         last_updated_at++;
+
+        calculateMigrationThreshold();
+        printf("BW-ratio: %u\n", calculateBWRatio());
     
         for (unsigned i=0;i<m_memory_config->m_n_mem;i++){
             m_memory_partition_unit[i]->get_dram()->incrementVectors(); 
@@ -1365,11 +1368,6 @@ void gpgpu_sim::cycle()
 //        for (; it_pageCount != globalPageCount.end(); it_pageCount++) {
 //            it_pageCount->second.push_back(0);
 //        }
-
-        // TODO: currently calculateMigrationThreshold is commented out
-        // since it has not been completely implemented
-        calculateMigrationThreshold();
-        printf("BW-ratio: %u\n", calculateBWRatio());
     }
 
    int clock_mask = next_clock_domain();
@@ -1898,6 +1896,8 @@ unsigned gpgpu_sim::calculateBWRatio() {
 
     printf("ddr: %u, gddr: %u\n", ddr, gddr);
 
+    if (ddr == 0 && gddr == 0)
+        return 0;
     if (ddr != 0)
         return ((float) gddr)/((float)(ddr+gddr))*100.0;
     else return 100;

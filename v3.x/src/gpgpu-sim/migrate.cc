@@ -118,8 +118,61 @@ void migrate::migratePage(mem_addr addrToHBM) {
 
     /*Update the global structure for page mapping */
     m_map_online[pageAddrToHBM]  = 1;
-    m_map[pageAddrToHBM]  = 1;
+    m_map[pageaddrtohbm]  = 1;
 }
+
+void migrate::migratePageToDDR(mem_addr addrToHBM) {
+    //TODO: assign memConfigSDDR and memConfigHBM approporiately
+    addrMigrateToHBM = addrToHBM;
+
+    /*Determine the page address */
+    //TODO: page size is 4kB
+    mem_addr pageAddrToHBM = (addrToHBM >> 12ULL) << 12ULL;
+
+    /*
+     * Build the packet mem_fetch and determine the global_spid for the packet
+     */
+    /*SDDR request */
+    mem_access_t accessSDDR(MEM_MIGRATE_R, pageAddrToHBM, 128U, 0);
+    mem_fetch *mfSDDR = new mem_fetch( accessSDDR, 
+                                   READ_PACKET_SIZE, 
+                                   memConfigSDDR, 0);
+//    unsigned global_spidSDDR = mfSDDR->get_sub_partition_id(); 
+    unsigned global_spidSDDR = mfSDDR->get_tlx_addr().chip; 
+
+    /*HBM request */
+    mem_access_t accessHBM(MEM_MIGRATE_R, pageAddrToHBM, 128U, 0);
+    mem_fetch *mfHBM = new mem_fetch( accessHBM, 
+                                   READ_PACKET_SIZE, 
+                                   memConfigHBM, 1);
+    unsigned global_spidHBM = mfHBM->get_tlx_addr().chip + memConfigHBM->m_memory_config_types->memory_config_array[0].m_n_mem;
+//    unsigned global_spidHBM = mfHBM->get_sub_partition_id() / (memConfigHBM->m_memory_config_types->memory_config_array[0].m_n_sub_partition_per_memory_channel);
+
+    /*Determine the dram controller pointer */
+    class dram_t *m_dramSDDR = mMemoryPartitionUnit[global_spidSDDR]->get_dram();
+    class dram_t *m_dramHBM = mMemoryPartitionUnit[global_spidHBM]->get_dram();
+
+    /* 
+     * Delete the mem_fetch packets as new will be created in the respective
+     * controllers, we created them earlier to get the global_spid of the
+     * respective memory technology
+     */
+    delete mfSDDR;
+    delete mfHBM;
+    
+    /*Send the page migration request to respective DRAM controllers */
+    if (!magical_migration) {
+//        unsigned int numReqSDDR = m_dramSDDR->migratePage(pageAddrToHBM,
+//                pageAddrToHBM, m_dramHBM, 0, memConfigSDDR, memConfigHBM, 0);
+        unsigned int numReqSDDR = m_dramHBM->migratePage(pageAddrToHBM,
+                pageAddrToHBM, m_dramSDDR, 0, memConfigHBM, memConfigSDDR, 0);
+    }
+
+    /*Update the global structure for page mapping */
+    m_map_online[pageAddrToHBM]  = 0;
+    m_map[pageaddrtohbm]  = 0;
+}
+
 
 mem_addr migrate::selectHBMVictim() {
     return 0;

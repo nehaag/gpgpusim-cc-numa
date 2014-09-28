@@ -115,7 +115,7 @@
 -rop_latency_t1 120
 -dram_latency_t1 100
 -rop_latency_t2 120
--dram_latency_t2 100
+-dram_latency_t2 10
 
 # dram model config
 -gpgpu_dram_scheduler_t1 1
