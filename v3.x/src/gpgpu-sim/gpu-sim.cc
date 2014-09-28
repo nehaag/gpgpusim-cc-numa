@@ -1328,7 +1328,7 @@ void gpgpu_sim::calculateMigrationThreshold() {
     if ((calculateBWRatio() > 65) && (calculateBWRatio() < 75)) {
         pauseMigration = true;
     } else if (calculateBWRatio() >= 75) {
-        pauseMigration = false;
+        pauseMigration = true;
 //        increaseMigrationThreshold();
     } else {
 //        decreaseMigrationThreshold();
@@ -1368,7 +1368,8 @@ void gpgpu_sim::cycle()
 
         // TODO: currently calculateMigrationThreshold is commented out
         // since it has not been completely implemented
-//        calculateMigrationThreshold();
+        calculateMigrationThreshold();
+        printf("BW-ratio: %u\n", calculateBWRatio());
     }
 
    int clock_mask = next_clock_domain();
@@ -1894,6 +1895,8 @@ unsigned gpgpu_sim::calculateBWRatio() {
         else
             gddr += m_memory_partition_unit[i]->getTotDramReq();
     }
+
+    printf("ddr: %u, gddr: %u\n", ddr, gddr);
 
     if (ddr != 0)
         return ((float) gddr)/((float)(ddr+gddr))*100.0;

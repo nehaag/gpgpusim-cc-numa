@@ -345,11 +345,12 @@ void memory_partition_unit::dram_cycle()
                     /* Range expansion
                      */
                     unsigned count = 0;
-                    for (long long i=(-range_expansion); i<=range_expansion && (count <= max_migrations); i++) {
-//                    for (long long i=(2*range_expansion); i>=0; i--) {
+//                    for (long long i=(-range_expansion); i<=range_expansion && (count <= max_migrations); i++) {
+                    for (long long i=(2*range_expansion); i>=0; i--) {
                         unsigned long long page_addr_in_range = page_addr + i*4096;
                         if (!migrationQueue.count(page_addr_in_range)
-                                && !migrationFinished.count(page_addr_in_range)
+                                && (!migrationFinished.count(page_addr_in_range)
+                                    || migrationFinished[page_addr_in_range][0] == 0)
                                 && page_addr_in_range >= GLOBAL_HEAP_START
                                 && page_addr_in_range < 274877906944) {
                             if (!flush_on_migration_enable)
