@@ -118,7 +118,7 @@ void migrate::migratePage(mem_addr addrToHBM) {
 
     /*Update the global structure for page mapping */
     m_map_online[pageAddrToHBM]  = 1;
-    m_map[pageaddrtohbm]  = 1;
+    m_map[pageAddrToHBM]  = 1;
 }
 
 void migrate::migratePageToDDR(mem_addr addrToHBM) {
@@ -170,7 +170,7 @@ void migrate::migratePageToDDR(mem_addr addrToHBM) {
 
     /*Update the global structure for page mapping */
     m_map_online[pageAddrToHBM]  = 0;
-    m_map[pageaddrtohbm]  = 0;
+    m_map[pageAddrToHBM]  = 0;
 }
 
 
