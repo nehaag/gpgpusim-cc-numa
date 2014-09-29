@@ -29,6 +29,7 @@
 # migration configs
 -enable_migration 1
 -block_on_migration 1
+-limit_migration_rate 1
 -flush_on_migration_enable 1
 -migration_threshold 1
 -range_expansion 0

@@ -123,6 +123,7 @@ unsigned int migration_cost;
 bool magical_migration;
 bool flush_on_migration_enable;
 bool block_on_migration;
+bool limit_migration_rate;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -169,6 +170,9 @@ void migration_reg_options(class OptionParser * opp) {
             "true");
     option_parser_register(opp, "-block_on_migration", OPT_BOOL,
             &block_on_migration, "block any request to the migrating page",
+            "true");
+    option_parser_register(opp, "-limit_migration_rate", OPT_BOOL,
+            &limit_migration_rate, "enable optimal bw-ratio cap on migration",
             "true");
 }
 
@@ -1357,7 +1361,8 @@ void gpgpu_sim::cycle()
     if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 10000ULL > last_updated_at) {
         last_updated_at++;
 
-        calculateMigrationThreshold();
+        if (limit_migration_rate)
+            calculateMigrationThreshold();
         printf("BW-ratio: %u\n", calculateBWRatio());
     
         for (unsigned i=0;i<m_memory_config->m_n_mem;i++){

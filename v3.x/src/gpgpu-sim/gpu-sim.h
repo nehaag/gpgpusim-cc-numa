@@ -377,6 +377,7 @@ extern unsigned int migration_cost;
 extern bool magical_migration;
 extern bool flush_on_migration_enable;
 extern bool block_on_migration;
+extern bool limit_migration_rate;
 
 extern bool checkBit(uint64_t x, uint64_t pos);
 extern bool checkAllBitsBelow(uint64_t x, uint64_t pos);
