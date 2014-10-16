@@ -875,5 +875,6 @@ void dram_t::printMigrationStats( FILE* simFile) const
 unsigned dram_t::getTotReq() {
     if (num_actual.size() == 0)
         return 0;
-    return num_actual.back() + num_migration_write.back() + num_migration_read.back();
+    return n_req;
+//    return num_actual.back() + num_migration_write.back() + num_migration_read.back();
 }

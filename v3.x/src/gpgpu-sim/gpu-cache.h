@@ -424,6 +424,8 @@ public:
 
     // For migration
     unsigned flush(new_addr_type block_addr); 
+    // return true, if the mshr are complete, else return false
+    bool isEmpty() const;
 
     // set MSHR entry not to fill in the cache when response comes back from the
     // lower emmory level, this case is specially used in migration

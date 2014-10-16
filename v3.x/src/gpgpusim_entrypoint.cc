@@ -31,6 +31,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <signal.h>
 
 #include "option_parser.h"
 #include "cuda-sim/cuda-sim.h"
@@ -221,6 +222,11 @@ void foo(void) {
     g_the_gpu->print_stats();
 }
 
+void foo2(int a) {
+    foo();
+    exit(1);
+}
+
 gpgpu_sim *gpgpu_ptx_sim_init_perf()
 {
    srand(1);
@@ -257,6 +263,8 @@ gpgpu_sim *gpgpu_ptx_sim_init_perf()
    sem_init(&g_sim_signal_exit,0,0);
 
     atexit (foo);
+
+    signal(SIGINT, foo2);
 
    return g_the_gpu;
 }

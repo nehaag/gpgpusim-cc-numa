@@ -390,6 +390,14 @@ void mshr_table::display( FILE *fp ) const{
     }
 }
 
+bool mshr_table::isEmpty() const{
+    for ( table::const_iterator e=m_data.begin(); e!=m_data.end(); ++e ) {
+        if (!e->second.m_list.empty())
+            return false;
+    }
+    return true;
+}
+
 unsigned mshr_table::flush(new_addr_type block_addr) {
     bool mshr_hit = probe(block_addr);
     if (mshr_hit) {
@@ -1317,12 +1325,24 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
          * Check MSHR's requests, if there are any outstanding misses to the lower
          * memory hierarchy, wait for it to clear.
          */
-        for (unsigned i=0; i < 32; i++) {
-            block_addr = page_addr + 128ULL * i;
-            bool mshr_hit = m_mshrs.probe(block_addr);
-            if (mshr_hit) {
-                return false;
+        if (!drain_all_mshrs) {
+            /* Step1: type a
+             * Wait for only those mshrs, which have outstanding miss to the
+             * migration page
+             */
+            for (unsigned i=0; i < 32; i++) {
+                block_addr = page_addr + 128ULL * i;
+                bool mshr_hit = m_mshrs.probe(block_addr);
+                if (mshr_hit) {
+                    return false;
+                }
             }
+        } else {
+            /* Step 1: type b
+             * Wait for all the mshrs to complete
+             */
+            if (!m_mshrs.isEmpty())
+                return false;
         }
 
         /* Step 2: 
@@ -1342,8 +1362,7 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
                 bool mshr_hit = m_mshrs.probe(block_addr);
                 if (!mshr_hit) {
                     if (status == MODIFIED) {   //it's a dirty line, evict it
-                        //TODO: L2_WRBK_ACC, change it to L1_WRBK_ACC 
-                        //                    assert(m_config.m_write_policy != WRITE_THROUGH)
+                        //assert(m_config.m_write_policy != WRITE_THROUGH)
                         mem_fetch *wb = m_memfetch_creator->alloc(block_addr,
                                 m_wrbk_type, m_config.get_line_sz(),true);
                         m_miss_queue.push_back(wb);

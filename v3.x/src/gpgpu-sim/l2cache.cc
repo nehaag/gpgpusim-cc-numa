@@ -326,6 +326,16 @@ void memory_partition_unit::dram_cycle()
                     threshold_cycle[cacheline][access_bin] = gpu_tot_sim_cycle + gpu_sim_cycle;
                 }
 
+                /* Account for when a page is accessed
+                 */
+                if (!migrationFinished.count(cacheline))
+                    accessDistribution[cacheline][0]++;
+                else {
+                    if (migrationFinished[cacheline][3] != 0)
+                        accessDistribution[cacheline][2]++;
+                    else accessDistribution[cacheline][1]++;
+                }
+
                 /* Trigger migration
                  * do not migrate if request is already in the correct
                  * portion, currently hardcoded to 2 subpartitions

@@ -106,6 +106,7 @@ std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
 std::map<unsigned long long, std::array<unsigned long long, 6> > migrationFinished;
+std::map<unsigned long long, std::array<unsigned long long, 3> > accessDistribution;
 std::map<unsigned long long, unsigned> reCheckForMigration;
 std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 bool readyForNextMigration[4] = {true, true, true, true};
@@ -124,6 +125,7 @@ bool magical_migration;
 bool flush_on_migration_enable;
 bool block_on_migration;
 bool limit_migration_rate;
+bool drain_all_mshrs;
 
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
@@ -174,6 +176,9 @@ void migration_reg_options(class OptionParser * opp) {
     option_parser_register(opp, "-limit_migration_rate", OPT_BOOL,
             &limit_migration_rate, "enable optimal bw-ratio cap on migration",
             "true");
+    option_parser_register(opp, "-drain_all_mshrs", OPT_BOOL,
+            &drain_all_mshrs, "drain all the mshrs on tlb shootdown",
+            "false");
 }
 
 
@@ -1109,6 +1114,8 @@ void gpgpu_sim::gpu_print_stat()
 
     printMigrationQueue();
 
+    printAccessDistribution();
+
     printf("\nNumber of touches per epoch\n");
 
     std::map<unsigned long long, std::map<unsigned, unsigned> >::iterator it_pageCount = globalPageCount.begin();
@@ -1358,8 +1365,9 @@ void gpgpu_sim::cycle()
         }
     }
 
-    if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 10000ULL > last_updated_at) {
+    if ((gpu_sim_cycle + gpu_tot_sim_cycle) / 100000ULL > last_updated_at) {
         last_updated_at++;
+        printf("gpu_tot_ipc = %12.4f\n", (float)(gpu_tot_sim_insn+gpu_sim_insn) / (gpu_tot_sim_cycle+gpu_sim_cycle));
 
         if (limit_migration_rate)
             calculateMigrationThreshold();
@@ -1474,9 +1482,29 @@ void gpgpu_sim::cycle()
 
                             // clear migration wait cycle
                             migrationWaitCycle[page_addr] = 0;
-                            
+
                             // migrate the page, send requests to DRAMs
                             migration_unit->migratePage(page_addr);
+
+                            /* For magical migration
+                            */
+                            if (magical_migration) {
+                                migrationQueue.erase(page_addr);
+                                migrationWaitCycle.erase(page_addr);
+                            
+                                // Timestamp at which front page's migration is complete
+                                migrationFinished[page_addr][2] = gpu_sim_cycle +
+                                    gpu_tot_sim_cycle;
+                                migrationFinished[page_addr][3] = gpu_sim_cycle
+                                    + gpu_tot_sim_cycle;
+//                                sendForMigrationPid[it_mig.first].remove(page_addr);
+//                                readyForNextMigration[it_mig.first] = false;
+                                unsigned partition = whichDDRPartition(page_addr,&(m_memory_config->memory_config_array[0]));
+                                assert(partition < 4);
+                                readyForNextMigration[partition] = true;
+                                sendForMigrationPid[partition].remove(page_addr);
+                            } else {
+                           
                             
                             // Migrate one page in a cycle and try for others in the
                             // next cycle
@@ -1491,19 +1519,8 @@ void gpgpu_sim::cycle()
                             // to the respective memory controllers
                             migrationFinished[page_addr][2] = gpu_sim_cycle +
                                 gpu_tot_sim_cycle;
-
-                            /* For magical migration
-                            */
-                            if (magical_migration) {
-                                migrationQueue.erase(page_addr);
-                                migrationWaitCycle.erase(page_addr);
-                            
-                                // Timestamp at which front page's migration is complete
-                                migrationFinished[page_addr][3] = gpu_sim_cycle
-                                    + gpu_tot_sim_cycle;
-                                sendForMigrationPid[it_mig.first].remove(page_addr);
-                                readyForNextMigration[it_mig.first] = false;
                             }
+
                         } else migrationWaitCycle[page_addr]++;
                     }
                 }
@@ -1841,6 +1858,13 @@ void printMigrationQueue() {
     }
     printf("Migration done for addresses: \n");
     printMigrationFinishedQueue();
+}
+
+void printAccessDistribution() {
+    printf("Access distribution before, when, after\n");
+    for (auto it : accessDistribution) {
+        printf("%llu %llu %llu %llu\n", it.first, it.second[0], it.second[1], it.second[2]);
+    }
 }
 
 void printSendForMigration() {

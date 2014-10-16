@@ -363,6 +363,7 @@ extern bool pauseMigration;
 extern bool readyForNextMigration[4];
 extern std::map<unsigned long long, unsigned> migrationWaitCycle;
 extern std::map<unsigned long long, std::array<unsigned long long, 6> > migrationFinished;
+extern std::map<unsigned long long, std::array<unsigned long long, 3> > accessDistribution;
 extern std::map<unsigned long long, unsigned> reCheckForMigration;
 extern std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
 
@@ -378,6 +379,7 @@ extern bool magical_migration;
 extern bool flush_on_migration_enable;
 extern bool block_on_migration;
 extern bool limit_migration_rate;
+extern bool drain_all_mshrs;
 
 extern bool checkBit(uint64_t x, uint64_t pos);
 extern bool checkAllBitsBelow(uint64_t x, uint64_t pos);
@@ -385,6 +387,7 @@ extern bool checkAllBitsBelowReset(uint64_t x, uint64_t pos);
 extern void setBit(uint64_t &x, uint64_t pos);
 extern void resetBit(uint64_t &x, uint64_t pos);
 void printMigrationQueue();
+void printAccessDistribution();
 void printMigrationFinishedQueue();
 unsigned whichDDRPartition(unsigned long long page_addr, const class memory_config *memConfig);
 
