@@ -452,6 +452,12 @@ void shader_core_stats::print( FILE* fout ) const
 
    m_outgoing_traffic_stats->print(fout); 
    m_incoming_traffic_stats->print(fout); 
+
+   fprintf(fout, "Shader code migration stall cycle breakdown\n");
+   for (int i = 0; i < m_config->num_shader(); i++) {
+       fprintf(fout, "%llu %llu %llu\n", shader_cycles[i],
+               migration_drain_cycles[i], migration_copy_cycles[i]); 
+   }
 }
 
 void shader_core_stats::event_warp_issued( unsigned s_id, unsigned warp_id, unsigned num_issued, unsigned dynamic_warp_id ) {
@@ -1405,6 +1411,11 @@ mem_stage_stall_type ldst_unit::process_memory_access_queue( cache_t *cache, war
                 && (page_addr == (it_pid.second).front())) {
             pageBlockingStall++;
             if (block_on_migration) {
+                unsigned sid = get_sid();
+                if (migrationQueue[page_addr] != 0)
+                    m_stats->migration_drain_cycles[sid]++;
+                else
+                    m_stats->migration_copy_cycles[sid]++;
                 delete mf;
                 return COAL_STALL;
             }
