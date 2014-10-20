@@ -105,7 +105,7 @@ typedef unsigned long long new_addr_type;
 std::map<unsigned, std::list<unsigned long long> >sendForMigrationPid;
 std::map<unsigned long long, uint64_t> migrationQueue;
 std::map<unsigned long long, unsigned> migrationWaitCycle;
-std::map<unsigned long long, std::array<unsigned long long, 6> > migrationFinished;
+std::map<unsigned long long, std::array<unsigned long long, 9> > migrationFinished;
 std::map<unsigned long long, std::array<unsigned long long, 3> > accessDistribution;
 std::map<unsigned long long, unsigned> reCheckForMigration;
 std::map<unsigned long long, std::map<unsigned, unsigned> > globalPageCount;
@@ -1845,9 +1845,8 @@ void resetBit(uint64_t &x, uint64_t pos) {
 }
 
 void printMigrationFinishedQueue() {
-    std::map<unsigned long long, std::array<unsigned long long, 6> >::iterator it_migration =  migrationFinished.begin();
-    for (; it_migration != migrationFinished.end(); ++it_migration) {
-        printf("%llu %llu %llu %llu %llu %llu %llu\n", it_migration->first, it_migration->second[0], it_migration->second[1], it_migration->second[2], it_migration->second[3], it_migration->second[4], it_migration->second[5]);
+    for (auto it_migration : migrationFinished) {
+        printf("%llu %llu %llu %llu %llu %llu %llu %llu %llu %llu\n", it_migration.first, it_migration.second[0], it_migration.second[1], it_migration.second[2], it_migration.second[3], it_migration.second[4], it_migration.second[5], it_migration.second[6], it_migration.second[7], it_migration.second[8]);
     }
 }
 

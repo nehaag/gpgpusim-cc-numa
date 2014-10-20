@@ -1334,6 +1334,11 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
                 block_addr = page_addr + 128ULL * i;
                 bool mshr_hit = m_mshrs.probe(block_addr);
                 if (mshr_hit) {
+                    if (m_wrbk_type == L1_WRBK_ACC)
+                        migrationFinished[page_addr][6] += 1;
+                    else
+                        migrationFinished[page_addr][7] += 1;
+
                     return false;
                 }
             }
@@ -1371,6 +1376,7 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
                             l1_wb_map[wb->get_request_uid()] =  wb->get_addr();
                         } else if (m_wrbk_type == L2_WRBK_ACC) {
                             l2_wb_map[wb->get_request_uid()] =  wb->get_addr();
+                            migrationFinished[page_addr][8] += 1;
                         } else {
                             printf("unknown writeback request generated\n");
                             exit(EXIT_FAILURE);
