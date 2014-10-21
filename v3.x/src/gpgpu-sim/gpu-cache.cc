@@ -1346,8 +1346,14 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
             /* Step 1: type b
              * Wait for all the mshrs to complete
              */
-            if (!m_mshrs.isEmpty())
+            if (!m_mshrs.isEmpty()) {
+                if (m_wrbk_type == L1_WRBK_ACC)
+                    migrationFinished[page_addr][6] += 1;
+                else
+                    migrationFinished[page_addr][7] += 1;
+
                 return false;
+            }
         }
 
         /* Step 2: 
@@ -1374,9 +1380,10 @@ data_cache::flushOnMigrate(new_addr_type page_addr)
                         // add this write back request to the map 
                         if (m_wrbk_type == L1_WRBK_ACC) {
                             l1_wb_map[wb->get_request_uid()] =  wb->get_addr();
+                            migrationFinished[page_addr][8] += 1;
                         } else if (m_wrbk_type == L2_WRBK_ACC) {
                             l2_wb_map[wb->get_request_uid()] =  wb->get_addr();
-                            migrationFinished[page_addr][8] += 1;
+                            migrationFinished[page_addr][9] += 1;
                         } else {
                             printf("unknown writeback request generated\n");
                             exit(EXIT_FAILURE);
