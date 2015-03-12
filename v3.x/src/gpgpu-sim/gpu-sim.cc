@@ -127,6 +127,11 @@ bool block_on_migration;
 bool limit_migration_rate;
 bool drain_all_mshrs;
 
+std::map<unsigned long long, int> pageToMallocId;
+std::map<int, unsigned long long> mallocStart; 
+std::map<int, unsigned long long> mallocEnd; 
+std::map<int, unsigned long long> mallocAccesses;
+
 // performance counter for stalls due to congestion.
 unsigned int gpu_stall_dramfull = 0; 
 unsigned int gpu_stall_icnt2sh = 0;
@@ -1116,6 +1121,9 @@ void gpgpu_sim::gpu_print_stat()
 
     printAccessDistribution();
 
+    printf("cudaMalloc Stats\n");
+    printCudaMalloc();
+
     printf("\nNumber of touches per epoch\n");
 
     std::map<unsigned long long, std::map<unsigned, unsigned> >::iterator it_pageCount = globalPageCount.begin();
@@ -1863,6 +1871,17 @@ void printAccessDistribution() {
     printf("Access distribution before, when, after\n");
     for (auto it : accessDistribution) {
         printf("%llu %llu %llu %llu\n", it.first, it.second[0], it.second[1], it.second[2]);
+    }
+}
+
+void printCudaMalloc() {
+    for(auto mallocIdStartPair : mallocStart) {
+        int id = mallocIdStartPair.first;
+        printf("[cudaMalloc] %d %llu %llu %llu\n",
+                id,
+                mallocStart[id],
+                mallocEnd[id],
+                mallocAccesses[id]);
     }
 }
 

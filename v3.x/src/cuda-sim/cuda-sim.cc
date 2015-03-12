@@ -350,27 +350,53 @@ addr_t generic_to_global( addr_t addr )
 }
 
 
+static int __current_id = 1;
+
 void* gpgpu_t::gpu_malloc( size_t size )
 {
    unsigned long long result = m_dev_malloc;
-   if(g_debug_execution >= 3) {
-      printf("GPGPU-Sim PTX: allocating %zu bytes on GPU starting at address 0x%Lx\n", size, m_dev_malloc );
+//   if(g_debug_execution >= 3) {
+      printf("GPGPU-Sim PTX: [gpu_malloc] allocating %zu bytes on GPU starting at address 0x%Lx\n", size, m_dev_malloc );
       fflush(stdout);
-   }
+//   }
    m_dev_malloc += size;
    if (size%256) m_dev_malloc += (256 - size%256); //align to 256 byte boundaries
+
+   // add to profiling map
+   unsigned long long startPage = result & (~4095ULL);;
+   unsigned long long start = result;
+   unsigned long long end = (result + size-1);
+   for(size_t off = 0; off < size; off += 4096) {
+       pageToMallocId[startPage+off] = __current_id;
+   }
+   mallocStart[__current_id] = start;
+   mallocEnd[__current_id] = end;
+   __current_id++;
+
    return(void*) result;
 }
 
 void* gpgpu_t::gpu_mallocarray( size_t size )
 {
    unsigned long long result = m_dev_malloc;
-   if(g_debug_execution >= 3) {
-      printf("GPGPU-Sim PTX: allocating %zu bytes on GPU starting at address 0x%Lx\n", size, m_dev_malloc );
+//   if(g_debug_execution >= 3) {
+      printf("GPGPU-Sim PTX: [gpu_mallocarray] allocating %zu bytes on GPU starting at address 0x%Lx\n", size, m_dev_malloc );
       fflush(stdout);
-   }
+//   }
    m_dev_malloc += size;
    if (size%256) m_dev_malloc += (256 - size%256); //align to 256 byte boundaries
+
+   // add to profiling map
+   unsigned long long startPage = result & (~4095ULL);;
+   unsigned long long start = result;
+   unsigned long long end = (result + size-1);
+   for(size_t off = 0; off < size; off += 4096) {
+       pageToMallocId[startPage+off] = __current_id;
+   }
+   mallocStart[__current_id] = start;
+   mallocEnd[__current_id] = end;
+   __current_id++;
+
    return(void*) result;
 }
 

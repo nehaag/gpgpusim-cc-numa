@@ -381,6 +381,12 @@ extern bool block_on_migration;
 extern bool limit_migration_rate;
 extern bool drain_all_mshrs;
 
+// for profiling of cudaMalloc calls
+extern std::map<unsigned long long, int> pageToMallocId;
+extern std::map<int, unsigned long long> mallocStart; 
+extern std::map<int, unsigned long long> mallocEnd; 
+extern std::map<int, unsigned long long> mallocAccesses;
+
 extern bool checkBit(uint64_t x, uint64_t pos);
 extern bool checkAllBitsBelow(uint64_t x, uint64_t pos);
 extern bool checkAllBitsBelowReset(uint64_t x, uint64_t pos);
@@ -390,6 +396,7 @@ void printMigrationQueue();
 void printAccessDistribution();
 void printMigrationFinishedQueue();
 unsigned whichDDRPartition(unsigned long long page_addr, const class memory_config *memConfig);
+void printCudaMalloc();
 
 class gpgpu_sim_config : public power_config, public gpgpu_functional_sim_config {
 public:

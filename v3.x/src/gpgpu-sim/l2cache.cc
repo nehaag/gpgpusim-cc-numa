@@ -308,6 +308,12 @@ void memory_partition_unit::dram_cycle()
                 
                 // Total number of accesses, summing all the epochs
                 num_access_per_cacheline[cacheline][3] += 1;
+
+                // profile the cudaMalloc call
+                if(pageToMallocId.count(cacheline)) {
+                    mallocAccesses[pageToMallocId[cacheline]] += 1;
+                }
+
                 if (num_access_per_cacheline[cacheline][3] == 1) {
                     if (mf->get_sub_partition_id() < 8)
                         migrationFinished[cacheline][4] = gpu_sim_cycle + gpu_tot_sim_cycle;
